@@ -4,7 +4,6 @@ import {
   Users, 
   Clock, 
   AlertTriangle, 
-  CheckCircle, 
   Plus, 
   Search, 
   Filter, 
@@ -21,10 +20,11 @@ import {
   Check, 
   X, 
   FileImage,
-  Layers
+  Layers,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 
-// Tipos de Turnos disponibles con nombres simplificados (sin horas)
 const SHIFT_TYPES = {
   M: { code: 'M', label: 'Mañana', color: 'bg-emerald-800/80 text-emerald-100 border-emerald-500/50 hover:bg-emerald-700/90', canvasColor: '#065f46', icon: Sunrise },
   T: { code: 'T', label: 'Tarde', color: 'bg-amber-600/40 text-amber-200 border-amber-500/50 hover:bg-amber-600/60', canvasColor: '#d97706', icon: Sun },
@@ -82,6 +82,7 @@ export default function App() {
   ]);
 
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
+  const [editingOperator, setEditingOperator] = useState(null);
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState(null);
 
@@ -182,7 +183,6 @@ export default function App() {
     return coverage;
   }, [weekDays, filteredOperators, scheduleData]);
 
-  // GENERADOR Y DESCARGADOR DE IMAGEN PNG
   const handleDownloadPNG = () => {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -196,30 +196,24 @@ export default function App() {
     canvas.width = width;
     canvas.height = height;
 
-    // Fondo Verde Botella Principal
     ctx.fillStyle = '#022415';
     ctx.fillRect(0, 0, width, height);
 
-    // Encabezado Verde Heineken Brillante
     ctx.fillStyle = '#005826';
     ctx.fillRect(0, 0, width, 95);
 
-    // Dibujar Estrella Roja
     ctx.fillStyle = '#e31b23';
     ctx.font = 'bold 42px sans-serif';
     ctx.fillText('★', 35, 60);
 
-    // Título Principal
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 24px system-ui, sans-serif';
     ctx.fillText('PROGRAMACIÓN SEMANAL DE MONTACARGISTAS', 85, 45);
 
-    // Subtítulo con fecha
     ctx.fillStyle = '#a7f3d0';
     ctx.font = '14px system-ui, sans-serif';
     ctx.fillText(`Semana del ${weekDays[0].dayNumber} ${weekDays[0].monthName} al ${weekDays[6].dayNumber} ${weekDays[6].monthName} | Filtro: ${selectedZone}`, 85, 73);
 
-    // Cabecera de Tabla
     const tableTop = 110;
     ctx.fillStyle = '#01190e';
     ctx.fillRect(30, tableTop, width - 60, 45);
@@ -237,7 +231,6 @@ export default function App() {
     });
     ctx.textAlign = 'left';
 
-    // Filas de Operadores
     filteredOperators.forEach((op, rIdx) => {
       const y = tableTop + 45 + (rIdx * rowHeight);
 
@@ -295,13 +288,55 @@ export default function App() {
     downloadLink.click();
   };
 
-  const handleAddOperator = (e) => {
+  // APERTURA DE MODAL CREAR
+  const handleOpenAddModal = () => {
+    setEditingOperator(null);
+    setNewOp({
+      name: '',
+      zone: WAREHOUSE_ZONES[1],
+      equipment: FORKLIFT_TYPES[0],
+      shiftPattern: 'Mañana',
+      licenseExpiry: '2027-12-31'
+    });
+    setIsAddOperatorOpen(true);
+  };
+
+  // APERTURA DE MODAL EDITAR
+  const handleOpenEditModal = (op) => {
+    setEditingOperator(op);
+    setNewOp({
+      name: op.name,
+      zone: op.zone,
+      equipment: op.equipment,
+      shiftPattern: op.shiftPattern,
+      licenseExpiry: op.licenseExpiry || '2027-12-31'
+    });
+    setIsAddOperatorOpen(true);
+  };
+
+  // GUARDAR (CREAR O EDITAR)
+  const handleSaveOperator = (e) => {
     e.preventDefault();
     if (!newOp.name) return;
-    const newId = `M-${100 + operators.length + 1}`;
-    setOperators([...operators, { id: newId, ...newOp, status: 'Activo' }]);
-    setNewOp({ name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], shiftPattern: 'Mañana', licenseExpiry: '2027-12-31' });
+
+    if (editingOperator) {
+      setOperators(prev => prev.map(op => 
+        op.id === editingOperator.id ? { ...op, ...newOp } : op
+      ));
+    } else {
+      const newId = `M-${100 + operators.length + 1}`;
+      setOperators(prev => [...prev, { id: newId, ...newOp, status: 'Activo' }]);
+    }
+
     setIsAddOperatorOpen(false);
+    setEditingOperator(null);
+  };
+
+  // ELIMINAR OPERADOR
+  const handleDeleteOperator = (operatorId) => {
+    if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
+      setOperators(prev => prev.filter(op => op.id !== operatorId));
+    }
   };
 
   const handleCreateVacationRequest = (e) => {
@@ -342,7 +377,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#021f12] text-emerald-50 font-sans pb-12">
-      {/* HEADER DE ESTILO HEINEKEN */}
       <header className="border-b border-emerald-800/60 bg-[#00471f]/90 backdrop-blur sticky top-0 z-30 shadow-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -358,7 +392,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navegación */}
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button
               onClick={() => setActiveTab('scheduler')}
@@ -398,7 +431,6 @@ export default function App() {
             </button>
           </nav>
 
-          {/* Botones de Acción */}
           <div className="flex items-center space-x-2">
             <button 
               onClick={handleDownloadPNG}
@@ -409,7 +441,7 @@ export default function App() {
               <span className="hidden sm:inline">Descargar PNG</span>
             </button>
             <button 
-              onClick={() => setIsAddOperatorOpen(true)}
+              onClick={handleOpenAddModal}
               className="bg-red-600 hover:bg-red-500 text-white px-3.5 py-2 rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-md transition"
             >
               <Plus className="w-4 h-4" />
@@ -419,52 +451,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* BARRA MÓVIL DE NAVEGACIÓN */}
-      <div className="md:hidden flex bg-[#02180d] p-2 border-b border-emerald-900 justify-around">
-        <button
-          onClick={() => setActiveTab('scheduler')}
-          className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-lg ${
-            activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-400'
-          }`}
-        >
-          <CalendarIcon className="w-3.5 h-3.5" />
-          <span>Matriz</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('operators')}
-          className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-lg ${
-            activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-400'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5" />
-          <span>Personal</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('vacations')}
-          className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-lg ${
-            activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-400'
-          }`}
-        >
-          <Palmtree className="w-3.5 h-3.5" />
-          <span>Permisos</span>
-        </button>
-      </div>
-
-      {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-
-        {/* 1. SECCIÓN MATRIZ DE HORARIOS */}
+        {/* MATRIZ DE HORARIOS */}
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
-            {/* HERRAMIENTAS Y EXPORTACIÓN */}
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-lg">
-              
-              {/* Navegación Semanal */}
               <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => handleWeekChange('prev')}
-                  className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 transition border border-emerald-800/60"
-                >
+                <button onClick={() => handleWeekChange('prev')} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 transition border border-emerald-800/60">
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <div className="flex items-center space-x-2 bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900">
@@ -473,20 +466,13 @@ export default function App() {
                     Semana: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
                   </span>
                 </div>
-                <button
-                  onClick={() => handleWeekChange('next')}
-                  className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 transition border border-emerald-800/60"
-                >
+                <button onClick={() => handleWeekChange('next')} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 transition border border-emerald-800/60">
                   <ChevronRight className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Botón de Exportación Rápida a PNG y Filtros */}
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  onClick={handleDownloadPNG}
-                  className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-lg transition"
-                >
+                <button onClick={handleDownloadPNG} className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-lg transition">
                   <FileImage className="w-4 h-4" />
                   <span>Descargar Reporte PNG</span>
                 </button>
@@ -517,25 +503,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* LEYENDA DE TURNOS SIMPLIFICADA (SIN RANGOS DE HORAS) */}
-            <div className="bg-[#002e14]/60 border border-emerald-900/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="text-emerald-400 font-bold flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5" /> Leyenda de Turnos:
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {Object.values(SHIFT_TYPES).map(st => {
-                  const IconComp = st.icon;
-                  return (
-                    <div key={st.code} className={`px-2.5 py-1 rounded-lg border text-xs font-medium flex items-center gap-1.5 ${st.color}`}>
-                      <IconComp className="w-3.5 h-3.5" />
-                      <span className="font-bold">{st.code}:</span> {st.label}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* TABLA PRINCIPAL DE MATRIZ DE TURNOS */}
             <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-2xl">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse min-w-[900px]">
@@ -545,12 +512,7 @@ export default function App() {
                         Montacargista / Área
                       </th>
                       {weekDays.map((day) => (
-                        <th 
-                          key={day.dateStr} 
-                          className={`py-3.5 px-2 text-center border-l border-emerald-900/60 ${
-                            day.isWeekend ? 'bg-red-950/20' : ''
-                          }`}
-                        >
+                        <th key={day.dateStr} className={`py-3.5 px-2 text-center border-l border-emerald-900/60 ${day.isWeekend ? 'bg-red-950/20' : ''}`}>
                           <div className="text-xs font-bold text-emerald-200 uppercase">{day.dayName}</div>
                           <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>
                             {day.dayNumber}
@@ -563,29 +525,22 @@ export default function App() {
                     {filteredOperators.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="py-12 text-center text-emerald-500">
-                          No se encontraron montacargistas con los filtros seleccionados.
+                          No se encontraron montacargistas.
                         </td>
                       </tr>
                     ) : (
                       filteredOperators.map((op) => (
                         <tr key={op.id} className="hover:bg-[#003517]/50 transition-colors">
                           <td className="py-3 px-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <div className="font-bold text-sm text-white flex items-center gap-1.5">
-                                  {op.name}
-                                  {isLicenseExpired(op.licenseExpiry) && (
-                                    <span title="Licencia Vencida">
-                                      <AlertTriangle className="w-4 h-4 text-red-500 animate-bounce" />
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-xs text-emerald-400/80 font-medium">
-                                  {op.id} • <span className="text-emerald-300">{op.zone}</span>
-                                </div>
-                                <div className="text-[10px] text-emerald-500 truncate max-w-[200px]">
-                                  {op.equipment}
-                                </div>
+                            <div>
+                              <div className="font-bold text-sm text-white flex items-center gap-1.5">
+                                {op.name}
+                                {isLicenseExpired(op.licenseExpiry) && (
+                                  <AlertTriangle className="w-4 h-4 text-red-500 animate-bounce" />
+                                )}
+                              </div>
+                              <div className="text-xs text-emerald-400/80 font-medium">
+                                {op.id} • <span className="text-emerald-300">{op.zone}</span>
                               </div>
                             </div>
                           </td>
@@ -596,12 +551,7 @@ export default function App() {
                             const IconComponent = shift.icon;
 
                             return (
-                              <td 
-                                key={day.dateStr} 
-                                className={`p-1.5 text-center border-l border-emerald-900/40 relative ${
-                                  day.isWeekend ? 'bg-red-950/10' : ''
-                                }`}
-                              >
+                              <td key={day.dateStr} className={`p-1.5 text-center border-l border-emerald-900/40 ${day.isWeekend ? 'bg-red-950/10' : ''}`}>
                                 <button
                                   onClick={() => setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
                                   className={`w-full py-2 px-1 rounded-xl border text-xs font-bold transition-all duration-150 flex flex-col items-center justify-center gap-0.5 shadow-sm hover:scale-105 ${shift.color}`}
@@ -619,49 +569,10 @@ export default function App() {
                 </table>
               </div>
             </div>
-
-            {/* COBERTURA Y RESUMEN DIARIO */}
-            <div className="bg-[#002e14] border border-emerald-800/80 rounded-2xl p-5 shadow-xl">
-              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-400" />
-                Resumen de Cobertura de Operadores por Día
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
-                {weekDays.map(day => {
-                  const cov = dailyCoverage[day.dateStr];
-                  const activeTotal = cov.M + cov.T + cov.N;
-                  return (
-                    <div key={day.dateStr} className="bg-[#011d0e] border border-emerald-900/90 rounded-xl p-3 text-xs">
-                      <div className="font-bold text-emerald-300 border-b border-emerald-900 pb-1 mb-2 text-center">
-                        {day.dayName} {day.dayNumber}
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-emerald-200">
-                          <span className="flex items-center gap-1"><Sunrise className="w-3 h-3 text-emerald-400"/> Mañana:</span>
-                          <span className="font-bold">{cov.M}</span>
-                        </div>
-                        <div className="flex justify-between text-amber-200">
-                          <span className="flex items-center gap-1"><Sun className="w-3 h-3 text-amber-400"/> Tarde:</span>
-                          <span className="font-bold">{cov.T}</span>
-                        </div>
-                        <div className="flex justify-between text-indigo-200">
-                          <span className="flex items-center gap-1"><Moon className="w-3 h-3 text-indigo-400"/> Noche:</span>
-                          <span className="font-bold">{cov.N}</span>
-                        </div>
-                        <div className="pt-1.5 border-t border-emerald-900/80 flex justify-between font-bold text-white">
-                          <span>Activos:</span>
-                          <span className="text-emerald-400">{activeTotal}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         )}
 
-        {/* 2. SECCIÓN MONTACARGISTAS */}
+        {/* SECCIÓN MONTACARGISTAS CON EDICIÓN Y ELIMINACIÓN */}
         {activeTab === 'operators' && (
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
@@ -670,7 +581,7 @@ export default function App() {
                 <p className="text-xs text-emerald-300">Gestión de licencias, equipos asignados y zonas de trabajo</p>
               </div>
               <button
-                onClick={() => setIsAddOperatorOpen(true)}
+                onClick={handleOpenAddModal}
                 className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md"
               >
                 <Plus className="w-4 h-4" />
@@ -683,7 +594,6 @@ export default function App() {
                 const expired = isLicenseExpired(op.licenseExpiry);
                 return (
                   <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg relative overflow-hidden flex flex-col justify-between">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl"></div>
                     <div>
                       <div className="flex items-start justify-between mb-3">
                         <div>
@@ -692,9 +602,24 @@ export default function App() {
                           </span>
                           <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
                         </div>
-                        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">
-                          {op.status}
-                        </span>
+                        
+                        {/* Botones de Editar y Eliminar */}
+                        <div className="flex items-center space-x-1">
+                          <button
+                            onClick={() => handleOpenEditModal(op)}
+                            className="p-1.5 bg-emerald-900/80 hover:bg-emerald-700 text-emerald-200 rounded-lg border border-emerald-700/60 transition"
+                            title="Editar Montacargista"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteOperator(op.id)}
+                            className="p-1.5 bg-red-950/80 hover:bg-red-800 text-red-300 rounded-lg border border-red-800/60 transition"
+                            title="Eliminar Montacargista"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="space-y-2 text-xs border-t border-emerald-900/80 pt-3 text-emerald-200">
@@ -726,7 +651,7 @@ export default function App() {
                     {expired && (
                       <div className="mt-4 p-2 bg-red-950/60 border border-red-800/80 rounded-xl flex items-center gap-2 text-xs text-red-300">
                         <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                        <span>Licencia vencida. Requiere recertificación DC-3.</span>
+                        <span>Licencia vencida. Requiere recertificación.</span>
                       </div>
                     )}
                   </div>
@@ -736,18 +661,15 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. SECCIÓN VACACIONES Y PERMISOS */}
+        {/* SECCIÓN PERMISOS */}
         {activeTab === 'vacations' && (
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Solicitudes de Vacaciones y Ausencias</h2>
-                <p className="text-xs text-emerald-300">Control de permisos de montacargistas para evitar falta de cobertura</p>
+                <p className="text-xs text-emerald-300">Control de permisos de montacargistas</p>
               </div>
-              <button
-                onClick={() => setIsRequestVacationOpen(true)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md"
-              >
+              <button onClick={() => setIsRequestVacationOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md">
                 <Plus className="w-4 h-4" />
                 <span>Registrar Permiso / Vacaciones</span>
               </button>
@@ -761,7 +683,7 @@ export default function App() {
                       <th className="py-3.5 px-4">Operador</th>
                       <th className="py-3.5 px-4">Tipo</th>
                       <th className="py-3.5 px-4">Periodo</th>
-                      <th className="py-3.5 px-4">Motivo / Observación</th>
+                      <th className="py-3.5 px-4">Motivo</th>
                       <th className="py-3.5 px-4">Estado</th>
                       <th className="py-3.5 px-4 text-center">Acciones</th>
                     </tr>
@@ -773,46 +695,16 @@ export default function App() {
                           <div className="font-bold text-white">{req.operatorName}</div>
                           <div className="text-[10px] text-emerald-400">{req.operatorId}</div>
                         </td>
-                        <td className="py-3.5 px-4">
-                          <span className="px-2 py-1 rounded bg-emerald-950 border border-emerald-800 text-emerald-300 font-medium">
-                            {req.type}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-emerald-200">
-                          {req.startDate} al {req.endDate}
-                        </td>
-                        <td className="py-3.5 px-4 text-emerald-300/80 max-w-xs truncate">
-                          {req.reason}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2.5 py-1 rounded-full font-bold text-[11px] ${
-                            req.status === 'Aprobado' ? 'bg-emerald-900 text-emerald-200 border border-emerald-500/40' :
-                            req.status === 'Rechazado' ? 'bg-red-950 text-red-300 border border-red-800' :
-                            'bg-amber-950 text-amber-300 border border-amber-700/50'
-                          }`}>
-                            {req.status}
-                          </span>
-                        </td>
+                        <td className="py-3.5 px-4">{req.type}</td>
+                        <td className="py-3.5 px-4">{req.startDate} al {req.endDate}</td>
+                        <td className="py-3.5 px-4">{req.reason}</td>
+                        <td className="py-3.5 px-4">{req.status}</td>
                         <td className="py-3.5 px-4 text-center">
-                          {req.status === 'Pendiente' ? (
+                          {req.status === 'Pendiente' && (
                             <div className="flex items-center justify-center space-x-2">
-                              <button
-                                onClick={() => handleVacationStatus(req.id, 'Aprobado')}
-                                className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition"
-                                title="Aprobar"
-                              >
-                                <Check className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleVacationStatus(req.id, 'Rechazado')}
-                                className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition"
-                                title="Rechazar"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
+                              <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 text-white rounded-lg"><Check className="w-4 h-4"/></button>
+                              <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 text-white rounded-lg"><X className="w-4 h-4"/></button>
                             </div>
-                          ) : (
-                            <span className="text-emerald-600 text-[10px]">Procesado</span>
                           )}
                         </td>
                       </tr>
@@ -825,67 +717,21 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL PARA CAMBIAR TURNO EN CELDA */}
-      {selectedCell && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Clock className="w-5 h-5 text-emerald-400" />
-                Asignar Turno ({selectedCell.dateStr})
-              </h3>
-              <button 
-                onClick={() => setSelectedCell(null)}
-                className="text-emerald-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <p className="text-xs text-emerald-300 mb-4">
-              Seleccione el nuevo turno para el operador asignado:
-            </p>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              {Object.entries(SHIFT_TYPES).map(([code, config]) => {
-                const IconComp = config.icon;
-                return (
-                  <button
-                    key={code}
-                    onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code)}
-                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition ${config.color} ${
-                      selectedCell.currentShift === code ? 'ring-2 ring-white scale-105' : ''
-                    }`}
-                  >
-                    <div>
-                      <div className="text-xs font-bold flex items-center gap-1.5">
-                        <span className="font-extrabold">{code}:</span> {config.label}
-                      </div>
-                    </div>
-                    <IconComp className="w-4 h-4" />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL AGREGAR MONTACARGISTA */}
+      {/* MODAL AGREGAR / EDITAR MONTACARGISTA */}
       {isAddOperatorOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Truck className="w-5 h-5 text-red-500" />
-                Registrar Nuevo Montacargista
+                {editingOperator ? `Editar Montacargista (${editingOperator.id})` : 'Registrar Nuevo Montacargista'}
               </h3>
               <button onClick={() => setIsAddOperatorOpen(false)} className="text-emerald-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddOperator} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveOperator} className="space-y-4 text-xs">
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
                 <input
@@ -964,104 +810,7 @@ export default function App() {
                   type="submit"
                   className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold"
                 >
-                  Guardar Montacargista
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL NUEVA SOLICITUD DE VACACIONES / PERMISO */}
-      {isRequestVacationOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Palmtree className="w-5 h-5 text-emerald-400" />
-                Registrar Solicitud de Ausencia
-              </h3>
-              <button onClick={() => setIsRequestVacationOpen(false)} className="text-emerald-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateVacationRequest} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Montacargista</label>
-                <select
-                  value={newVac.operatorId}
-                  onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                >
-                  {operators.map(op => (
-                    <option key={op.id} value={op.id}>{op.name} ({op.id})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
-                  <input
-                    type="date"
-                    required
-                    value={newVac.startDate}
-                    onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })}
-                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
-                  <input
-                    type="date"
-                    required
-                    value={newVac.endDate}
-                    onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })}
-                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
-                <select
-                  value={newVac.type}
-                  onChange={(e) => setNewVac({ ...newVac, type: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="Vacaciones">Vacaciones Anuales</option>
-                  <option value="Día de Descanso Especial">Día de Descanso Especial</option>
-                  <option value="Licencia Médica / Incapacidad">Licencia Médica / Incapacidad</option>
-                  <option value="Permiso Personal">Permiso Personal</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Motivo / Observación</label>
-                <textarea
-                  rows={3}
-                  placeholder="Escriba aquí los detalles del permiso..."
-                  value={newVac.reason}
-                  onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setIsRequestVacationOpen(false)}
-                  className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold"
-                >
-                  Enviar Solicitud
+                  {editingOperator ? 'Guardar Cambios' : 'Guardar Montacargista'}
                 </button>
               </div>
             </form>

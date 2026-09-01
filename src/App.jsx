@@ -7,16 +7,16 @@ import {
   Download, 
   ShieldCheck, 
   ShieldAlert, 
-  Clock 
+  Star // Import the star icon
 } from 'lucide-react';
 
 const SHIFTS = {
-  M: { label: 'Mañana', color: 'bg-emerald-500 text-white' },
-  T: { label: 'Tarde', color: 'bg-amber-500 text-white' },
-  N: { label: 'Noche', color: 'bg-indigo-600 text-white' },
-  DES: { label: 'Descanso', color: 'bg-slate-500 text-white' },
-  VAC: { label: 'Vacaciones', color: 'bg-sky-500 text-white' },
-  INC: { label: 'Incapacidad', color: 'bg-rose-500 text-white' }
+  M: { label: 'Mañana', color: 'bg-[#00a94e] text-white' }, // Wordmark Green
+  T: { label: 'Tarde', color: 'bg-[#008c3a] text-white' }, // Slightly darker green
+  N: { label: 'Noche', color: 'bg-[#006e28] text-white' }, // Deep green
+  DES: { label: 'Descanso', color: 'bg-[#1d4d38] text-white' }, // Muted dark green
+  VAC: { label: 'Vacaciones', color: 'bg-[#138e5c] text-white' }, // Clear muted green
+  INC: { label: 'Incapacidad', color: 'bg-[#e31837] text-white' } // Star Red
 };
 
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -91,21 +91,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans">
-      {/* Header */}
-      <header className="max-w-7xl mx-auto mb-8 bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
-            <Clock className="w-8 h-8" />
-          </div>
+    <div className="min-h-screen bg-[#021f12] text-white p-4 md:p-8 font-sans">
+      {/* Header with Heineken Vibe and Red Star Icon */}
+      <header className="max-w-7xl mx-auto mb-8 bg-[#00a94e] p-6 rounded-2xl shadow-xl border border-[#00a94e]/50 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
+          <Star className="w-16 h-16 text-[#e31837] mb-2 md:mb-0" fill="#e31837" />
           <div>
             <h1 className="text-2xl font-bold text-white tracking-wide">ShiftForklift</h1>
-            <p className="text-sm text-slate-400">Gestión de Horarios y Licencias de Montacarguismo</p>
+            <p className="text-sm text-[#e1e1e1]">Gestión de Horarios y Licencias de Montacarguismo</p>
           </div>
         </div>
         <button
           onClick={handlePrintReport}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg transition duration-200"
+          className="flex items-center gap-2 bg-[#021f12] hover:bg-[#032e1a] text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg transition duration-200 border border-[#00a94e]/30"
         >
           <Download className="w-5 h-5" />
           Exportar / Imprimir Reporte
@@ -115,60 +113,60 @@ export default function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto space-y-8">
         {/* Leyenda de Turnos */}
-        <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-md">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Leyenda de Turnos (Haz clic en la celda para cambiar)</h2>
+        <section className="bg-[#032e1a] p-5 rounded-2xl border border-[#00a94e]/50 shadow-md">
+          <h2 className="text-xs font-bold text-[#c1c1c1] uppercase tracking-wider mb-3">Leyenda de Turnos (Haz clic en la celda para cambiar)</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
             {Object.entries(SHIFTS).map(([key, value]) => (
-              <div key={key} className="flex items-center gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-slate-700">
+              <div key={key} className="flex items-center gap-2 bg-[#021f12] p-2.5 rounded-xl border border-[#00a94e]/30">
                 <span className={`w-8 h-8 flex items-center justify-center font-bold text-xs rounded-lg ${value.color}`}>
                   {key}
                 </span>
-                <span className="text-xs font-medium text-slate-300">{value.label}</span>
+                <span className="text-xs font-medium text-[#c1c1c1]">{value.label}</span>
               </div>
             ))}
           </div>
         </section>
 
-        {/* Tabla de Horarios */}
-        <section className="bg-slate-800 rounded-2xl border border-slate-700 shadow-xl overflow-hidden">
-          <div className="p-5 border-b border-slate-700 flex justify-between items-center">
+        {/* Tabla de Horarios con Weekend Red Highlights */}
+        <section className="bg-[#032e1a] rounded-2xl border border-[#00a94e]/50 shadow-xl overflow-hidden">
+          <div className="p-5 border-b border-[#00a94e]/50 flex justify-between items-center">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-emerald-400" />
+              <Calendar className="w-5 h-5 text-red-400" />
               Programación Semanal de Operadores
             </h2>
-            <span className="text-xs text-slate-400">Total Operadores: {operators.length}</span>
+            <span className="text-xs text-[#c1c1c1]">Total Operadores: {operators.length}</span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-900/80 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                <tr className="bg-[#021f12]/80 text-[#c1c1c1] text-xs uppercase tracking-wider border-b border-[#00a94e]/50">
                   <th className="p-4">Operador</th>
                   <th className="p-4">Licencia</th>
                   {DAYS.map((day, idx) => (
-                    <th key={day} className={`p-4 text-center ${idx >= 5 ? 'text-amber-400' : ''}`}>
+                    <th key={day} className={`p-4 text-center ${idx >= 5 ? 'text-red-400' : ''}`}>
                       {day}
                     </th>
                   ))}
                   <th className="p-4 text-center">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/60 text-sm">
+              <tbody className="divide-y divide-[#00a94e]/30 text-sm">
                 {operators.map((op) => (
-                  <tr key={op.id} className="hover:bg-slate-700/30 transition">
+                  <tr key={op.id} className="hover:bg-[#032e1a]/50 transition">
                     <td className="p-4 font-semibold text-white">
                       {op.name}
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         {op.licenseValid ? (
-                          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                          <ShieldCheck className="w-4 h-4 text-[#00a94e]" />
                         ) : (
-                          <ShieldAlert className="w-4 h-4 text-rose-400" />
+                          <ShieldAlert className="w-4 h-4 text-[#e31837]" />
                         )}
-                        <span className="text-xs text-slate-300 font-mono">{op.licenseNumber}</span>
+                        <span className="text-xs text-[#c1c1c1] font-mono">{op.licenseNumber}</span>
                       </div>
-                      <span className="text-[10px] text-slate-400 block mt-0.5">Vence: {op.licenseExpiry}</span>
+                      <span className="text-[10px] text-[#c1c1c1] block mt-0.5">Vence: {op.licenseExpiry}</span>
                     </td>
                     {op.schedule.map((shiftKey, dayIdx) => {
                       const shiftInfo = SHIFTS[shiftKey] || SHIFTS.M;
@@ -176,7 +174,7 @@ export default function App() {
                         <td key={dayIdx} className="p-2 text-center">
                           <button
                             onClick={() => handleShiftChange(op.id, dayIdx)}
-                            className={`w-10 h-10 rounded-xl font-bold text-xs transition duration-150 transform hover:scale-105 active:scale-95 shadow-md ${shiftInfo.color}`}
+                            className={`w-10 h-10 rounded-xl font-bold text-xs transition duration-150 transform hover:scale-105 active:scale-95 shadow-md ${shiftInfo.color} ${shiftKey === 'INC' ? 'border-2 border-white' : ''}`}
                             title={`Cambiar turno de ${DAYS[dayIdx]}`}
                           >
                             {shiftKey}
@@ -187,7 +185,7 @@ export default function App() {
                     <td className="p-4 text-center">
                       <button
                         onClick={() => handleDeleteOperator(op.id)}
-                        className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                        className="p-2 text-[#e31837] hover:text-[#e31837] hover:bg-[#e31837]/10 rounded-lg transition"
                         title="Eliminar operador"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -200,47 +198,47 @@ export default function App() {
           </div>
         </section>
 
-        {/* Formulario Agregar Operador */}
-        <section className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg">
+        {/* Formulario Agregar Operador con Red Accent Button */}
+        <section className="bg-[#032e1a] p-6 rounded-2xl border border-[#00a94e]/50 shadow-lg">
           <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-            <Users className="w-5 h-5 text-emerald-400" />
+            <Users className="w-5 h-5 text-red-400" />
             Agregar Nuevo Operador
           </h2>
           <form onSubmit={handleAddOperator} className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Nombre Completo</label>
+              <label className="block text-xs text-[#c1c1c1] mb-1">Nombre Completo</label>
               <input
                 type="text"
                 placeholder="Ej. Juan Pérez"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-[#021f12] border border-[#00a94e]/50 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#00a94e]"
                 required
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Nº Licencia</label>
+              <label className="block text-xs text-[#c1c1c1] mb-1">Nº Licencia</label>
               <input
                 type="text"
                 placeholder="Ej. LIC-9920"
                 value={newLic}
                 onChange={(e) => setNewLic(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-[#021f12] border border-[#00a94e]/50 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#00a94e]"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Vencimiento Licencia</label>
+              <label className="block text-xs text-[#c1c1c1] mb-1">Vencimiento Licencia</label>
               <input
                 type="date"
                 value={newExpiry}
                 onChange={(e) => setNewExpiry(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-[#021f12] border border-[#00a94e]/50 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#00a94e]"
               />
             </div>
             <div className="flex items-end">
               <button
                 type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg transition"
+                className="w-full bg-[#e31837] hover:bg-[#e31837]/80 text-white font-semibold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg transition"
               >
                 <Plus className="w-5 h-5" />
                 Guardar Operador

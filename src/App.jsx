@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, Calendar, Plus, Trash2, Download, ShieldAlert, ChevronLeft, ChevronRight, Edit2, Check, X, TreePalm, Clock } from 'lucide-react';
+import { Users, Calendar, Plus, Trash2, Download, ShieldAlert, ChevronLeft, ChevronRight, Edit2, Check, X, Palmtree, Clock } from 'lucide-react';
 
 const INITIAL_EMPLOYEES = [
   { id: '1', name: 'Ana García', department: 'Ingeniería', position: 'Senior Developer', maxDays: 15, avatar: 'AG' },
@@ -126,7 +126,7 @@ export default function App() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-xl text-white"><TreePalm className="w-6 h-6" /></div>
+            <div className="bg-indigo-600 p-2 rounded-xl text-white"><Palmtree className="w-6 h-6" /></div>
             <div><h1 className="text-xl font-bold text-slate-900">ControlVacaciones</h1><p className="text-xs text-slate-500">Gestión de ausencias</p></div>
           </div>
           <div className="flex items-center gap-2">

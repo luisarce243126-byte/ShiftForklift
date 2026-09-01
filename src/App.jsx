@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { Users, Calendar, Plus, Trash2, Download, ShieldAlert, ChevronLeft, ChevronRight, Edit2, Check, X, Truck, Clock } from 'lucide-react';
+import { 
+  Users, Calendar, Plus, Trash2, Download, 
+  ShieldAlert, ChevronLeft, ChevronRight, Edit2, 
+  Check, X, Truck, Clock 
+} from 'lucide-react';
 
 const INITIAL_EMPLOYEES = [
-  { id: '1', name: 'Ana García', department: 'Almacén Central', position: 'Operador Montacargas Sr.', maxDays: 15, avatar: 'AG' },
+  { id: '1', name: 'Ana García', department: 'Almacén Central', position: 'Operador Sr.', maxDays: 15, avatar: 'AG' },
   { id: '2', name: 'Carlos López', department: 'Zona Carga', position: 'Montacargista AP', maxDays: 12, avatar: 'CL' },
   { id: '3', name: 'María Rodríguez', department: 'Almacén A', position: 'Supervisora Turno', maxDays: 15, avatar: 'MR' },
   { id: '4', name: 'Javier Martínez', department: 'Despacho', position: 'Operador Montacargas', maxDays: 10, avatar: 'JM' },
@@ -127,11 +131,18 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-amber-500 p-2 rounded-xl text-slate-950 font-bold"><Truck className="w-6 h-6" /></div>
-            <div><h1 className="text-xl font-black text-amber-500 tracking-wide uppercase">ShiftForklift</h1><p className="text-xs text-slate-400">Control Operaciones & Montacargas</p></div>
+            <div>
+              <h1 className="text-xl font-black text-amber-500 tracking-wide uppercase">ShiftForklift</h1>
+              <p className="text-xs text-slate-400">Control Operaciones & Montacargas</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={exportToCSV} className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg"><Download className="w-4 h-4" /><span className="hidden sm:inline">CSV</span></button>
-            <button onClick={() => { setFormError(''); setShowAddModal(true); }} className="flex items-center gap-2 px-4 py-2 text-sm text-slate-950 font-semibold bg-amber-500 hover:bg-amber-400 rounded-lg"><Plus className="w-4 h-4" />Nuevo Registro</button>
+            <button onClick={exportToCSV} className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg">
+              <Download className="w-4 h-4" /><span className="hidden sm:inline">CSV</span>
+            </button>
+            <button onClick={() => { setFormError(''); setShowAddModal(true); }} className="flex items-center gap-2 px-4 py-2 text-sm text-slate-950 font-semibold bg-amber-500 hover:bg-amber-400 rounded-lg">
+              <Plus className="w-4 h-4" />Nuevo Registro
+            </button>
           </div>
         </div>
       </header>
@@ -265,7 +276,10 @@ export default function App() {
                 <input type="date" value={newReq.end} onChange={e => setNewReq({ ...newReq, end: e.target.value })} className="bg-slate-900 border border-slate-700 text-slate-200 p-2 rounded text-sm" required />
               </div>
               <textarea placeholder="Notas / Turno de reemplazo" value={newReq.notes} onChange={e => setNewReq({ ...newReq, notes: e.target.value })} className="w-full bg-slate-900 border border-slate-700 text-slate-200 p-2 rounded text-sm" />
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-1 text-sm text-slate-300">Cancelar</button><button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded text-sm hover:bg-amber-400">Guardar</button></div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="px-3 py-1 text-sm text-slate-300">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded text-sm hover:bg-amber-400">Guardar</button>
+              </div>
             </form>
           </div>
         </div>
@@ -284,4 +298,14 @@ export default function App() {
                 <input type="text" placeholder="Puesto / Categoría" value={empForm.pos} onChange={e => setEmpForm({ ...empForm, pos: e.target.value })} className="bg-slate-900 border border-slate-700 text-slate-200 p-2 rounded text-sm" required />
               </div>
               <input type="number" placeholder="Días Máximos Asignados" value={empForm.maxDays} onChange={e => setEmpForm({ ...empForm, maxDays: e.target.value })} className="w-full bg-slate-900 border border-slate-700 text-slate-200 p-2 rounded text-sm" required />
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setShowEmpModal(false)} className="px-3 py-1 text-sm text-slate-300">Cancelar</button><bu
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setShowEmpModal(false)} className="px-3 py-1 text-sm text-slate-300">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold rounded text-sm hover:bg-amber-400">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

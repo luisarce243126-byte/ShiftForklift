@@ -95,7 +95,7 @@ export default function App() {
   });
 
   const [newVac, setNewVac] = useState({
-    operatorId: INITIAL_OPERATORS[0].id,
+    operatorId: INITIAL_OPERATORS[0]?.id || 'M-101',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
     type: 'Vacaciones',
@@ -288,7 +288,6 @@ export default function App() {
     downloadLink.click();
   };
 
-  // APERTURA DE MODAL CREAR
   const handleOpenAddModal = () => {
     setEditingOperator(null);
     setNewOp({
@@ -301,7 +300,6 @@ export default function App() {
     setIsAddOperatorOpen(true);
   };
 
-  // APERTURA DE MODAL EDITAR
   const handleOpenEditModal = (op) => {
     setEditingOperator(op);
     setNewOp({
@@ -314,7 +312,6 @@ export default function App() {
     setIsAddOperatorOpen(true);
   };
 
-  // GUARDAR (CREAR O EDITAR)
   const handleSaveOperator = (e) => {
     e.preventDefault();
     if (!newOp.name) return;
@@ -332,7 +329,6 @@ export default function App() {
     setEditingOperator(null);
   };
 
-  // ELIMINAR OPERADOR
   const handleDeleteOperator = (operatorId) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
       setOperators(prev => prev.filter(op => op.id !== operatorId));
@@ -452,7 +448,7 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        {/* MATRIZ DE HORARIOS */}
+        {/* TAB 1: MATRIZ */}
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-lg">
@@ -572,7 +568,7 @@ export default function App() {
           </div>
         )}
 
-        {/* SECCIÓN MONTACARGISTAS CON EDICIÓN Y ELIMINACIÓN */}
+        {/* TAB 2: PERSONAL */}
         {activeTab === 'operators' && (
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
@@ -603,7 +599,6 @@ export default function App() {
                           <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
                         </div>
                         
-                        {/* Botones de Editar y Eliminar */}
                         <div className="flex items-center space-x-1">
                           <button
                             onClick={() => handleOpenEditModal(op)}
@@ -661,7 +656,7 @@ export default function App() {
           </div>
         )}
 
-        {/* SECCIÓN PERMISOS */}
+        {/* TAB 3: PERMISOS */}
         {activeTab === 'vacations' && (
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
@@ -669,7 +664,10 @@ export default function App() {
                 <h2 className="text-lg font-bold text-white">Solicitudes de Vacaciones y Ausencias</h2>
                 <p className="text-xs text-emerald-300">Control de permisos de montacargistas</p>
               </div>
-              <button onClick={() => setIsRequestVacationOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md">
+              <button 
+                onClick={() => setIsRequestVacationOpen(true)} 
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md transition"
+              >
                 <Plus className="w-4 h-4" />
                 <span>Registrar Permiso / Vacaciones</span>
               </button>
@@ -698,13 +696,27 @@ export default function App() {
                         <td className="py-3.5 px-4">{req.type}</td>
                         <td className="py-3.5 px-4">{req.startDate} al {req.endDate}</td>
                         <td className="py-3.5 px-4">{req.reason}</td>
-                        <td className="py-3.5 px-4">{req.status}</td>
+                        <td className="py-3.5 px-4">
+                          <span className={`px-2.5 py-1 rounded-full font-bold text-[11px] ${
+                            req.status === 'Aprobado' ? 'bg-emerald-900 text-emerald-200 border border-emerald-500/40' :
+                            req.status === 'Rechazado' ? 'bg-red-950 text-red-300 border border-red-800' :
+                            'bg-amber-950 text-amber-300 border border-amber-700/50'
+                          }`}>
+                            {req.status}
+                          </span>
+                        </td>
                         <td className="py-3.5 px-4 text-center">
-                          {req.status === 'Pendiente' && (
+                          {req.status === 'Pendiente' ? (
                             <div className="flex items-center justify-center space-x-2">
-                              <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 text-white rounded-lg"><Check className="w-4 h-4"/></button>
-                              <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 text-white rounded-lg"><X className="w-4 h-4"/></button>
+                              <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar">
+                                <Check className="w-4 h-4"/>
+                              </button>
+                              <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition" title="Rechazar">
+                                <X className="w-4 h-4"/>
+                              </button>
                             </div>
+                          ) : (
+                            <span className="text-emerald-600 text-[10px]">Procesado</span>
                           )}
                         </td>
                       </tr>
@@ -717,7 +729,44 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL AGREGAR / EDITAR MONTACARGISTA */}
+      {/* MODAL 1: ASIGNAR TURNO EN CELDA */}
+      {selectedCell && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-400" />
+                Asignar Turno ({selectedCell.dateStr})
+              </h3>
+              <button onClick={() => setSelectedCell(null)} className="text-emerald-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              {Object.entries(SHIFT_TYPES).map(([code, config]) => {
+                const IconComp = config.icon;
+                return (
+                  <button
+                    key={code}
+                    onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code)}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition ${config.color} ${
+                      selectedCell.currentShift === code ? 'ring-2 ring-white scale-105' : ''
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span className="font-extrabold">{code}:</span> {config.label}
+                    </div>
+                    <IconComp className="w-4 h-4" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: CREAR / EDITAR MONTACARGISTA */}
       {isAddOperatorOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
@@ -811,6 +860,103 @@ export default function App() {
                   className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold"
                 >
                   {editingOperator ? 'Guardar Cambios' : 'Guardar Montacargista'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: REGISTRAR VACACIONES / PERMISOS */}
+      {isRequestVacationOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Palmtree className="w-5 h-5 text-emerald-400" />
+                Registrar Solicitud de Ausencia
+              </h3>
+              <button onClick={() => setIsRequestVacationOpen(false)} className="text-emerald-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateVacationRequest} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Montacargista</label>
+                <select
+                  value={newVac.operatorId}
+                  onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                >
+                  {operators.map(op => (
+                    <option key={op.id} value={op.id}>{op.name} ({op.id})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
+                  <input
+                    type="date"
+                    required
+                    value={newVac.startDate}
+                    onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })}
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
+                  <input
+                    type="date"
+                    required
+                    value={newVac.endDate}
+                    onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })}
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
+                <select
+                  value={newVac.type}
+                  onChange={(e) => setNewVac({ ...newVac, type: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="Vacaciones">Vacaciones Anuales</option>
+                  <option value="Día de Descanso Especial">Día de Descanso Especial</option>
+                  <option value="Licencia Médica / Incapacidad">Licencia Médica / Incapacidad</option>
+                  <option value="Permiso Personal">Permiso Personal</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Motivo / Observación</label>
+                <textarea
+                  rows={3}
+                  placeholder="Escriba aquí los detalles del permiso..."
+                  value={newVac.reason}
+                  onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="pt-4 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRequestVacationOpen(false)}
+                  className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold"
+                >
+                  Enviar Solicitud
                 </button>
               </div>
             </form>

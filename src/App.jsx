@@ -143,7 +143,6 @@ export default function App() {
       return;
     }
 
-    // Verificar si el propio empleado ya tiene una solicitud activa en este rango
     const selfOverlap = vacations.some(v =>
       v.employeeId === newReqEmployeeId &&
       v.status !== 'rejected' &&
@@ -517,4 +516,4 @@ export default function App() {
 
         {/* PESTAÑA 2: LISTA DE SOLICITUDES */}
         {activeTab === 'requests' && (
-          <div className=
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

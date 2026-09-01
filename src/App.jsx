@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, 
   Users, 
@@ -11,7 +11,6 @@ import {
   ChevronLeft, 
   ChevronRight, 
   Download, 
-  ShieldCheck, 
   Truck, 
   Sun, 
   Sunrise, 
@@ -21,19 +20,18 @@ import {
   Star, 
   Check, 
   X, 
-  Info,
-  Award,
-  FileImage
+  FileImage,
+  Layers
 } from 'lucide-react';
 
-// Tipos de Turnos disponibles con estilo Heineken
+// Tipos de Turnos disponibles con nombres simplificados (sin horas)
 const SHIFT_TYPES = {
-  M: { code: 'M', label: 'Mañana', time: '06:00 - 14:00', color: 'bg-emerald-800/60 text-emerald-200 border-emerald-500/40 hover:bg-emerald-700/60', canvasColor: '#065f46', icon: Sunrise },
-  T: { code: 'T', label: 'Tarde', time: '14:00 - 22:00', color: 'bg-amber-600/30 text-amber-300 border-amber-500/40 hover:bg-amber-600/40', canvasColor: '#d97706', icon: Sun },
-  N: { code: 'N', label: 'Noche', time: '22:00 - 06:00', color: 'bg-indigo-900/60 text-indigo-200 border-indigo-500/40 hover:bg-indigo-800/60', canvasColor: '#3730a3', icon: Moon },
-  DES: { code: 'DES', label: 'Descanso', time: 'Día Libre', color: 'bg-emerald-950 text-emerald-400 border-emerald-700/40 hover:bg-emerald-900', canvasColor: '#022c22', icon: Coffee },
-  VAC: { code: 'VAC', label: 'Vacaciones', time: 'Periodo Vacacional', color: 'bg-purple-900/50 text-purple-200 border-purple-500/40 hover:bg-purple-800/50', canvasColor: '#6b21a8', icon: Palmtree },
-  INC: { code: 'INC', label: 'Incapacidad', time: 'Licencia Médica', color: 'bg-red-900/60 text-red-200 border-red-500/40 hover:bg-red-800/60', canvasColor: '#991b1b', icon: AlertTriangle }
+  M: { code: 'M', label: 'Mañana', color: 'bg-emerald-800/80 text-emerald-100 border-emerald-500/50 hover:bg-emerald-700/90', canvasColor: '#065f46', icon: Sunrise },
+  T: { code: 'T', label: 'Tarde', color: 'bg-amber-600/40 text-amber-200 border-amber-500/50 hover:bg-amber-600/60', canvasColor: '#d97706', icon: Sun },
+  N: { code: 'N', label: 'Noche', color: 'bg-indigo-900/80 text-indigo-100 border-indigo-500/50 hover:bg-indigo-800/90', canvasColor: '#3730a3', icon: Moon },
+  DES: { code: 'DES', label: 'Descanso', color: 'bg-emerald-950 text-emerald-400 border-emerald-800/60 hover:bg-emerald-900', canvasColor: '#022c22', icon: Coffee },
+  VAC: { code: 'VAC', label: 'Vacaciones', color: 'bg-purple-900/70 text-purple-200 border-purple-500/50 hover:bg-purple-800/70', canvasColor: '#6b21a8', icon: Palmtree },
+  INC: { code: 'INC', label: 'Incapacidad', color: 'bg-red-900/80 text-red-200 border-red-500/50 hover:bg-red-800/80', canvasColor: '#991b1b', icon: AlertTriangle }
 };
 
 const WAREHOUSE_ZONES = [
@@ -92,7 +90,15 @@ export default function App() {
     zone: WAREHOUSE_ZONES[1],
     equipment: FORKLIFT_TYPES[0],
     shiftPattern: 'Mañana',
-    licenseExpiry: ''
+    licenseExpiry: '2027-12-31'
+  });
+
+  const [newVac, setNewVac] = useState({
+    operatorId: INITIAL_OPERATORS[0].id,
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+    type: 'Vacaciones',
+    reason: ''
   });
 
   const weekDays = useMemo(() => {
@@ -190,7 +196,7 @@ export default function App() {
     canvas.width = width;
     canvas.height = height;
 
-    // Fondo Verde Botella Principal (Heineken Dark Emerald)
+    // Fondo Verde Botella Principal
     ctx.fillStyle = '#022415';
     ctx.fillRect(0, 0, width, height);
 
@@ -198,12 +204,12 @@ export default function App() {
     ctx.fillStyle = '#005826';
     ctx.fillRect(0, 0, width, 95);
 
-    // Dibujar Estrella Roja Heineken
+    // Dibujar Estrella Roja
     ctx.fillStyle = '#e31b23';
     ctx.font = 'bold 42px sans-serif';
     ctx.fillText('★', 35, 60);
 
-    // Título Principal en Blanco
+    // Título Principal
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 24px system-ui, sans-serif';
     ctx.fillText('PROGRAMACIÓN SEMANAL DE MONTACARGISTAS', 85, 45);
@@ -235,39 +241,32 @@ export default function App() {
     filteredOperators.forEach((op, rIdx) => {
       const y = tableTop + 45 + (rIdx * rowHeight);
 
-      // Fondo de fila alternado
       ctx.fillStyle = rIdx % 2 === 0 ? '#043420' : '#022818';
       ctx.fillRect(30, y, width - 60, rowHeight - 4);
       
-      // Borde de la fila
       ctx.strokeStyle = '#005826';
       ctx.lineWidth = 1;
       ctx.strokeRect(30, y, width - 60, rowHeight - 4);
 
-      // Nombre del Operador
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 14px system-ui, sans-serif';
       ctx.fillText(op.name, 45, y + 26);
 
-      // Subtexto (ID y Zona)
       ctx.fillStyle = '#6ee7b7';
       ctx.font = '11px system-ui, sans-serif';
       ctx.fillText(`${op.id} • ${op.zone}`, 45, y + 46);
 
-      // Celdas de Turnos
       weekDays.forEach((day, cIdx) => {
         const x = 330 + (cIdx * colWidth);
         const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
         const shiftConfig = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
 
-        // Tarjeta del Turno
         ctx.fillStyle = shiftConfig.canvasColor;
         const boxX = x + 8;
         const boxY = y + 10;
         const boxW = colWidth - 16;
         const boxH = 40;
 
-        // Dibujar rectángulo redondeado
         ctx.beginPath();
         if (ctx.roundRect) {
           ctx.roundRect(boxX, boxY, boxW, boxH, 8);
@@ -276,7 +275,6 @@ export default function App() {
         }
         ctx.fill();
 
-        // Código del turno
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 14px system-ui, sans-serif';
         ctx.textAlign = 'center';
@@ -285,13 +283,11 @@ export default function App() {
       });
     });
 
-    // Pie de Imagen
     const footerY = height - 25;
     ctx.fillStyle = '#6ee7b7';
     ctx.font = '12px system-ui, sans-serif';
     ctx.fillText('★ Generado por ShiftForklift - Control de Horarios y Rotación de Almacén', 35, footerY);
 
-    // Descargar PNG
     const dataUrl = canvas.toDataURL('image/png');
     const downloadLink = document.createElement('a');
     downloadLink.download = `Horarios_Montacargas_${currentWeekStart}.png`;
@@ -304,8 +300,35 @@ export default function App() {
     if (!newOp.name) return;
     const newId = `M-${100 + operators.length + 1}`;
     setOperators([...operators, { id: newId, ...newOp, status: 'Activo' }]);
-    setNewOp({ name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], shiftPattern: 'Mañana', licenseExpiry: '' });
+    setNewOp({ name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], shiftPattern: 'Mañana', licenseExpiry: '2027-12-31' });
     setIsAddOperatorOpen(false);
+  };
+
+  const handleCreateVacationRequest = (e) => {
+    e.preventDefault();
+    const op = operators.find(o => o.id === newVac.operatorId);
+    if (!op) return;
+
+    const newReq = {
+      id: vacationRequests.length + 1,
+      operatorId: op.id,
+      operatorName: op.name,
+      startDate: newVac.startDate,
+      endDate: newVac.endDate,
+      type: newVac.type,
+      status: 'Pendiente',
+      reason: newVac.reason || 'Solicitud de ausencia'
+    };
+
+    setVacationRequests([newReq, ...vacationRequests]);
+    setIsRequestVacationOpen(false);
+    setNewVac({
+      operatorId: operators[0]?.id || 'M-101',
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+      type: 'Vacaciones',
+      reason: ''
+    });
   };
 
   const handleVacationStatus = (id, newStatus) => {
@@ -323,7 +346,6 @@ export default function App() {
       <header className="border-b border-emerald-800/60 bg-[#00471f]/90 backdrop-blur sticky top-0 z-30 shadow-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            {/* Estrella Roja Heineken e Icono */}
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
               <Truck className="w-5 h-5 text-emerald-200" />
               <Star className="w-4 h-4 text-red-600 fill-red-600 absolute -top-1 -right-1 filter drop-shadow" />
@@ -347,7 +369,7 @@ export default function App() {
               }`}
             >
               <CalendarIcon className="w-4 h-4" />
-              <span>Matriz de Horarios</span>
+              <span>Matriz</span>
             </button>
             <button
               onClick={() => setActiveTab('operators')}
@@ -358,7 +380,7 @@ export default function App() {
               }`}
             >
               <Users className="w-4 h-4" />
-              <span>Montacargistas ({operators.length})</span>
+              <span>Personal ({operators.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('vacations')}
@@ -369,7 +391,7 @@ export default function App() {
               }`}
             >
               <Palmtree className="w-4 h-4" />
-              <span>Vacaciones / Permisos</span>
+              <span>Permisos</span>
               {vacationRequests.filter(r => r.status === 'Pendiente').length > 0 && (
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
               )}
@@ -396,6 +418,37 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* BARRA MÓVIL DE NAVEGACIÓN */}
+      <div className="md:hidden flex bg-[#02180d] p-2 border-b border-emerald-900 justify-around">
+        <button
+          onClick={() => setActiveTab('scheduler')}
+          className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-lg ${
+            activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-400'
+          }`}
+        >
+          <CalendarIcon className="w-3.5 h-3.5" />
+          <span>Matriz</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('operators')}
+          className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-lg ${
+            activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-400'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>Personal</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('vacations')}
+          className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-lg ${
+            activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-400'
+          }`}
+        >
+          <Palmtree className="w-3.5 h-3.5" />
+          <span>Permisos</span>
+        </button>
+      </div>
 
       {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
@@ -464,187 +517,218 @@ export default function App() {
               </div>
             </div>
 
-            {/* LEYENDA DE TURNOS */}
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-[#002e14]/60 p-3 rounded-xl border border-emerald-800/40 text-xs">
-              <span className="font-bold text-emerald-300 flex items-center gap-1.5">
-                <Star className="w-3.5 h-3.5 text-red-500 fill-red-500" /> Claves de Turno Heineken:
+            {/* LEYENDA DE TURNOS SIMPLIFICADA (SIN RANGOS DE HORAS) */}
+            <div className="bg-[#002e14]/60 border border-emerald-900/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5" /> Leyenda de Turnos:
               </span>
-              <div className="flex flex-wrap items-center gap-2">
-                {Object.values(SHIFT_TYPES).map(s => {
-                  const Icon = s.icon;
+              <div className="flex flex-wrap gap-2">
+                {Object.values(SHIFT_TYPES).map(st => {
+                  const IconComp = st.icon;
                   return (
-                    <div key={s.code} className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-[11px] ${s.color}`}>
-                      <Icon className="w-3.5 h-3.5" />
-                      <span className="font-bold">{s.code}</span>
-                      <span className="hidden sm:inline opacity-90">- {s.label}</span>
+                    <div key={st.code} className={`px-2.5 py-1 rounded-lg border text-xs font-medium flex items-center gap-1.5 ${st.color}`}>
+                      <IconComp className="w-3.5 h-3.5" />
+                      <span className="font-bold">{st.code}:</span> {st.label}
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* MATRIZ / TABLA */}
-            <div className="bg-[#002e14] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-2xl">
+            {/* TABLA PRINCIPAL DE MATRIZ DE TURNOS */}
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-2xl">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[900px]">
+                <table className="w-full border-collapse min-w-[900px]">
                   <thead>
-                    <tr className="bg-[#01190e] border-b border-emerald-800/80 text-emerald-300 text-xs uppercase tracking-wider">
-                      <th className="p-4 w-64 sticky left-0 bg-[#01190e] z-20">Montacargista / Zona</th>
+                    <tr className="bg-[#001f0d] border-b border-emerald-800/80">
+                      <th className="py-3.5 px-4 text-left text-xs font-bold text-emerald-300 uppercase tracking-wider w-64">
+                        Montacargista / Área
+                      </th>
                       {weekDays.map((day) => (
                         <th 
                           key={day.dateStr} 
-                          className={`p-3 text-center border-l border-emerald-900 ${day.isWeekend ? 'bg-[#032616]' : ''}`}
+                          className={`py-3.5 px-2 text-center border-l border-emerald-900/60 ${
+                            day.isWeekend ? 'bg-red-950/20' : ''
+                          }`}
                         >
-                          <div className={day.isWeekend ? 'text-red-500 font-bold' : 'text-emerald-400 font-bold'}>{day.dayName}</div>
-                          <div className="text-white text-sm font-bold">{day.dayNumber} {day.monthName}</div>
+                          <div className="text-xs font-bold text-emerald-200 uppercase">{day.dayName}</div>
+                          <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>
+                            {day.dayNumber}
+                          </div>
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-emerald-900/60 text-xs">
-                    {filteredOperators.map((op) => {
-                      const expired = isLicenseExpired(op.licenseExpiry);
-                      return (
-                        <tr key={op.id} className="hover:bg-emerald-900/30 transition">
-                          
-                          {/* Datos Operador */}
-                          <td className="p-4 sticky left-0 bg-[#002913] border-r border-emerald-900 z-10">
-                            <div className="flex items-start justify-between">
+                  <tbody className="divide-y divide-emerald-900/50">
+                    {filteredOperators.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="py-12 text-center text-emerald-500">
+                          No se encontraron montacargistas con los filtros seleccionados.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOperators.map((op) => (
+                        <tr key={op.id} className="hover:bg-[#003517]/50 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center justify-between">
                               <div>
-                                <div className="font-bold text-white text-sm flex items-center space-x-1.5">
-                                  <span>{op.name}</span>
-                                  {expired && (
-                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400 animate-pulse" title="Licencia Vencida" />
+                                <div className="font-bold text-sm text-white flex items-center gap-1.5">
+                                  {op.name}
+                                  {isLicenseExpired(op.licenseExpiry) && (
+                                    <span title="Licencia Vencida">
+                                      <AlertTriangle className="w-4 h-4 text-red-500 animate-bounce" />
+                                    </span>
                                   )}
                                 </div>
-                                <div className="text-[11px] text-emerald-300 font-medium mt-0.5">{op.zone}</div>
-                                <div className="text-[10px] text-emerald-500 flex items-center space-x-1 mt-1">
-                                  <Truck className="w-3 h-3" />
-                                  <span>{op.equipment}</span>
+                                <div className="text-xs text-emerald-400/80 font-medium">
+                                  {op.id} • <span className="text-emerald-300">{op.zone}</span>
+                                </div>
+                                <div className="text-[10px] text-emerald-500 truncate max-w-[200px]">
+                                  {op.equipment}
                                 </div>
                               </div>
-                              <span className="text-[10px] font-mono bg-[#01190e] text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-800">
-                                {op.id}
-                              </span>
                             </div>
                           </td>
 
-                          {/* Celdas Semanales */}
                           {weekDays.map((day) => {
-                            const key = `${op.id}_${day.dateStr}`;
-                            const currentShiftCode = scheduleData[key] || 'DES';
-                            const shiftInfo = SHIFT_TYPES[currentShiftCode] || SHIFT_TYPES.DES;
-                            const ShiftIcon = shiftInfo.icon;
+                            const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+                            const shift = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
+                            const IconComponent = shift.icon;
 
                             return (
                               <td 
                                 key={day.dateStr} 
-                                className={`p-2 border-l border-emerald-900/60 text-center ${
-                                  day.isWeekend ? 'bg-[#01180d]/40' : ''
+                                className={`p-1.5 text-center border-l border-emerald-900/40 relative ${
+                                  day.isWeekend ? 'bg-red-950/10' : ''
                                 }`}
                               >
                                 <button
-                                  onClick={() => setSelectedCell({ operatorId: op.id, date: day.dateStr, currentShift: currentShiftCode, name: op.name })}
-                                  className={`w-full py-2.5 px-1 rounded-xl border flex flex-col items-center justify-center transition-all hover:scale-[1.03] active:scale-95 shadow-sm ${shiftInfo.color}`}
+                                  onClick={() => setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
+                                  className={`w-full py-2 px-1 rounded-xl border text-xs font-bold transition-all duration-150 flex flex-col items-center justify-center gap-0.5 shadow-sm hover:scale-105 ${shift.color}`}
                                 >
-                                  <ShiftIcon className="w-4 h-4 mb-1" />
-                                  <span className="font-bold text-xs tracking-wider">{shiftInfo.code}</span>
+                                  <IconComponent className="w-3.5 h-3.5" />
+                                  <span>{shift.code}</span>
                                 </button>
                               </td>
                             );
                           })}
                         </tr>
-                      );
-                    })}
+                      ))
+                    )}
                   </tbody>
-
-                  {/* COBERTURA DIARIA */}
-                  <tfoot>
-                    <tr className="bg-[#01190e] border-t border-emerald-800 font-semibold text-xs">
-                      <td className="p-4 sticky left-0 bg-[#01190e] text-emerald-300 border-r border-emerald-900">
-                        <div className="flex items-center space-x-2">
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
-                          <span>Operadores Activos:</span>
-                        </div>
-                      </td>
-                      {weekDays.map((day) => {
-                        const cov = dailyCoverage[day.dateStr] || { M:0, T:0, N:0 };
-                        const totalActivos = cov.M + cov.T + cov.N;
-
-                        return (
-                          <td key={day.dateStr} className="p-3 text-center border-l border-emerald-900">
-                            <span className="text-sm font-bold text-emerald-300">{totalActivos} Op.</span>
-                            <div className="text-[10px] text-emerald-400 flex justify-center space-x-1 mt-1 font-mono">
-                              <span title="Mañana">M:{cov.M}</span>
-                              <span title="Tarde">T:{cov.T}</span>
-                              <span title="Noche">N:{cov.N}</span>
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  </tfoot>
                 </table>
+              </div>
+            </div>
+
+            {/* COBERTURA Y RESUMEN DIARIO */}
+            <div className="bg-[#002e14] border border-emerald-800/80 rounded-2xl p-5 shadow-xl">
+              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                Resumen de Cobertura de Operadores por Día
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
+                {weekDays.map(day => {
+                  const cov = dailyCoverage[day.dateStr];
+                  const activeTotal = cov.M + cov.T + cov.N;
+                  return (
+                    <div key={day.dateStr} className="bg-[#011d0e] border border-emerald-900/90 rounded-xl p-3 text-xs">
+                      <div className="font-bold text-emerald-300 border-b border-emerald-900 pb-1 mb-2 text-center">
+                        {day.dayName} {day.dayNumber}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-emerald-200">
+                          <span className="flex items-center gap-1"><Sunrise className="w-3 h-3 text-emerald-400"/> Mañana:</span>
+                          <span className="font-bold">{cov.M}</span>
+                        </div>
+                        <div className="flex justify-between text-amber-200">
+                          <span className="flex items-center gap-1"><Sun className="w-3 h-3 text-amber-400"/> Tarde:</span>
+                          <span className="font-bold">{cov.T}</span>
+                        </div>
+                        <div className="flex justify-between text-indigo-200">
+                          <span className="flex items-center gap-1"><Moon className="w-3 h-3 text-indigo-400"/> Noche:</span>
+                          <span className="font-bold">{cov.N}</span>
+                        </div>
+                        <div className="pt-1.5 border-t border-emerald-900/80 flex justify-between font-bold text-white">
+                          <span>Activos:</span>
+                          <span className="text-emerald-400">{activeTotal}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
         )}
 
-        {/* 2. OPERADORES */}
+        {/* 2. SECCIÓN MONTACARGISTAS */}
         {activeTab === 'operators' && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#003818] p-4 rounded-2xl border border-emerald-800">
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Users className="w-5 h-5 text-emerald-400" /> Plantilla de Montacargistas
-                </h2>
-                <p className="text-xs text-emerald-300/80">Control de equipos y certificaciones de manejo.</p>
+                <h2 className="text-lg font-bold text-white">Plantilla de Montacargistas</h2>
+                <p className="text-xs text-emerald-300">Gestión de licencias, equipos asignados y zonas de trabajo</p>
               </div>
               <button
                 onClick={() => setIsAddOperatorOpen(true)}
-                className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition"
+                className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md"
               >
                 <Plus className="w-4 h-4" />
-                <span>Agregar Operador</span>
+                <span>Agregar Nuevo Operador</span>
               </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {operators.map((op) => {
+              {operators.map(op => {
                 const expired = isLicenseExpired(op.licenseExpiry);
                 return (
-                  <div key={op.id} className="bg-[#002e14] border border-emerald-800 rounded-2xl p-5 hover:border-emerald-600 transition space-y-4 shadow-lg">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-xl bg-[#00471f] border border-emerald-600/40 flex items-center justify-center text-emerald-300 font-bold">
-                          {op.name.charAt(0)}
-                        </div>
+                  <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg relative overflow-hidden flex flex-col justify-between">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl"></div>
+                    <div>
+                      <div className="flex items-start justify-between mb-3">
                         <div>
-                          <h3 className="font-bold text-white text-sm">{op.name}</h3>
-                          <span className="text-xs font-mono text-emerald-400">{op.id}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
+                            {op.id}
+                          </span>
+                          <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
                         </div>
-                      </div>
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-emerald-950 text-emerald-400 border border-emerald-700">
-                        {op.status}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 text-xs divide-y divide-emerald-900/60 pt-1">
-                      <div className="flex justify-between py-1 text-emerald-200">
-                        <span className="text-emerald-400">Zona de Trabajo:</span>
-                        <span className="font-semibold text-white">{op.zone}</span>
-                      </div>
-                      <div className="flex justify-between py-1 text-emerald-200">
-                        <span className="text-emerald-400">Maquinaria:</span>
-                        <span className="font-medium">{op.equipment}</span>
-                      </div>
-                      <div className="flex justify-between py-1 text-emerald-200 items-center">
-                        <span className="text-emerald-400">Vigencia Licencia DC-3:</span>
-                        <span className={`font-mono ${expired ? 'text-red-400 font-bold' : 'text-emerald-200'}`}>
-                          {op.licenseExpiry || 'N/A'}
+                        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">
+                          {op.status}
                         </span>
                       </div>
+
+                      <div className="space-y-2 text-xs border-t border-emerald-900/80 pt-3 text-emerald-200">
+                        <div className="flex justify-between">
+                          <span className="text-emerald-400/80">Zona:</span>
+                          <span className="font-semibold text-white">{op.zone}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-emerald-400/80">Equipo:</span>
+                          <span className="font-semibold text-white text-right">{op.equipment}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-emerald-400/80">Turno Base:</span>
+                          <span className="font-semibold text-emerald-300">{op.shiftPattern}</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-1">
+                          <span className="text-emerald-400/80">Venc. Licencia:</span>
+                          <span className={`font-bold px-2 py-0.5 rounded ${
+                            expired 
+                              ? 'bg-red-900/80 text-red-200 border border-red-500/50' 
+                              : 'bg-emerald-950 text-emerald-300'
+                          }`}>
+                            {op.licenseExpiry || 'N/A'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
+
+                    {expired && (
+                      <div className="mt-4 p-2 bg-red-950/60 border border-red-800/80 rounded-xl flex items-center gap-2 text-xs text-red-300">
+                        <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                        <span>Licencia vencida. Requiere recertificación DC-3.</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -652,79 +736,83 @@ export default function App() {
           </div>
         )}
 
-        {/* 3. VACACIONES */}
+        {/* 3. SECCIÓN VACACIONES Y PERMISOS */}
         {activeTab === 'vacations' && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#003818] p-4 rounded-2xl border border-emerald-800">
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Palmtree className="w-5 h-5 text-purple-400" /> Solicitudes de Vacaciones y Permisos
-                </h2>
-                <p className="text-xs text-emerald-300/80">Gestión de ausencias aprobadas.</p>
+                <h2 className="text-lg font-bold text-white">Solicitudes de Vacaciones y Ausencias</h2>
+                <p className="text-xs text-emerald-300">Control de permisos de montacargistas para evitar falta de cobertura</p>
               </div>
               <button
                 onClick={() => setIsRequestVacationOpen(true)}
-                className="bg-purple-700 hover:bg-purple-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 shadow-md"
               >
                 <Plus className="w-4 h-4" />
-                <span>Registrar Solicitud</span>
+                <span>Registrar Permiso / Vacaciones</span>
               </button>
             </div>
 
-            <div className="bg-[#002e14] border border-emerald-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-[#01190e] border-b border-emerald-800 text-emerald-300 uppercase tracking-wider">
-                      <th className="p-4">Operador</th>
-                      <th className="p-4">Tipo</th>
-                      <th className="p-4">Periodo</th>
-                      <th className="p-4">Motivo</th>
-                      <th className="p-4 text-center">Estado</th>
-                      <th className="p-4 text-right">Acciones</th>
+                    <tr className="bg-[#001f0d] border-b border-emerald-800/80 text-emerald-300 text-xs font-bold uppercase">
+                      <th className="py-3.5 px-4">Operador</th>
+                      <th className="py-3.5 px-4">Tipo</th>
+                      <th className="py-3.5 px-4">Periodo</th>
+                      <th className="py-3.5 px-4">Motivo / Observación</th>
+                      <th className="py-3.5 px-4">Estado</th>
+                      <th className="py-3.5 px-4 text-center">Acciones</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-emerald-900">
-                    {vacationRequests.map((req) => (
-                      <tr key={req.id} className="hover:bg-emerald-900/30">
-                        <td className="p-4 font-bold text-white">
-                          <div>{req.operatorName}</div>
-                          <span className="text-[10px] font-mono text-emerald-400">{req.operatorId}</span>
+                  <tbody className="divide-y divide-emerald-900/50 text-xs">
+                    {vacationRequests.map(req => (
+                      <tr key={req.id} className="hover:bg-[#003517]/50">
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-white">{req.operatorName}</div>
+                          <div className="text-[10px] text-emerald-400">{req.operatorId}</div>
                         </td>
-                        <td className="p-4">
-                          <span className="px-2.5 py-1 rounded-lg bg-purple-900/40 text-purple-300 border border-purple-600/30 font-medium">
+                        <td className="py-3.5 px-4">
+                          <span className="px-2 py-1 rounded bg-emerald-950 border border-emerald-800 text-emerald-300 font-medium">
                             {req.type}
                           </span>
                         </td>
-                        <td className="p-4 text-emerald-200 font-mono">
+                        <td className="py-3.5 px-4 text-emerald-200">
                           {req.startDate} al {req.endDate}
                         </td>
-                        <td className="p-4 text-emerald-300/80 max-w-xs truncate">{req.reason}</td>
-                        <td className="p-4 text-center">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
-                            req.status === 'Aprobado' 
-                              ? 'bg-emerald-950 text-emerald-400 border-emerald-600' 
-                              : 'bg-red-950 text-red-400 border-red-600'
+                        <td className="py-3.5 px-4 text-emerald-300/80 max-w-xs truncate">
+                          {req.reason}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`px-2.5 py-1 rounded-full font-bold text-[11px] ${
+                            req.status === 'Aprobado' ? 'bg-emerald-900 text-emerald-200 border border-emerald-500/40' :
+                            req.status === 'Rechazado' ? 'bg-red-950 text-red-300 border border-red-800' :
+                            'bg-amber-950 text-amber-300 border border-amber-700/50'
                           }`}>
                             {req.status}
                           </span>
                         </td>
-                        <td className="p-4 text-right space-x-2">
-                          {req.status === 'Pendiente' && (
-                            <>
+                        <td className="py-3.5 px-4 text-center">
+                          {req.status === 'Pendiente' ? (
+                            <div className="flex items-center justify-center space-x-2">
                               <button
                                 onClick={() => handleVacationStatus(req.id, 'Aprobado')}
-                                className="p-1.5 bg-emerald-800/40 hover:bg-emerald-700/60 text-emerald-300 rounded-lg border border-emerald-600/40"
+                                className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition"
+                                title="Aprobar"
                               >
                                 <Check className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleVacationStatus(req.id, 'Rechazado')}
-                                className="p-1.5 bg-red-800/40 hover:bg-red-700/60 text-red-300 rounded-lg border border-red-600/40"
+                                className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition"
+                                title="Rechazar"
                               >
                                 <X className="w-4 h-4" />
                               </button>
-                            </>
+                            </div>
+                          ) : (
+                            <span className="text-emerald-600 text-[10px]">Procesado</span>
                           )}
                         </td>
                       </tr>
@@ -735,43 +823,46 @@ export default function App() {
             </div>
           </div>
         )}
-
       </main>
 
-      {/* MODAL: CAMBIO DE TURNO */}
+      {/* MODAL PARA CAMBIAR TURNO EN CELDA */}
       {selectedCell && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#01140b]/80 backdrop-blur-sm">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
-              <div>
-                <h3 className="font-bold text-white text-base">Asignar Turno</h3>
-                <p className="text-xs text-emerald-300">{selectedCell.name} — {selectedCell.date}</p>
-              </div>
-              <button onClick={() => setSelectedCell(null)} className="text-emerald-400 hover:text-white">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-400" />
+                Asignar Turno ({selectedCell.dateStr})
+              </h3>
+              <button 
+                onClick={() => setSelectedCell(null)}
+                className="text-emerald-400 hover:text-white"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
+            
+            <p className="text-xs text-emerald-300 mb-4">
+              Seleccione el nuevo turno para el operador asignado:
+            </p>
 
-            <div className="grid grid-cols-2 gap-3">
-              {Object.values(SHIFT_TYPES).map((s) => {
-                const Icon = s.icon;
-                const isSelected = selectedCell.currentShift === s.code;
+            <div className="grid grid-cols-2 gap-2.5">
+              {Object.entries(SHIFT_TYPES).map(([code, config]) => {
+                const IconComp = config.icon;
                 return (
                   <button
-                    key={s.code}
-                    onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.date, s.code)}
-                    className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${s.color} ${
-                      isSelected ? 'ring-2 ring-red-500 scale-[1.02]' : 'opacity-90'
+                    key={code}
+                    onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code)}
+                    className={`p-3 rounded-xl border text-left flex items-center justify-between transition ${config.color} ${
+                      selectedCell.currentShift === code ? 'ring-2 ring-white scale-105' : ''
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <Icon className="w-5 h-5" />
-                      <span className="font-bold text-sm">{s.code}</span>
-                    </div>
                     <div>
-                      <div className="font-semibold text-xs">{s.label}</div>
-                      <div className="text-[10px] opacity-75 mt-0.5">{s.time}</div>
+                      <div className="text-xs font-bold flex items-center gap-1.5">
+                        <span className="font-extrabold">{code}:</span> {config.label}
+                      </div>
                     </div>
+                    <IconComp className="w-4 h-4" />
                   </button>
                 );
               })}
@@ -780,15 +871,15 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: NUEVO OPERADOR */}
+      {/* MODAL AGREGAR MONTACARGISTA */}
       {isAddOperatorOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#01140b]/80 backdrop-blur-sm">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl w-full max-w-lg p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
-              <div className="flex items-center space-x-2">
-                <Truck className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-white text-base">Alta de Montacargista</h3>
-              </div>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Truck className="w-5 h-5 text-red-500" />
+                Registrar Nuevo Montacargista
+              </h3>
               <button onClick={() => setIsAddOperatorOpen(false)} className="text-emerald-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
@@ -796,24 +887,24 @@ export default function App() {
 
             <form onSubmit={handleAddOperator} className="space-y-4 text-xs">
               <div>
-                <label className="block text-emerald-300 font-semibold mb-1">Nombre Completo</label>
+                <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej. Juan Pérez"
+                  placeholder="Ej. Juan Carlos Pérez"
                   value={newOp.name}
                   onChange={(e) => setNewOp({ ...newOp, name: e.target.value })}
-                  className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-emerald-300 font-semibold mb-1">Zona</label>
+                  <label className="block text-emerald-300 font-bold mb-1">Zona de Almacén</label>
                   <select
                     value={newOp.zone}
                     onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })}
-                    className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                   >
                     {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => (
                       <option key={z} value={z}>{z}</option>
@@ -822,14 +913,14 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-emerald-300 font-semibold mb-1">Tipo de Montacargas</label>
+                  <label className="block text-emerald-300 font-bold mb-1">Tipo de Montacargas</label>
                   <select
                     value={newOp.equipment}
                     onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })}
-                    className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                   >
-                    {FORKLIFT_TYPES.map(eq => (
-                      <option key={eq} value={eq}>{eq}</option>
+                    {FORKLIFT_TYPES.map(ft => (
+                      <option key={ft} value={ft}>{ft}</option>
                     ))}
                   </select>
                 </div>
@@ -837,11 +928,11 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-emerald-300 font-semibold mb-1">Turno Base</label>
+                  <label className="block text-emerald-300 font-bold mb-1">Turno Predeterminado</label>
                   <select
                     value={newOp.shiftPattern}
                     onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })}
-                    className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                   >
                     <option value="Mañana">Mañana</option>
                     <option value="Tarde">Tarde</option>
@@ -850,30 +941,30 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-emerald-300 font-semibold mb-1">Vencimiento Licencia</label>
+                  <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC-3</label>
                   <input
                     type="date"
                     required
                     value={newOp.licenseExpiry}
                     onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })}
-                    className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3 border-t border-emerald-800">
+              <div className="pt-4 flex justify-end space-x-2">
                 <button
                   type="button"
                   onClick={() => setIsAddOperatorOpen(false)}
-                  className="px-4 py-2 bg-[#01190e] text-emerald-300 font-semibold rounded-xl"
+                  className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl shadow-lg"
+                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold"
                 >
-                  Guardar Operador
+                  Guardar Montacargista
                 </button>
               </div>
             </form>
@@ -881,76 +972,95 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: REGISTRAR VACACIONES */}
+      {/* MODAL NUEVA SOLICITUD DE VACACIONES / PERMISO */}
       {isRequestVacationOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#01140b]/80 backdrop-blur-sm">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-emerald-800 pb-3">
-              <div className="flex items-center space-x-2">
-                <Palmtree className="w-5 h-5 text-purple-400" />
-                <h3 className="font-bold text-white text-base">Registrar Permiso</h3>
-              </div>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Palmtree className="w-5 h-5 text-emerald-400" />
+                Registrar Solicitud de Ausencia
+              </h3>
               <button onClick={() => setIsRequestVacationOpen(false)} className="text-emerald-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const form = e.target;
-              const opId = form.operatorId.value;
-              const op = operators.find(o => o.id === opId);
-              setVacationRequests([{
-                id: Date.now(),
-                operatorId: opId,
-                operatorName: op ? op.name : 'Operador',
-                startDate: form.startDate.value,
-                endDate: form.endDate.value,
-                type: form.type.value,
-                status: 'Pendiente',
-                reason: form.reason.value
-              }, ...vacationRequests]);
-              setIsRequestVacationOpen(false);
-            }} className="space-y-4 text-xs">
+            <form onSubmit={handleCreateVacationRequest} className="space-y-4 text-xs">
               <div>
-                <label className="block text-emerald-300 font-semibold mb-1">Montacargista</label>
-                <select name="operatorId" required className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500">
+                <label className="block text-emerald-300 font-bold mb-1">Montacargista</label>
+                <select
+                  value={newVac.operatorId}
+                  onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                >
                   {operators.map(op => (
                     <option key={op.id} value={op.id}>{op.name} ({op.id})</option>
                   ))}
                 </select>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
+                  <input
+                    type="date"
+                    required
+                    value={newVac.startDate}
+                    onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })}
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
+                  <input
+                    type="date"
+                    required
+                    value={newVac.endDate}
+                    onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })}
+                    className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-emerald-300 font-semibold mb-1">Tipo de Permiso</label>
-                <select name="type" className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500">
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
+                <select
+                  value={newVac.type}
+                  onChange={(e) => setNewVac({ ...newVac, type: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                >
                   <option value="Vacaciones">Vacaciones Anuales</option>
                   <option value="Día de Descanso Especial">Día de Descanso Especial</option>
-                  <option value="Incapacidad Médica">Incapacidad Médica</option>
+                  <option value="Licencia Médica / Incapacidad">Licencia Médica / Incapacidad</option>
+                  <option value="Permiso Personal">Permiso Personal</option>
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-emerald-300 font-semibold mb-1">Inicio</label>
-                  <input type="date" name="startDate" required className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500" />
-                </div>
-                <div>
-                  <label className="block text-emerald-300 font-semibold mb-1">Fin</label>
-                  <input type="date" name="endDate" required className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500" />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-emerald-300 font-semibold mb-1">Motivo</label>
-                <textarea name="reason" rows={2} className="w-full bg-[#01190e] border border-emerald-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"></textarea>
+                <label className="block text-emerald-300 font-bold mb-1">Motivo / Observación</label>
+                <textarea
+                  rows={3}
+                  placeholder="Escriba aquí los detalles del permiso..."
+                  value={newVac.reason}
+                  onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3 border-t border-emerald-800">
-                <button type="button" onClick={() => setIsRequestVacationOpen(false)} className="px-4 py-2 bg-[#01190e] text-emerald-300 font-semibold rounded-xl">
+              <div className="pt-4 flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRequestVacationOpen(false)}
+                  className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900"
+                >
                   Cancelar
                 </button>
-                <button type="submit" className="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white font-bold rounded-xl shadow-lg">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold"
+                >
                   Enviar Solicitud
                 </button>
               </div>
@@ -961,4 +1071,3 @@ export default function App() {
     </div>
   );
 }
-```eof

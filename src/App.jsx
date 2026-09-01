@@ -70,8 +70,8 @@ const INITIAL_OPERATORS = [
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [loginEmail, setLoginEmail] = useState('admin@empresa.com');
-  const [loginPass, setLoginPass] = useState('123456');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
 
   const [activeTab, setActiveTab] = useState('scheduler');
@@ -162,16 +162,6 @@ export default function App() {
       setLoginError('');
     } else {
       setLoginError('Correo o contraseña incorrectos.');
-    }
-  };
-
-  const handleQuickLogin = (email) => {
-    const user = MOCK_USERS.find(u => u.email === email);
-    if (user) {
-      setLoginEmail(user.email);
-      setLoginPass(user.pass);
-      setCurrentUser(user);
-      setLoginError('');
     }
   };
 
@@ -292,24 +282,6 @@ export default function App() {
               Ingresar al Sistema
             </button>
           </form>
-
-          <div className="mt-6 pt-5 border-t border-emerald-900">
-            <p className="text-[11px] text-emerald-400 font-bold mb-2 text-center">Accesos rápidos de demostración:</p>
-            <div className="flex flex-col gap-1.5 text-xs">
-              <button onClick={() => handleQuickLogin('admin@empresa.com')} className="p-2 bg-[#011a0d] hover:bg-emerald-900 border border-emerald-800 rounded-xl text-emerald-200 text-left flex justify-between items-center">
-                <span><strong>Admin:</strong> admin@empresa.com</span>
-                <ShieldCheck className="w-4 h-4 text-red-500" />
-              </button>
-              <button onClick={() => handleQuickLogin('supervisor@empresa.com')} className="p-2 bg-[#011a0d] hover:bg-emerald-900 border border-emerald-800 rounded-xl text-emerald-200 text-left flex justify-between items-center">
-                <span><strong>Supervisor:</strong> supervisor@empresa.com</span>
-                <UserCheck className="w-4 h-4 text-emerald-400" />
-              </button>
-              <button onClick={() => handleQuickLogin('operador@empresa.com')} className="p-2 bg-[#011a0d] hover:bg-emerald-900 border border-emerald-800 rounded-xl text-emerald-200 text-left flex justify-between items-center">
-                <span><strong>Operador:</strong> operador@empresa.com</span>
-                <Lock className="w-4 h-4 text-amber-400" />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -445,7 +417,17 @@ export default function App() {
                 <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
               </div>
               {canManageOperators && (
-                <button onClick={() => { setEditingOperator(null); setIsAddOperatorOpen(true); }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
+                <button onClick={() => { 
+                  setEditingOperator(null); 
+                  setNewOp({
+                    name: '',
+                    zone: WAREHOUSE_ZONES[1],
+                    equipment: FORKLIFT_TYPES[0],
+                    shiftPattern: 'Mañana',
+                    licenseExpiry: new Date().toISOString().split('T')[0]
+                  });
+                  setIsAddOperatorOpen(true); 
+                }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
                 </button>
               )}
@@ -467,9 +449,16 @@ export default function App() {
                         </div>
                       )}
                     </div>
-                    <div className="space-y-1 text-xs text-emerald-200 border-t border-emerald-900/80 pt-2">
+                    <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
                       <div className="flex justify-between"><span>Zona:</span><span className="font-semibold text-white">{op.zone}</span></div>
                       <div className="flex justify-between"><span>Equipo:</span><span className="font-semibold text-white">{op.equipment}</span></div>
+                      <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
+                      <div className="flex justify-between items-center pt-1">
+                        <span>Licencia DC3:</span>
+                        <span className="font-semibold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[11px]">
+                          {op.licenseExpiry || 'N/A'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -544,16 +533,77 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL NUEVO OPERADOR */}
+      {/* MODAL REGISTRAR / EDITAR OPERADOR */}
       {isAddOperatorOpen && canManageOperators && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-4">{editingOperator ? 'Editar Operador' : 'Registrar Operador'}</h3>
             <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
-              <input type="text" required placeholder="Nombre Completo" value={newOp.name} onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white" />
-              <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold">Guardar</button>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="Ej. Juan Pérez" 
+                  value={newOp.name} 
+                  onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Zona de Trabajo</label>
+                <select 
+                  value={newOp.zone} 
+                  onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                >
+                  {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => (
+                    <option key={z} value={z}>{z}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
+                <select 
+                  value={newOp.equipment} 
+                  onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                >
+                  {FORKLIFT_TYPES.map(eq => (
+                    <option key={eq} value={eq}>{eq}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
+                <select 
+                  value={newOp.shiftPattern} 
+                  onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                >
+                  <option value="Mañana">Mañana</option>
+                  <option value="Tarde">Tarde</option>
+                  <option value="Noche">Noche</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
+                <input 
+                  type="date" 
+                  required 
+                  value={newOp.licenseExpiry} 
+                  onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" 
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3">
+                <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
               </div>
             </form>
           </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { redis } from './db';
 import { 
   Calendar as CalendarIcon, 
@@ -36,12 +36,12 @@ const MOCK_USERS = [
 ];
 
 const SHIFT_TYPES = {
-  M: { code: 'M', label: 'Mañana', color: 'bg-emerald-800/80 text-emerald-100 border-emerald-500/50 hover:bg-emerald-700/90', canvasColor: '#065f46', icon: Sunrise },
-  T: { code: 'T', label: 'Tarde', color: 'bg-amber-600/40 text-amber-200 border-amber-500/50 hover:bg-amber-600/60', canvasColor: '#d97706', icon: Sun },
-  N: { code: 'N', label: 'Noche', color: 'bg-indigo-900/80 text-indigo-100 border-indigo-500/50 hover:bg-indigo-800/90', canvasColor: '#3730a3', icon: Moon },
-  DES: { code: 'DES', label: 'Descanso', color: 'bg-emerald-950 text-emerald-400 border-emerald-800/60 hover:bg-emerald-900', canvasColor: '#022c22', icon: Coffee },
-  VAC: { code: 'VAC', label: 'Vacaciones', color: 'bg-purple-900/70 text-purple-200 border-purple-500/50 hover:bg-purple-800/70', canvasColor: '#6b21a8', icon: Palmtree },
-  INC: { code: 'INC', label: 'Incapacidad', color: 'bg-red-900/80 text-red-200 border-red-500/50 hover:bg-red-800/80', canvasColor: '#991b1b', icon: AlertTriangle }
+  M: { code: 'M', label: 'Mañana', color: 'bg-emerald-800/80 text-emerald-100 border-emerald-500/50 hover:bg-emerald-700/90', icon: Sunrise },
+  T: { code: 'T', label: 'Tarde', color: 'bg-amber-600/40 text-amber-200 border-amber-500/50 hover:bg-amber-600/60', icon: Sun },
+  N: { code: 'N', label: 'Noche', color: 'bg-indigo-900/80 text-indigo-100 border-indigo-500/50 hover:bg-indigo-800/90', icon: Moon },
+  DES: { code: 'DES', label: 'Descanso', color: 'bg-emerald-950 text-emerald-400 border-emerald-800/60 hover:bg-emerald-900', icon: Coffee },
+  VAC: { code: 'VAC', label: 'Vacaciones', color: 'bg-purple-900/70 text-purple-200 border-purple-500/50 hover:bg-purple-800/70', icon: Palmtree },
+  INC: { code: 'INC', label: 'Incapacidad', color: 'bg-red-900/80 text-red-200 border-red-500/50 hover:bg-red-800/80', icon: AlertTriangle }
 };
 
 const WAREHOUSE_ZONES = [
@@ -80,7 +80,6 @@ const INITIAL_VACATION_REQUESTS = [
   { id: 2, operatorId: 'M-105', operatorName: 'David Hernández', startDate: '2026-09-02', endDate: '2026-09-03', type: 'Día de Descanso Especial', status: 'Aprobado', reason: 'Asunto personal familiar' }
 ];
 
-// Funciones auxiliares para manejo seguro de fechas locales
 const formatDateLocal = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -91,7 +90,6 @@ const formatDateLocal = (date) => {
 const getMondayOfCurrentWeek = (refDate = new Date()) => {
   const d = new Date(refDate);
   const day = d.getDay();
-  // Si es domingo (0), retrocede 6 días. Si es otro día, retrocede (día - 1)
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
   return formatDateLocal(d);
@@ -129,10 +127,12 @@ export default function App() {
   const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Garantiza que la semana siempre empiece en Lunes
+  // Bandera para pausar el polling durante escrituras manuales (evita condiciones de carrera)
+  const isUpdatingRef = useRef(false);
+
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
 
-  // 1. Cargar datos iniciales desde Upstash (Aceptando arreglos vacíos)
+  // 1. Cargar datos iniciales desde Upstash
   useEffect(() => {
     const loadCloudData = async () => {
       try {
@@ -153,17 +153,21 @@ export default function App() {
     loadCloudData();
   }, []);
 
-  // 2. Polling: Sincronización continua cada 3 segundos
+  // 2. Polling seguro: ignora la lectura de Redis si estamos escribiendo un cambio local
   useEffect(() => {
     const interval = setInterval(async () => {
+      if (isUpdatingRef.current) return;
+
       try {
         const savedOps = await redis.get('sf_operators');
         const savedSchedule = await redis.get('sf_scheduleData');
         const savedVac = await redis.get('sf_vacations');
 
-        if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
-        if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-        if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
+        if (!isUpdatingRef.current) {
+          if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
+          if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+          if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
+        }
       } catch (err) {
         console.error("Error en sincronización continua:", err);
       }
@@ -171,22 +175,6 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, []);
-
-  // 3. Guardar en Redis solo tras completar la carga inicial
-  useEffect(() => {
-    if (!isLoaded) return;
-    redis.set('sf_operators', operators).catch(console.error);
-  }, [operators, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    redis.set('sf_scheduleData', scheduleData).catch(console.error);
-  }, [scheduleData, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    redis.set('sf_vacations', vacationRequests).catch(console.error);
-  }, [vacationRequests, isLoaded]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState('Todas las zonas');
@@ -212,7 +200,6 @@ export default function App() {
     reason: ''
   });
 
-  // Genera los 7 días de la semana iniciando estrictamente en Lunes
   const weekDays = useMemo(() => {
     const days = [];
     const [year, month, day] = currentWeekStart.split('-').map(Number);
@@ -234,7 +221,7 @@ export default function App() {
   }, [currentWeekStart]);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || isUpdatingRef.current) return;
     const newSchedule = { ...scheduleData };
     let changed = false;
 
@@ -254,7 +241,10 @@ export default function App() {
       });
     });
 
-    if (changed) setScheduleData(newSchedule);
+    if (changed) {
+      setScheduleData(newSchedule);
+      redis.set('sf_scheduleData', newSchedule).catch(console.error);
+    }
   }, [operators, weekDays, isLoaded]);
 
   const handleLogin = (e) => {
@@ -284,43 +274,79 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  const handleSetShift = (operatorId, dateStr, shiftCode) => {
+  const handleSetShift = async (operatorId, dateStr, shiftCode) => {
     if (!canEditShifts) return;
-    setScheduleData(prev => ({ ...prev, [`${operatorId}_${dateStr}`]: shiftCode }));
+    isUpdatingRef.current = true;
+
+    const updatedSchedule = { ...scheduleData, [`${operatorId}_${dateStr}`]: shiftCode };
+    setScheduleData(updatedSchedule);
     setSelectedCell(null);
+
+    try {
+      await redis.set('sf_scheduleData', updatedSchedule);
+    } catch (error) {
+      console.error("Error al guardar turno:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
   };
 
-  const handleSaveOperator = (e) => {
+  const handleSaveOperator = async (e) => {
     e.preventDefault();
     if (!newOp.name || !canManageOperators) return;
 
+    isUpdatingRef.current = true;
+    let updatedOps;
+
     if (editingOperator) {
-      setOperators(prev => prev.map(op => op.id === editingOperator.id ? { ...op, ...newOp } : op));
+      updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp } : op);
     } else {
-      // Generación secuencial limpia de IDs para evitar duplicados
       const maxIdNum = operators.reduce((max, op) => {
         const num = parseInt(op.id.replace(/\D/g, ''), 10);
         return !isNaN(num) && num > max ? num : max;
       }, 100);
       const newId = `M-${maxIdNum + 1}`;
-      setOperators(prev => [...prev, { id: newId, ...newOp, status: 'Activo' }]);
+      updatedOps = [...operators, { id: newId, ...newOp, status: 'Activo' }];
     }
+
+    setOperators(updatedOps);
     setIsAddOperatorOpen(false);
     setEditingOperator(null);
-  };
 
-  const handleDeleteOperator = (operatorId) => {
-    if (!canManageOperators) return;
-    if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
-      setOperators(prev => prev.filter(op => op.id !== operatorId));
+    try {
+      await redis.set('sf_operators', updatedOps);
+    } catch (error) {
+      console.error("Error al guardar operador:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
   };
 
-  const handleCreateVacationRequest = (e) => {
+  const handleDeleteOperator = async (operatorId) => {
+    if (!canManageOperators) return;
+
+    if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
+      isUpdatingRef.current = true;
+
+      const updatedOps = operators.filter(op => op.id !== operatorId);
+      setOperators(updatedOps);
+
+      try {
+        await redis.set('sf_operators', updatedOps);
+      } catch (error) {
+        console.error("Error al eliminar en la base de datos:", error);
+      } finally {
+        setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+      }
+    }
+  };
+
+  const handleCreateVacationRequest = async (e) => {
     e.preventDefault();
     const op = operators.find(o => o.id === newVac.operatorId);
     if (!op) return;
 
+    isUpdatingRef.current = true;
     const newReq = {
       id: vacationRequests.length + 1,
       operatorId: op.id,
@@ -332,7 +358,8 @@ export default function App() {
       reason: newVac.reason || 'Sin motivo especificado'
     };
 
-    setVacationRequests([newReq, ...vacationRequests]);
+    const updatedVac = [newReq, ...vacationRequests];
+    setVacationRequests(updatedVac);
     setIsRequestVacationOpen(false);
     setNewVac({
       operatorId: operators[0]?.id || 'M-101',
@@ -341,11 +368,30 @@ export default function App() {
       type: 'Vacaciones',
       reason: ''
     });
+
+    try {
+      await redis.set('sf_vacations', updatedVac);
+    } catch (error) {
+      console.error("Error al guardar permiso:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
   };
 
-  const handleVacationStatus = (id, newStatus) => {
+  const handleVacationStatus = async (id, newStatus) => {
     if (!canApproveVacations) return;
-    setVacationRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+    isUpdatingRef.current = true;
+
+    const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
+    setVacationRequests(updatedVac);
+
+    try {
+      await redis.set('sf_vacations', updatedVac);
+    } catch (error) {
+      console.error("Error al cambiar estado de permiso:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
   };
 
   if (!currentUser) {

@@ -133,7 +133,6 @@ export default function App() {
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
 
-  // Opción para aplicar turno a toda la semana
   const [applyToFullWeek, setApplyToFullWeek] = useState(false);
 
   useEffect(() => {
@@ -293,7 +292,7 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  // Modificado para soportar cambio individual o de semana completa
+  // Modificado para cubrir de Lunes a Domingo (los 7 días)
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
@@ -301,8 +300,8 @@ export default function App() {
     const updatedSchedule = { ...scheduleData };
 
     if (isFullWeek) {
-      // Aplica de Lunes a Viernes (los primeros 5 días de la semana actual)
-      weekDays.slice(0, 5).forEach(day => {
+      // Aplica a todos los días de la semana activa (Lunes a Domingo)
+      weekDays.forEach(day => {
         updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
       });
     } else {
@@ -746,11 +745,11 @@ export default function App() {
               <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
             </div>
 
-            {/* Opción para cambiar toda la semana */}
+            {/* Opción para cambiar toda la semana (Lunes a Domingo) */}
             <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Vie)</span>
+                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Dom)</span>
               </div>
               <input 
                 type="checkbox" 

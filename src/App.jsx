@@ -69,7 +69,7 @@ const ABSENCE_TYPES = [
 
 const INITIAL_OPERATORS = [
   { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo' },
-  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
+  { id: 'M-102', name: 'Ricardo Alamilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
   { id: 'M-103', name: 'Ana Patricia Silva', zone: 'Embarques / Surtido', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Tarde', licenseExpiry: '2026-09-25', status: 'Activo' },
   { id: 'M-104', name: 'Jorge Luis Martínez', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Noche', licenseExpiry: '2025-12-01', status: 'Activo' },
   { id: 'M-105', name: 'David Hernández', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' }
@@ -79,6 +79,23 @@ const INITIAL_VACATION_REQUESTS = [
   { id: 1, operatorId: 'M-103', operatorName: 'Ana Patricia Silva', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
   { id: 2, operatorId: 'M-105', operatorName: 'David Hernández', startDate: '2026-09-02', endDate: '2026-09-03', type: 'Día de Descanso Especial', status: 'Aprobado', reason: 'Asunto personal familiar' }
 ];
+
+// Funciones auxiliares para manejo seguro de fechas locales
+const formatDateLocal = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const getMondayOfCurrentWeek = (refDate = new Date()) => {
+  const d = new Date(refDate);
+  const day = d.getDay();
+  // Si es domingo (0), retrocede 6 días. Si es otro día, retrocede (día - 1)
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return formatDateLocal(d);
+};
 
 const getLicenseStatusStyle = (expiryDateStr) => {
   if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
@@ -112,6 +129,9 @@ export default function App() {
   const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // Garantiza que la semana siempre empiece en Lunes
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
+
   // 1. Cargar datos iniciales desde Upstash
   useEffect(() => {
     const loadCloudData = async () => {
@@ -133,7 +153,7 @@ export default function App() {
     loadCloudData();
   }, []);
 
-  // 2. Polling: Sincronización en segundo plano cada 3 segundos
+  // 2. Polling: Sincronización continua cada 3 segundos
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -152,7 +172,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // 3. Guardar en la nube SOLO cuando la carga inicial haya terminado (isLoaded === true)
+  // 3. Guardar en Redis solo tras completar la carga inicial
   useEffect(() => {
     if (!isLoaded) return;
     redis.set('sf_operators', operators).catch(console.error);
@@ -171,13 +191,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState('Todas las zonas');
 
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-    const today = new Date();
-    const day = today.getDay();
-    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(today.setDate(diff)).toISOString().split('T')[0];
-  });
-
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
@@ -193,21 +206,24 @@ export default function App() {
 
   const [newVac, setNewVac] = useState({
     operatorId: INITIAL_OPERATORS[0]?.id || 'M-101',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+    startDate: formatDateLocal(new Date()),
+    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
     type: 'Vacaciones',
     reason: ''
   });
 
+  // Genera los 7 días de la semana iniciando estrictamente en Lunes
   const weekDays = useMemo(() => {
     const days = [];
-    const start = new Date(currentWeekStart + 'T00:00:00');
+    const [year, month, day] = currentWeekStart.split('-').map(Number);
+    const start = new Date(year, month - 1, day);
+
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
       days.push({
-        dateStr: d.toISOString().split('T')[0],
+        dateStr: formatDateLocal(d),
         dayName: dayNames[d.getDay()],
         dayNumber: d.getDate(),
         monthName: d.toLocaleDateString('es-ES', { month: 'short' }),
@@ -281,7 +297,12 @@ export default function App() {
     if (editingOperator) {
       setOperators(prev => prev.map(op => op.id === editingOperator.id ? { ...op, ...newOp } : op));
     } else {
-      const newId = `M-${100 + operators.length + 1}`;
+      // Generación secuencial e infalible de IDs para prevenir colisiones
+      const maxIdNum = operators.reduce((max, op) => {
+        const num = parseInt(op.id.replace(/\D/g, ''), 10);
+        return !isNaN(num) && num > max ? num : max;
+      }, 100);
+      const newId = `M-${maxIdNum + 1}`;
       setOperators(prev => [...prev, { id: newId, ...newOp, status: 'Activo' }]);
     }
     setIsAddOperatorOpen(false);
@@ -315,8 +336,8 @@ export default function App() {
     setIsRequestVacationOpen(false);
     setNewVac({
       operatorId: operators[0]?.id || 'M-101',
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+      startDate: formatDateLocal(new Date()),
+      endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
       type: 'Vacaciones',
       reason: ''
     });
@@ -422,17 +443,19 @@ export default function App() {
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-3">
                 <button onClick={() => {
-                  const start = new Date(currentWeekStart + 'T00:00:00');
-                  start.setDate(start.getDate() - 7);
-                  setCurrentWeekStart(start.toISOString().split('T')[0]);
+                  const [y, m, d] = currentWeekStart.split('-').map(Number);
+                  const prevWeek = new Date(y, m - 1, d - 7);
+                  setCurrentWeekStart(formatDateLocal(prevWeek));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronLeft className="w-5 h-5"/></button>
+
                 <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900">
-                  Semana: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
+                  Plan Semanal: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
                 </div>
+
                 <button onClick={() => {
-                  const start = new Date(currentWeekStart + 'T00:00:00');
-                  start.setDate(start.getDate() + 7);
-                  setCurrentWeekStart(start.toISOString().split('T')[0]);
+                  const [y, m, d] = currentWeekStart.split('-').map(Number);
+                  const nextWeek = new Date(y, m - 1, d + 7);
+                  setCurrentWeekStart(formatDateLocal(nextWeek));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronRight className="w-5 h-5"/></button>
               </div>
 
@@ -516,7 +539,7 @@ export default function App() {
                     zone: WAREHOUSE_ZONES[1],
                     equipment: FORKLIFT_TYPES[0],
                     shiftPattern: 'Mañana',
-                    licenseExpiry: new Date().toISOString().split('T')[0]
+                    licenseExpiry: formatDateLocal(new Date())
                   });
                   setIsAddOperatorOpen(true); 
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">

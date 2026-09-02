@@ -68,19 +68,10 @@ const ABSENCE_TYPES = [
   'Permiso Personal'
 ];
 
-const INITIAL_OPERATORS = [
-  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo', rotationOffset: 0 },
-  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo', rotationOffset: 0 },
-  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo', rotationOffset: 1 },
-  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo', rotationOffset: 2 },
-  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo', rotationOffset: 3 },
-  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo', rotationOffset: 4 }
-];
-
-const INITIAL_VACATION_REQUESTS = [
-  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
-  { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
-];
+const parseLocalDate = (dateStr) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
 
 const formatDateLocal = (date) => {
   const y = date.getFullYear();
@@ -88,6 +79,20 @@ const formatDateLocal = (date) => {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
+
+const INITIAL_OPERATORS = [
+  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo', rotationOffset: 0, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 0 }] },
+  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo', rotationOffset: 0, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 0 }] },
+  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo', rotationOffset: 1, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 1 }] },
+  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo', rotationOffset: 2, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 2 }] },
+  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo', rotationOffset: 3, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 3 }] },
+  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo', rotationOffset: 4, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 4 }] }
+];
+
+const INITIAL_VACATION_REQUESTS = [
+  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
+  { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
+];
 
 const getMondayOfCurrentWeek = (refDate = new Date()) => {
   const d = new Date(refDate);
@@ -103,7 +108,7 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const expiryDate = new Date(expiryDateStr + 'T00:00:00');
+  const expiryDate = parseLocalDate(expiryDateStr);
   const diffTime = expiryDate.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -116,14 +121,23 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   }
 };
 
-const getRotatingShift = (weekStartDateStr, offset = 0) => {
+const getRotatingShift = (weekStartDateStr, op) => {
   const ROTATION_PATTERN = ['M', 'T', 'M', 'T', 'N'];
-  const baseDate = new Date('2026-01-05T00:00:00');
+  const baseDate = parseLocalDate('2026-01-05');
+  const currentDate = parseLocalDate(weekStartDateStr);
 
-  const currentDate = new Date(weekStartDateStr + 'T00:00:00');
   const diffWeeks = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24 * 7));
-  const cycleIndex = ((diffWeeks + offset) % 5 + 5) % 5;
 
+  let activeOffset = op.rotationOffset || 0;
+  if (op.offsetHistory && Array.isArray(op.offsetHistory)) {
+    const sortedHistory = [...op.offsetHistory].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate));
+    const match = sortedHistory.find(h => h.effectiveDate <= weekStartDateStr);
+    if (match) {
+      activeOffset = match.offset;
+    }
+  }
+
+  const cycleIndex = ((diffWeeks + activeOffset) % 5 + 5) % 5;
   return ROTATION_PATTERN[cycleIndex];
 };
 
@@ -174,7 +188,7 @@ export default function App() {
         if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
       } catch (error) {
         console.error("Error al cargar datos:", error);
-      } font-bold {
+      } finally {
         setIsLoaded(true);
       }
     };
@@ -199,7 +213,7 @@ export default function App() {
       } catch (err) {
         console.error("Error en sincronización continua:", err);
       }
-    }, 3000);
+    }, 4000);
 
     return () => clearInterval(interval);
   }, []);
@@ -231,8 +245,7 @@ export default function App() {
 
   const weekDays = useMemo(() => {
     const days = [];
-    const [year, month, day] = currentWeekStart.split('-').map(Number);
-    const start = new Date(year, month - 1, day);
+    const start = parseLocalDate(currentWeekStart);
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
@@ -249,20 +262,19 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
-  // Cálculo dinámico del turno exacto para un operador en cualquier fecha
   const getOperatorShift = (op, dateStr) => {
     const overrideKey = `${op.id}_${dateStr}`;
     if (scheduleData[overrideKey]) {
       return scheduleData[overrideKey];
     }
 
-    const d = new Date(dateStr + 'T00:00:00');
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    if (isWeekend) return 'DES';
+    const d = parseLocalDate(dateStr);
+    const dayOfWeek = d.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) return 'DES';
 
     if (op.zone === 'Materiales / Entrada a Línea') {
       const weekMonday = getMondayOfCurrentWeek(d);
-      return getRotatingShift(weekMonday, op.rotationOffset || 0);
+      return getRotatingShift(weekMonday, op);
     }
 
     if (op.shiftPattern === 'Mañana') return 'M';
@@ -299,7 +311,7 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
+  const handleSetShift = (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
 
@@ -308,9 +320,9 @@ export default function App() {
     let updatedOps = [...operators];
 
     if (op && op.zone === 'Materiales / Entrada a Línea' && ['M', 'T', 'N'].includes(shiftCode)) {
-      const targetMonday = getMondayOfCurrentWeek(new Date(dateStr + 'T00:00:00'));
-      const baseDate = new Date('2026-01-05T00:00:00');
-      const currentDate = new Date(targetMonday + 'T00:00:00');
+      const targetMonday = getMondayOfCurrentWeek(parseLocalDate(dateStr));
+      const baseDate = parseLocalDate('2026-01-05');
+      const currentDate = parseLocalDate(targetMonday);
       const diffWeeks = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24 * 7));
 
       let targetIndex = 0;
@@ -320,10 +332,20 @@ export default function App() {
 
       const newOffset = ((targetIndex - diffWeeks) % 5 + 5) % 5;
 
-      updatedOps = operators.map(o => o.id === operatorId ? { ...o, rotationOffset: newOffset } : o);
-      setOperators(updatedOps);
+      updatedOps = operators.map(o => {
+        if (o.id !== operatorId) return o;
 
-      // Limpia explícitamente cualquier invalidador manual guardado de esta fecha en adelante
+        const existingHistory = o.offsetHistory || [{ effectiveDate: '2026-01-05', offset: o.rotationOffset || 0 }];
+        const filteredHistory = existingHistory.filter(h => h.effectiveDate !== targetMonday);
+        const newHistory = [...filteredHistory, { effectiveDate: targetMonday, offset: newOffset }];
+
+        return {
+          ...o,
+          rotationOffset: newOffset,
+          offsetHistory: newHistory
+        };
+      });
+
       Object.keys(updatedSchedule).forEach(key => {
         if (key.startsWith(`${operatorId}_`)) {
           const keyDate = key.split('_')[1];
@@ -342,18 +364,18 @@ export default function App() {
       }
     }
 
+    setOperators(updatedOps);
     setScheduleData(updatedSchedule);
     setSelectedCell(null);
     setApplyToFullWeek(false);
 
-    try {
-      await redis.set('sf_operators', updatedOps);
-      await redis.set('sf_scheduleData', updatedSchedule);
-    } catch (error) {
-      console.error("Error al guardar turno:", error);
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
-    }
+    Promise.all([
+      redis.set('sf_operators', updatedOps),
+      redis.set('sf_scheduleData', updatedSchedule)
+    ]).catch(err => console.error("Error guardando en Redis:", err))
+      .finally(() => {
+        setTimeout(() => { isUpdatingRef.current = false; }, 800);
+      });
   };
 
   const handleSaveOperator = async (e) => {
@@ -371,7 +393,8 @@ export default function App() {
         return !isNaN(num) && num > max ? num : max;
       }, 100);
       const newId = `M-${maxIdNum + 1}`;
-      updatedOps = [...operators, { id: newId, ...newOp, status: 'Activo' }];
+      const defaultHistory = [{ effectiveDate: '2026-01-05', offset: newOp.rotationOffset || 0 }];
+      updatedOps = [...operators, { id: newId, ...newOp, offsetHistory: defaultHistory, status: 'Activo' }];
     }
 
     setOperators(updatedOps);
@@ -383,7 +406,7 @@ export default function App() {
     } catch (error) {
       console.error("Error al guardar operador:", error);
     } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     }
   };
 
@@ -399,9 +422,9 @@ export default function App() {
       try {
         await redis.set('sf_operators', updatedOps);
       } catch (error) {
-        console.error("Error al eliminar en la base de datos:", error);
+        console.error("Error al eliminar operador:", error);
       } finally {
-        setTimeout(() => { isUpdatingRef.current = false; }, 1000);
+        setTimeout(() => { isUpdatingRef.current = false; }, 800);
       }
     }
   };
@@ -432,7 +455,7 @@ export default function App() {
     } catch (error) {
       console.error("Error al guardar permiso:", error);
     } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     }
   };
 
@@ -452,11 +475,8 @@ export default function App() {
       else if (req.type === 'Incapacidad') shiftCode = 'INC';
       else if (req.type === 'Día de Descanso Especial' || req.type === 'Permiso Personal') shiftCode = 'DES';
 
-      const [sY, sM, sD] = req.startDate.split('-').map(Number);
-      const [eY, eM, eD] = req.endDate.split('-').map(Number);
-
-      let curr = new Date(sY, sM - 1, sD);
-      const end = new Date(eY, eM - 1, eD);
+      let curr = parseLocalDate(req.startDate);
+      const end = parseLocalDate(req.endDate);
 
       while (curr <= end) {
         const dateStr = formatDateLocal(curr);
@@ -473,9 +493,9 @@ export default function App() {
         await redis.set('sf_scheduleData', updatedSchedule);
       }
     } catch (error) {
-      console.error("Error al actualizar estado del permiso:", error);
+      console.error("Error al actualizar permiso:", error);
     } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     }
   };
 
@@ -576,9 +596,9 @@ export default function App() {
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-3">
                 <button onClick={() => {
-                  const [y, m, d] = currentWeekStart.split('-').map(Number);
-                  const prevWeek = new Date(y, m - 1, d - 7);
-                  setCurrentWeekStart(formatDateLocal(prevWeek));
+                  const start = parseLocalDate(currentWeekStart);
+                  start.setDate(start.getDate() - 7);
+                  setCurrentWeekStart(formatDateLocal(start));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronLeft className="w-5 h-5"/></button>
 
                 <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900">
@@ -586,9 +606,9 @@ export default function App() {
                 </div>
 
                 <button onClick={() => {
-                  const [y, m, d] = currentWeekStart.split('-').map(Number);
-                  const nextWeek = new Date(y, m - 1, d + 7);
-                  setCurrentWeekStart(formatDateLocal(nextWeek));
+                  const start = parseLocalDate(currentWeekStart);
+                  start.setDate(start.getDate() + 7);
+                  setCurrentWeekStart(formatDateLocal(start));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronRight className="w-5 h-5"/></button>
               </div>
 

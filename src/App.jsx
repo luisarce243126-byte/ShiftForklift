@@ -60,6 +60,13 @@ const FORKLIFT_TYPES = [
   'Transpaleta Eléctrica (Rider)'
 ];
 
+const ABSENCE_TYPES = [
+  'Vacaciones',
+  'Incapacidad',
+  'Día de Descanso Especial',
+  'Permiso Personal'
+];
+
 const INITIAL_OPERATORS = [
   { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo' },
   { id: 'M-102', name: 'Roberto Gómez', zone: 'Recepción / Carga', equipment: 'Hombre Sentado (Gas/Combustión)', shiftPattern: 'Mañana', licenseExpiry: '2027-02-10', status: 'Activo' },
@@ -221,11 +228,18 @@ export default function App() {
       endDate: newVac.endDate,
       type: newVac.type,
       status: 'Pendiente',
-      reason: newVac.reason || 'Solicitud de ausencia'
+      reason: newVac.reason || 'Sin motivo especificado'
     };
 
     setVacationRequests([newReq, ...vacationRequests]);
     setIsRequestVacationOpen(false);
+    setNewVac({
+      operatorId: operators[0]?.id || 'M-101',
+      startDate: new Date().toISOString().split('T')[0],
+      endDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+      type: 'Vacaciones',
+      reason: ''
+    });
   };
 
   const handleVacationStatus = (id, newStatus) => {
@@ -484,6 +498,7 @@ export default function App() {
                     <th className="p-3.5">Operador</th>
                     <th className="p-3.5">Tipo</th>
                     <th className="p-3.5">Periodo</th>
+                    <th className="p-3.5">Motivo / Razón</th>
                     <th className="p-3.5">Estado</th>
                     <th className="p-3.5 text-center">Acciones</th>
                   </tr>
@@ -492,17 +507,22 @@ export default function App() {
                   {vacationRequests.map(req => (
                     <tr key={req.id}>
                       <td className="p-3.5"><div className="font-bold text-white">{req.operatorName}</div><div className="text-[10px] text-emerald-400">{req.operatorId}</div></td>
-                      <td className="p-3.5">{req.type}</td>
-                      <td className="p-3.5">{req.startDate} al {req.endDate}</td>
-                      <td className="p-3.5"><span className="px-2 py-0.5 rounded font-bold bg-amber-950 text-amber-300">{req.status}</span></td>
+                      <td className="p-3.5 font-semibold text-emerald-200">{req.type}</td>
+                      <td className="p-3.5 text-emerald-200">{req.startDate} al {req.endDate}</td>
+                      <td className="p-3.5 text-white/90 max-w-xs">{req.reason}</td>
+                      <td className="p-3.5">
+                        <span className={`px-2 py-0.5 rounded font-bold ${req.status === 'Aprobado' ? 'bg-emerald-950 text-emerald-300' : req.status === 'Rechazado' ? 'bg-red-950 text-red-300' : 'bg-amber-950 text-amber-300'}`}>
+                          {req.status}
+                        </span>
+                      </td>
                       <td className="p-3.5 text-center">
                         {req.status === 'Pendiente' && canApproveVacations ? (
                           <div className="flex justify-center space-x-1">
-                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 text-white rounded-lg"><Check className="w-4 h-4"/></button>
-                            <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 text-white rounded-lg"><X className="w-4 h-4"/></button>
+                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar"><Check className="w-4 h-4"/></button>
+                            <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition" title="Rechazar"><X className="w-4 h-4"/></button>
                           </div>
                         ) : (
-                          <span className="text-emerald-600 text-[10px]">Sin acciones disponibles</span>
+                          <span className="text-emerald-600 text-[10px]">Sin acciones</span>
                         )}
                       </td>
                     </tr>
@@ -613,20 +633,44 @@ export default function App() {
       {/* MODAL REGISTRAR PERMISO */}
       {isRequestVacationOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-4">Registrar Solicitud de Permiso</h3>
             <form onSubmit={handleCreateVacationRequest} className="space-y-3 text-xs">
-              <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white">
-                {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
-              </select>
-              <div className="grid grid-cols-2 gap-2">
-                <input type="date" value={newVac.startDate} onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })} className="bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white" />
-                <input type="date" value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white" />
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Operador</label>
+                <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                </select>
               </div>
-              <textarea rows={2} placeholder="Motivo" value={newVac.reason} onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white" />
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
+                <select value={newVac.type} onChange={(e) => setNewVac({ ...newVac, type: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {ABSENCE_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
+                  <input type="date" value={newVac.startDate} onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
+                  <input type="date" value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Motivo / Razón</label>
+                <textarea rows={3} placeholder="Escribe la razón detallada..." value={newVac.reason} onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+              </div>
+
               <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => setIsRequestVacationOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold">Enviar</button>
+                <button type="button" onClick={() => setIsRequestVacationOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Enviar</button>
               </div>
             </form>
           </div>

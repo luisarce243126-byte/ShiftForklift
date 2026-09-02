@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { redis } from './db';
 import { 
   Calendar as CalendarIcon, 
   Users, 
@@ -74,7 +75,11 @@ const INITIAL_OPERATORS = [
   { id: 'M-105', name: 'David Hernández', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' }
 ];
 
-// Función para determinar el estilo según la fecha de vencimiento
+const INITIAL_VACATION_REQUESTS = [
+  { id: 1, operatorId: 'M-103', operatorName: 'Ana Patricia Silva', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
+  { id: 2, operatorId: 'M-105', operatorName: 'David Hernández', startDate: '2026-09-02', endDate: '2026-09-03', type: 'Día de Descanso Especial', status: 'Aprobado', reason: 'Asunto personal familiar' }
+];
+
 const getLicenseStatusStyle = (expiryDateStr) => {
   if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
 
@@ -86,13 +91,10 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
-    // Vencida -> Rojo
     return 'bg-red-950 text-red-300 border-red-700/80 font-bold';
   } else if (diffDays <= 30) {
-    // Próxima a vencer (30 días o menos) -> Amarillo
     return 'bg-amber-950 text-amber-300 border-amber-600/80 font-bold';
   } else {
-    // Vigente -> Verde
     return 'bg-emerald-950 text-emerald-300 border-emerald-800';
   }
 };
@@ -104,7 +106,43 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
 
   const [activeTab, setActiveTab] = useState('scheduler');
+
   const [operators, setOperators] = useState(INITIAL_OPERATORS);
+  const [scheduleData, setScheduleData] = useState({});
+  const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
+
+  // Cargar datos guardados en la NUBE (Upstash)
+  useEffect(() => {
+    const loadCloudData = async () => {
+      try {
+        const savedOps = await redis.get('sf_operators');
+        const savedSchedule = await redis.get('sf_scheduleData');
+        const savedVac = await redis.get('sf_vacations');
+
+        if (savedOps && Array.isArray(savedOps) && savedOps.length > 0) setOperators(savedOps);
+        if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+        if (savedVac && Array.isArray(savedVac) && savedVac.length > 0) setVacationRequests(savedVac);
+      } catch (error) {
+        console.error("Error al cargar datos de la nube:", error);
+      }
+    };
+
+    loadCloudData();
+  }, []);
+
+  // Guardar en la nube cada vez que cambien los datos
+  useEffect(() => {
+    redis.set('sf_operators', operators).catch(console.error);
+  }, [operators]);
+
+  useEffect(() => {
+    redis.set('sf_scheduleData', scheduleData).catch(console.error);
+  }, [scheduleData]);
+
+  useEffect(() => {
+    redis.set('sf_vacations', vacationRequests).catch(console.error);
+  }, [vacationRequests]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState('Todas las zonas');
 
@@ -114,12 +152,6 @@ export default function App() {
     const diff = today.getDate() - day + (day === 0 ? -6 : 1);
     return new Date(today.setDate(diff)).toISOString().split('T')[0];
   });
-
-  const [scheduleData, setScheduleData] = useState({});
-  const [vacationRequests, setVacationRequests] = useState([
-    { id: 1, operatorId: 'M-103', operatorName: 'Ana Patricia Silva', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
-    { id: 2, operatorId: 'M-105', operatorName: 'David Hernández', startDate: '2026-09-02', endDate: '2026-09-03', type: 'Día de Descanso Especial', status: 'Aprobado', reason: 'Asunto personal familiar' }
-  ]);
 
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);

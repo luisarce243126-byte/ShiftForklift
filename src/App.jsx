@@ -174,7 +174,7 @@ export default function App() {
         if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
       } catch (error) {
         console.error("Error al cargar datos:", error);
-      } finally {
+      } font-bold {
         setIsLoaded(true);
       }
     };
@@ -249,36 +249,28 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
-  useEffect(() => {
-    if (!isLoaded || isUpdatingRef.current) return;
-    const newSchedule = { ...scheduleData };
-    let changed = false;
-
-    operators.forEach((op) => {
-      let assignedShift = 'M';
-
-      if (op.zone === 'Materiales / Entrada a Línea') {
-        assignedShift = getRotatingShift(currentWeekStart, op.rotationOffset || 0);
-      } else {
-        if (op.shiftPattern === 'Mañana') assignedShift = 'M';
-        else if (op.shiftPattern === 'Tarde') assignedShift = 'T';
-        else if (op.shiftPattern === 'Noche') assignedShift = 'N';
-      }
-
-      weekDays.forEach((day, idx) => {
-        const key = `${op.id}_${day.dateStr}`;
-        if (!newSchedule[key]) {
-          newSchedule[key] = (idx === 5 || idx === 6) ? 'DES' : assignedShift;
-          changed = true;
-        }
-      });
-    });
-
-    if (changed) {
-      setScheduleData(newSchedule);
-      redis.set('sf_scheduleData', newSchedule).catch(console.error);
+  // Cálculo dinámico del turno exacto para un operador en cualquier fecha
+  const getOperatorShift = (op, dateStr) => {
+    const overrideKey = `${op.id}_${dateStr}`;
+    if (scheduleData[overrideKey]) {
+      return scheduleData[overrideKey];
     }
-  }, [operators, weekDays, isLoaded, currentWeekStart]);
+
+    const d = new Date(dateStr + 'T00:00:00');
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    if (isWeekend) return 'DES';
+
+    if (op.zone === 'Materiales / Entrada a Línea') {
+      const weekMonday = getMondayOfCurrentWeek(d);
+      return getRotatingShift(weekMonday, op.rotationOffset || 0);
+    }
+
+    if (op.shiftPattern === 'Mañana') return 'M';
+    if (op.shiftPattern === 'Tarde') return 'T';
+    if (op.shiftPattern === 'Noche') return 'N';
+
+    return 'M';
+  };
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -307,13 +299,13 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  // Modificado: Si se modifica un turno de Materiales, recalculamos el patrón rotativo para las semanas siguientes
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
 
     const op = operators.find(o => o.id === operatorId);
     let updatedSchedule = { ...scheduleData };
+    let updatedOps = [...operators];
 
     if (op && op.zone === 'Materiales / Entrada a Línea' && ['M', 'T', 'N'].includes(shiftCode)) {
       const targetMonday = getMondayOfCurrentWeek(new Date(dateStr + 'T00:00:00'));
@@ -328,11 +320,10 @@ export default function App() {
 
       const newOffset = ((targetIndex - diffWeeks) % 5 + 5) % 5;
 
-      const updatedOps = operators.map(o => o.id === operatorId ? { ...o, rotationOffset: newOffset } : o);
+      updatedOps = operators.map(o => o.id === operatorId ? { ...o, rotationOffset: newOffset } : o);
       setOperators(updatedOps);
-      await redis.set('sf_operators', updatedOps);
 
-      // Limpia registros futuros guardados para el operador a partir del Lunes seleccionado
+      // Limpia explícitamente cualquier invalidador manual guardado de esta fecha en adelante
       Object.keys(updatedSchedule).forEach(key => {
         if (key.startsWith(`${operatorId}_`)) {
           const keyDate = key.split('_')[1];
@@ -356,11 +347,12 @@ export default function App() {
     setApplyToFullWeek(false);
 
     try {
+      await redis.set('sf_operators', updatedOps);
       await redis.set('sf_scheduleData', updatedSchedule);
     } catch (error) {
       console.error("Error al guardar turno:", error);
     } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
     }
   };
 
@@ -391,7 +383,7 @@ export default function App() {
     } catch (error) {
       console.error("Error al guardar operador:", error);
     } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
     }
   };
 
@@ -409,7 +401,7 @@ export default function App() {
       } catch (error) {
         console.error("Error al eliminar en la base de datos:", error);
       } finally {
-        setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+        setTimeout(() => { isUpdatingRef.current = false; }, 1000);
       }
     }
   };
@@ -440,7 +432,7 @@ export default function App() {
     } catch (error) {
       console.error("Error al guardar permiso:", error);
     } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
     }
   };
 
@@ -483,7 +475,7 @@ export default function App() {
     } catch (error) {
       console.error("Error al actualizar estado del permiso:", error);
     } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+      setTimeout(() => { isUpdatingRef.current = false; }, 1000);
     }
   };
 
@@ -640,7 +632,7 @@ export default function App() {
                           <div className="text-xs text-emerald-400/80">{op.id} • {op.zone}</div>
                         </td>
                         {weekDays.map(day => {
-                          const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+                          const shiftCode = getOperatorShift(op, day.dateStr);
                           const shift = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
                           const IconComp = shift.icon;
                           return (

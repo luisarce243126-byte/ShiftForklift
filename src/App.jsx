@@ -43,16 +43,16 @@ const SHIFT_TYPES = {
   INC: { code: 'INC', label: 'Incapacidad', color: 'bg-red-900/80 text-red-200 border-red-500/50 hover:bg-red-800/80', canvasColor: '#991b1b', icon: AlertTriangle }
 };
 
+// Se actualizan las zonas para incluir Materiales / Entrada a Línea
 const WAREHOUSE_ZONES = [
   'Todas las zonas',
   'Recepción / Carga',
   'Pasillos Alta Montaña (Reach)',
   'Embarques / Surtido',
-  'Bodega Fría / Congelados',
+  'Materiales / Entrada a Línea',
   'Patio de Contenedores'
 ];
 
-// Se remueve "Hombre Sentado (Gas/Combustión)"
 const FORKLIFT_TYPES = [
   'Hombre Sentado (Eléctrico)',
   'Hombre Parado (Reach)',
@@ -72,7 +72,7 @@ const INITIAL_OPERATORS = [
   { id: 'M-102', name: 'Roberto Gómez', zone: 'Recepción / Carga', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2027-02-10', status: 'Activo' },
   { id: 'M-103', name: 'Ana Patricia Silva', zone: 'Embarques / Surtido', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Tarde', licenseExpiry: '2026-09-01', status: 'Activo' },
   { id: 'M-104', name: 'Jorge Luis Martínez', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Noche', licenseExpiry: '2025-12-01', status: 'Activo' },
-  { id: 'M-105', name: 'David Hernández', zone: 'Bodega Fría / Congelados', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' }
+  { id: 'M-105', name: 'David Hernández', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' }
 ];
 
 export default function App() {

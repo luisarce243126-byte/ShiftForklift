@@ -20,14 +20,14 @@ import {
   Star, 
   Check, 
   X, 
-  FileImage,
   Pencil,
   Trash2,
   Lock,
   LogOut,
   UserCheck,
   ShieldCheck,
-  Layers
+  Layers,
+  ArrowRight
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -80,20 +80,6 @@ const formatDateLocal = (date) => {
   return `${y}-${m}-${d}`;
 };
 
-const INITIAL_OPERATORS = [
-  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo', rotationOffset: 0, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 0 }] },
-  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo', rotationOffset: 0, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 0 }] },
-  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo', rotationOffset: 1, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 1 }] },
-  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo', rotationOffset: 2, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 2 }] },
-  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo', rotationOffset: 3, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 3 }] },
-  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo', rotationOffset: 4, offsetHistory: [{ effectiveDate: '2026-01-05', offset: 4 }] }
-];
-
-const INITIAL_VACATION_REQUESTS = [
-  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
-  { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
-];
-
 const getMondayOfCurrentWeek = (refDate = new Date()) => {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -101,6 +87,20 @@ const getMondayOfCurrentWeek = (refDate = new Date()) => {
   d.setDate(diff);
   return formatDateLocal(d);
 };
+
+const INITIAL_OPERATORS = [
+  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15' },
+  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31' },
+  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25' },
+  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01' },
+  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20' },
+  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01' }
+];
+
+const INITIAL_VACATION_REQUESTS = [
+  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
+  { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
+];
 
 const getLicenseStatusStyle = (expiryDateStr) => {
   if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
@@ -121,26 +121,6 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   }
 };
 
-const getRotatingShift = (weekStartDateStr, op) => {
-  const ROTATION_PATTERN = ['M', 'T', 'M', 'T', 'N'];
-  const baseDate = parseLocalDate('2026-01-05');
-  const currentDate = parseLocalDate(weekStartDateStr);
-
-  const diffWeeks = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24 * 7));
-
-  let activeOffset = op.rotationOffset || 0;
-  if (op.offsetHistory && Array.isArray(op.offsetHistory)) {
-    const sortedHistory = [...op.offsetHistory].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate));
-    const match = sortedHistory.find(h => h.effectiveDate <= weekStartDateStr);
-    if (match) {
-      activeOffset = match.offset;
-    }
-  }
-
-  const cycleIndex = ((diffWeeks + activeOffset) % 5 + 5) % 5;
-  return ROTATION_PATTERN[cycleIndex];
-};
-
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
@@ -148,33 +128,24 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
 
   const [activeTab, setActiveTab] = useState('scheduler');
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
 
-  const [operators, setOperators] = useState(INITIAL_OPERATORS);
-  const [scheduleData, setScheduleData] = useState({});
-  const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [operators, setOperators] = useState(() => {
+    const local = localStorage.getItem('sf_operators');
+    return local ? JSON.parse(local) : INITIAL_OPERATORS;
+  });
+
+  const [scheduleData, setScheduleData] = useState(() => {
+    const local = localStorage.getItem('sf_scheduleData');
+    return local ? JSON.parse(local) : {};
+  });
+
+  const [vacationRequests, setVacationRequests] = useState(() => {
+    const local = localStorage.getItem('sf_vacations');
+    return local ? JSON.parse(local) : INITIAL_VACATION_REQUESTS;
+  });
 
   const isUpdatingRef = useRef(false);
-
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
-  const [applyToFullWeek, setApplyToFullWeek] = useState(false);
-
-  useEffect(() => {
-    const checkWeekChange = () => {
-      const actualMonday = getMondayOfCurrentWeek();
-      if (actualMonday !== currentWeekStart) {
-        setCurrentWeekStart(actualMonday);
-      }
-    };
-
-    const interval = setInterval(checkWeekChange, 60000);
-    window.addEventListener('focus', checkWeekChange);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', checkWeekChange);
-    };
-  }, [currentWeekStart]);
 
   useEffect(() => {
     const loadCloudData = async () => {
@@ -183,39 +154,24 @@ export default function App() {
         const savedSchedule = await redis.get('sf_scheduleData');
         const savedVac = await redis.get('sf_vacations');
 
-        if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
-        if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-        if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
+        if (savedOps && Array.isArray(savedOps)) {
+          setOperators(savedOps);
+          localStorage.setItem('sf_operators', JSON.stringify(savedOps));
+        }
+        if (savedSchedule && typeof savedSchedule === 'object') {
+          setScheduleData(savedSchedule);
+          localStorage.setItem('sf_scheduleData', JSON.stringify(savedSchedule));
+        }
+        if (savedVac && Array.isArray(savedVac)) {
+          setVacationRequests(savedVac);
+          localStorage.setItem('sf_vacations', JSON.stringify(savedVac));
+        }
       } catch (error) {
-        console.error("Error al cargar datos:", error);
-      } finally {
-        setIsLoaded(true);
+        console.error("Error al sincronizar nube:", error);
       }
     };
 
     loadCloudData();
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      if (isUpdatingRef.current) return;
-
-      try {
-        const savedOps = await redis.get('sf_operators');
-        const savedSchedule = await redis.get('sf_scheduleData');
-        const savedVac = await redis.get('sf_vacations');
-
-        if (!isUpdatingRef.current) {
-          if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
-          if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-          if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
-        }
-      } catch (err) {
-        console.error("Error en sincronización continua:", err);
-      }
-    }, 4000);
-
-    return () => clearInterval(interval);
   }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -225,14 +181,14 @@ export default function App() {
   const [editingOperator, setEditingOperator] = useState(null);
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
   const [selectedCell, setSelectedCell] = useState(null);
+  const [applyScope, setApplyScope] = useState('day');
 
   const [newOp, setNewOp] = useState({
     name: '',
     zone: WAREHOUSE_ZONES[1],
     equipment: FORKLIFT_TYPES[0],
     shiftPattern: 'Mañana',
-    licenseExpiry: '2027-12-31',
-    rotationOffset: 0
+    licenseExpiry: '2027-12-31'
   });
 
   const [newVac, setNewVac] = useState({
@@ -242,6 +198,27 @@ export default function App() {
     type: 'Vacaciones',
     reason: ''
   });
+
+  const saveState = async (newSchedule, newOps = operators, newVacations = vacationRequests) => {
+    isUpdatingRef.current = true;
+    setScheduleData(newSchedule);
+    setOperators(newOps);
+    setVacationRequests(newVacations);
+
+    localStorage.setItem('sf_scheduleData', JSON.stringify(newSchedule));
+    localStorage.setItem('sf_operators', JSON.stringify(newOps));
+    localStorage.setItem('sf_vacations', JSON.stringify(newVacations));
+
+    try {
+      await redis.set('sf_scheduleData', newSchedule);
+      await redis.set('sf_operators', newOps);
+      await redis.set('sf_vacations', newVacations);
+    } catch (e) {
+      console.error("Error guardando en Redis:", e);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 500);
+    }
+  };
 
   const weekDays = useMemo(() => {
     const days = [];
@@ -272,12 +249,6 @@ export default function App() {
     const dayOfWeek = d.getDay();
     if (dayOfWeek === 0 || dayOfWeek === 6) return 'DES';
 
-    if (op.zone === 'Materiales / Entrada a Línea') {
-      const weekMonday = getMondayOfCurrentWeek(d);
-      return getRotatingShift(weekMonday, op);
-    }
-
-    if (op.shiftPattern === 'Mañana') return 'M';
     if (op.shiftPattern === 'Tarde') return 'T';
     if (op.shiftPattern === 'Noche') return 'N';
 
@@ -311,80 +282,41 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  const handleSetShift = (operatorId, dateStr, shiftCode, isFullWeek = false) => {
-    if (!canEditShifts) return;
-    isUpdatingRef.current = true;
+  const handleSetShift = (shiftCode) => {
+    if (!selectedCell || !canEditShifts) return;
 
-    const op = operators.find(o => o.id === operatorId);
-    let updatedSchedule = { ...scheduleData };
-    let updatedOps = [...operators];
+    const { operatorId, dateStr } = selectedCell;
+    const newSchedule = { ...scheduleData };
 
-    if (op && op.zone === 'Materiales / Entrada a Línea' && ['M', 'T', 'N'].includes(shiftCode)) {
-      const targetMonday = getMondayOfCurrentWeek(parseLocalDate(dateStr));
-      const baseDate = parseLocalDate('2026-01-05');
-      const currentDate = parseLocalDate(targetMonday);
-      const diffWeeks = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24 * 7));
-
-      let targetIndex = 0;
-      if (shiftCode === 'N') targetIndex = 4;
-      else if (shiftCode === 'T') targetIndex = 1;
-      else if (shiftCode === 'M') targetIndex = 0;
-
-      const newOffset = ((targetIndex - diffWeeks) % 5 + 5) % 5;
-
-      updatedOps = operators.map(o => {
-        if (o.id !== operatorId) return o;
-
-        const existingHistory = o.offsetHistory || [{ effectiveDate: '2026-01-05', offset: o.rotationOffset || 0 }];
-        const filteredHistory = existingHistory.filter(h => h.effectiveDate !== targetMonday);
-        const newHistory = [...filteredHistory, { effectiveDate: targetMonday, offset: newOffset }];
-
-        return {
-          ...o,
-          rotationOffset: newOffset,
-          offsetHistory: newHistory
-        };
+    if (applyScope === 'day') {
+      newSchedule[`${operatorId}_${dateStr}`] = shiftCode;
+    } else if (applyScope === 'week') {
+      weekDays.forEach(day => {
+        newSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
       });
-
-      Object.keys(updatedSchedule).forEach(key => {
-        if (key.startsWith(`${operatorId}_`)) {
-          const keyDate = key.split('_')[1];
-          if (keyDate >= targetMonday) {
-            delete updatedSchedule[key];
-          }
+    } else if (applyScope === 'future') {
+      const startDate = parseLocalDate(dateStr);
+      for (let i = 0; i < 56; i++) {
+        const d = new Date(startDate);
+        d.setDate(startDate.getDate() + i);
+        const dayOfWeek = d.getDay();
+        
+        if (shiftCode === 'DES' || (dayOfWeek !== 0 && dayOfWeek !== 6)) {
+          newSchedule[`${operatorId}_${formatDateLocal(d)}`] = shiftCode;
         }
-      });
-    } else {
-      if (isFullWeek) {
-        weekDays.forEach(day => {
-          updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
-        });
-      } else {
-        updatedSchedule[`${operatorId}_${dateStr}`] = shiftCode;
       }
     }
 
-    setOperators(updatedOps);
-    setScheduleData(updatedSchedule);
+    saveState(newSchedule);
     setSelectedCell(null);
-    setApplyToFullWeek(false);
-
-    Promise.all([
-      redis.set('sf_operators', updatedOps),
-      redis.set('sf_scheduleData', updatedSchedule)
-    ]).catch(err => console.error("Error guardando en Redis:", err))
-      .finally(() => {
-        setTimeout(() => { isUpdatingRef.current = false; }, 800);
-      });
+    setApplyScope('day');
   };
 
-  const handleSaveOperator = async (e) => {
+  const handleSaveOperator = (e) => {
     e.preventDefault();
     if (!newOp.name || !canManageOperators) return;
 
-    isUpdatingRef.current = true;
     let updatedOps;
-
     if (editingOperator) {
       updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp } : op);
     } else {
@@ -393,48 +325,28 @@ export default function App() {
         return !isNaN(num) && num > max ? num : max;
       }, 100);
       const newId = `M-${maxIdNum + 1}`;
-      const defaultHistory = [{ effectiveDate: '2026-01-05', offset: newOp.rotationOffset || 0 }];
-      updatedOps = [...operators, { id: newId, ...newOp, offsetHistory: defaultHistory, status: 'Activo' }];
+      updatedOps = [...operators, { id: newId, ...newOp }];
     }
 
-    setOperators(updatedOps);
+    saveState(scheduleData, updatedOps);
     setIsAddOperatorOpen(false);
     setEditingOperator(null);
-
-    try {
-      await redis.set('sf_operators', updatedOps);
-    } catch (error) {
-      console.error("Error al guardar operador:", error);
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 800);
-    }
   };
 
-  const handleDeleteOperator = async (operatorId) => {
+  const handleDeleteOperator = (operatorId) => {
     if (!canManageOperators) return;
 
     if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
-      isUpdatingRef.current = true;
-
       const updatedOps = operators.filter(op => op.id !== operatorId);
-      setOperators(updatedOps);
-
-      try {
-        await redis.set('sf_operators', updatedOps);
-      } catch (error) {
-        console.error("Error al eliminar operador:", error);
-      } finally {
-        setTimeout(() => { isUpdatingRef.current = false; }, 800);
-      }
+      saveState(scheduleData, updatedOps);
     }
   };
 
-  const handleCreateVacationRequest = async (e) => {
+  const handleCreateVacationRequest = (e) => {
     e.preventDefault();
     const op = operators.find(o => o.id === newVac.operatorId);
     if (!op) return;
 
-    isUpdatingRef.current = true;
     const newReq = {
       id: vacationRequests.length + 1,
       operatorId: op.id,
@@ -447,26 +359,15 @@ export default function App() {
     };
 
     const updatedVac = [newReq, ...vacationRequests];
-    setVacationRequests(updatedVac);
+    saveState(scheduleData, operators, updatedVac);
     setIsRequestVacationOpen(false);
-
-    try {
-      await redis.set('sf_vacations', updatedVac);
-    } catch (error) {
-      console.error("Error al guardar permiso:", error);
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 800);
-    }
   };
 
-  const handleVacationStatus = async (id, newStatus) => {
+  const handleVacationStatus = (id, newStatus) => {
     if (!canApproveVacations) return;
-    isUpdatingRef.current = true;
 
     const req = vacationRequests.find(r => r.id === id);
     const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
-    setVacationRequests(updatedVac);
-
     let updatedSchedule = { ...scheduleData };
 
     if (newStatus === 'Aprobado' && req) {
@@ -483,20 +384,9 @@ export default function App() {
         updatedSchedule[`${req.operatorId}_${dateStr}`] = shiftCode;
         curr.setDate(curr.getDate() + 1);
       }
-
-      setScheduleData(updatedSchedule);
     }
 
-    try {
-      await redis.set('sf_vacations', updatedVac);
-      if (newStatus === 'Aprobado' && req) {
-        await redis.set('sf_scheduleData', updatedSchedule);
-      }
-    } catch (error) {
-      console.error("Error al actualizar permiso:", error);
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 800);
-    }
+    saveState(updatedSchedule, operators, updatedVac);
   };
 
   if (!currentUser) {
@@ -682,7 +572,7 @@ export default function App() {
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Plantilla de Montacargistas</h2>
-                <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
+                <p className="text-xs text-emerald-300">Rol activo: {currentUser.role}</p>
               </div>
               {canManageOperators && (
                 <button onClick={() => { 
@@ -692,8 +582,7 @@ export default function App() {
                     zone: WAREHOUSE_ZONES[1],
                     equipment: FORKLIFT_TYPES[0],
                     shiftPattern: 'Mañana',
-                    licenseExpiry: formatDateLocal(new Date()),
-                    rotationOffset: 0
+                    licenseExpiry: formatDateLocal(new Date())
                   });
                   setIsAddOperatorOpen(true); 
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
@@ -721,7 +610,7 @@ export default function App() {
                     <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
                       <div className="flex justify-between"><span>Zona:</span><span className="font-semibold text-white">{op.zone}</span></div>
                       <div className="flex justify-between"><span>Equipo:</span><span className="font-semibold text-white">{op.equipment}</span></div>
-                      <div className="flex justify-between"><span>Esquema:</span><span className="font-semibold text-white">{op.zone === 'Materiales / Entrada a Línea' ? 'Rotación 5 Semanas' : `Fijo (${op.shiftPattern})`}</span></div>
+                      <div className="flex justify-between"><span>Esquema:</span><span className="font-semibold text-white">{`Fijo (${op.shiftPattern})`}</span></div>
                       <div className="flex justify-between items-center pt-1">
                         <span>Licencia DC3:</span>
                         <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>
@@ -795,30 +684,50 @@ export default function App() {
               <div>
                 <h3 className="text-sm font-bold text-white">Cambiar Turno</h3>
                 <p className="text-xs text-emerald-300 font-semibold">{selectedOperator?.name || ''}</p>
-                <p className="text-[11px] text-emerald-400/80">Día seleccionado: {selectedCell.dateStr}</p>
+                <p className="text-[11px] text-emerald-400/80">Día base: {selectedCell.dateStr}</p>
               </div>
-              <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
+              <button onClick={() => { setSelectedCell(null); setApplyScope('day'); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
             </div>
 
-            <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Dom)</span>
-              </div>
-              <input 
-                type="checkbox" 
-                id="applyWeekCheckbox"
-                checked={applyToFullWeek} 
-                onChange={(e) => setApplyToFullWeek(e.target.checked)} 
-                className="w-4 h-4 accent-emerald-500 cursor-pointer"
-              />
+            <div className="space-y-2 mb-4">
+              <label className="block text-xs font-bold text-emerald-200">Alcance del cambio:</label>
+              
+              <button 
+                onClick={() => setApplyScope('day')}
+                className={`w-full p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between ${applyScope === 'day' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-[#011a0d] border-emerald-900 text-emerald-300'}`}
+              >
+                <span>Solo este día ({selectedCell.dateStr})</span>
+                {applyScope === 'day' && <Check className="w-4 h-4"/>}
+              </button>
+
+              <button 
+                onClick={() => setApplyScope('week')}
+                className={`w-full p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between ${applyScope === 'week' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-[#011a0d] border-emerald-900 text-emerald-300'}`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Layers className="w-4 h-4"/>
+                  <span>Toda esta semana (Lun - Dom)</span>
+                </div>
+                {applyScope === 'week' && <Check className="w-4 h-4"/>}
+              </button>
+
+              <button 
+                onClick={() => setApplyScope('future')}
+                className={`w-full p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between ${applyScope === 'future' ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-[#011a0d] border-emerald-900 text-emerald-300'}`}
+              >
+                <div className="flex items-center space-x-2">
+                  <ArrowRight className="w-4 h-4"/>
+                  <span>De este día en adelante (Semanas futuras)</span>
+                </div>
+                {applyScope === 'future' && <Check className="w-4 h-4"/>}
+              </button>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (
                 <button 
                   key={code} 
-                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)} 
+                  onClick={() => handleSetShift(code)} 
                   className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
                 >
                   {code}: {config.label}
@@ -873,7 +782,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-emerald-300 font-bold mb-1">Turno Base (Para áreas no rotativas)</label>
+                <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
                 <select 
                   value={newOp.shiftPattern} 
                   onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} 

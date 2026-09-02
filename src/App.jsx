@@ -132,7 +132,7 @@ export default function App() {
   // Garantiza que la semana siempre empiece en Lunes
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
 
-  // 1. Cargar datos iniciales desde Upstash
+  // 1. Cargar datos iniciales desde Upstash (Aceptando arreglos vacíos)
   useEffect(() => {
     const loadCloudData = async () => {
       try {
@@ -140,9 +140,9 @@ export default function App() {
         const savedSchedule = await redis.get('sf_scheduleData');
         const savedVac = await redis.get('sf_vacations');
 
-        if (savedOps && Array.isArray(savedOps) && savedOps.length > 0) setOperators(savedOps);
-        if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-        if (savedVac && Array.isArray(savedVac) && savedVac.length > 0) setVacationRequests(savedVac);
+        if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
+        if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+        if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
       } catch (error) {
         console.error("Error al cargar datos:", error);
       } finally {
@@ -161,9 +161,9 @@ export default function App() {
         const savedSchedule = await redis.get('sf_scheduleData');
         const savedVac = await redis.get('sf_vacations');
 
-        if (savedOps) setOperators(savedOps);
-        if (savedSchedule) setScheduleData(savedSchedule);
-        if (savedVac) setVacationRequests(savedVac);
+        if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
+        if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+        if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
       } catch (err) {
         console.error("Error en sincronización continua:", err);
       }
@@ -297,7 +297,7 @@ export default function App() {
     if (editingOperator) {
       setOperators(prev => prev.map(op => op.id === editingOperator.id ? { ...op, ...newOp } : op));
     } else {
-      // Generación secuencial e infalible de IDs para prevenir colisiones
+      // Generación secuencial limpia de IDs para evitar duplicados
       const maxIdNum = operators.reduce((max, op) => {
         const num = parseInt(op.id.replace(/\D/g, ''), 10);
         return !isNaN(num) && num > max ? num : max;

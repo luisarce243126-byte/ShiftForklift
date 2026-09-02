@@ -116,10 +116,9 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   }
 };
 
-// Rotación de 5 semanas: M -> T -> M -> T -> N
 const getRotatingShift = (weekStartDateStr, offset = 0) => {
   const ROTATION_PATTERN = ['M', 'T', 'M', 'T', 'N'];
-  const baseDate = new Date('2026-01-05T00:00:00'); // Lunes de referencia base
+  const baseDate = new Date('2026-01-05T00:00:00');
 
   const currentDate = new Date(weekStartDateStr + 'T00:00:00');
   const diffWeeks = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24 * 7));
@@ -258,7 +257,6 @@ export default function App() {
     operators.forEach((op) => {
       let assignedShift = 'M';
 
-      // CONDICIÓN: Únicamente la zona de Materiales entra a la rotación de 5 semanas
       if (op.zone === 'Materiales / Entrada a Línea') {
         assignedShift = getRotatingShift(currentWeekStart, op.rotationOffset || 0);
       } else {
@@ -309,18 +307,48 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
+  // Modificado: Si se modifica un turno de Materiales, recalculamos el patrón rotativo para las semanas siguientes
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
 
-    const updatedSchedule = { ...scheduleData };
+    const op = operators.find(o => o.id === operatorId);
+    let updatedSchedule = { ...scheduleData };
 
-    if (isFullWeek) {
-      weekDays.forEach(day => {
-        updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
+    if (op && op.zone === 'Materiales / Entrada a Línea' && ['M', 'T', 'N'].includes(shiftCode)) {
+      const targetMonday = getMondayOfCurrentWeek(new Date(dateStr + 'T00:00:00'));
+      const baseDate = new Date('2026-01-05T00:00:00');
+      const currentDate = new Date(targetMonday + 'T00:00:00');
+      const diffWeeks = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24 * 7));
+
+      let targetIndex = 0;
+      if (shiftCode === 'N') targetIndex = 4;
+      else if (shiftCode === 'T') targetIndex = 1;
+      else if (shiftCode === 'M') targetIndex = 0;
+
+      const newOffset = ((targetIndex - diffWeeks) % 5 + 5) % 5;
+
+      const updatedOps = operators.map(o => o.id === operatorId ? { ...o, rotationOffset: newOffset } : o);
+      setOperators(updatedOps);
+      await redis.set('sf_operators', updatedOps);
+
+      // Limpia registros futuros guardados para el operador a partir del Lunes seleccionado
+      Object.keys(updatedSchedule).forEach(key => {
+        if (key.startsWith(`${operatorId}_`)) {
+          const keyDate = key.split('_')[1];
+          if (keyDate >= targetMonday) {
+            delete updatedSchedule[key];
+          }
+        }
       });
     } else {
-      updatedSchedule[`${operatorId}_${dateStr}`] = shiftCode;
+      if (isFullWeek) {
+        weekDays.forEach(day => {
+          updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
+        });
+      } else {
+        updatedSchedule[`${operatorId}_${dateStr}`] = shiftCode;
+      }
     }
 
     setScheduleData(updatedSchedule);

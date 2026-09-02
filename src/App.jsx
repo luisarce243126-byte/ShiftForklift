@@ -26,7 +26,8 @@ import {
   Lock,
   LogOut,
   UserCheck,
-  ShieldCheck
+  ShieldCheck,
+  Layers
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -69,15 +70,15 @@ const ABSENCE_TYPES = [
 
 const INITIAL_OPERATORS = [
   { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo' },
-  { id: 'M-102', name: 'Ricardo Alamilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
-  { id: 'M-103', name: 'Ana Patricia Silva', zone: 'Embarques / Surtido', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Tarde', licenseExpiry: '2026-09-25', status: 'Activo' },
-  { id: 'M-104', name: 'Jorge Luis Martínez', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Noche', licenseExpiry: '2025-12-01', status: 'Activo' },
-  { id: 'M-105', name: 'David Hernández', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' },
-  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Recepción / Carga', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo' }
+  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
+  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo' },
+  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo' },
+  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' },
+  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo' }
 ];
 
 const INITIAL_VACATION_REQUESTS = [
-  { id: 1, operatorId: 'M-103', operatorName: 'Ana Patricia Silva', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
+  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
   { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
 ];
 
@@ -132,6 +133,26 @@ export default function App() {
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
 
+  // Opción para aplicar turno a toda la semana
+  const [applyToFullWeek, setApplyToFullWeek] = useState(false);
+
+  useEffect(() => {
+    const checkWeekChange = () => {
+      const actualMonday = getMondayOfCurrentWeek();
+      if (actualMonday !== currentWeekStart) {
+        setCurrentWeekStart(actualMonday);
+      }
+    };
+
+    const interval = setInterval(checkWeekChange, 60000);
+    window.addEventListener('focus', checkWeekChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkWeekChange);
+    };
+  }, [currentWeekStart]);
+
   useEffect(() => {
     const loadCloudData = async () => {
       try {
@@ -144,7 +165,7 @@ export default function App() {
         if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
       } catch (error) {
         console.error("Error al cargar datos:", error);
-      } flex: {
+      } finally {
         setIsLoaded(true);
       }
     };
@@ -272,13 +293,25 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  const handleSetShift = async (operatorId, dateStr, shiftCode) => {
+  // Modificado para soportar cambio individual o de semana completa
+  const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
 
-    const updatedSchedule = { ...scheduleData, [`${operatorId}_${dateStr}`]: shiftCode };
+    const updatedSchedule = { ...scheduleData };
+
+    if (isFullWeek) {
+      // Aplica de Lunes a Viernes (los primeros 5 días de la semana actual)
+      weekDays.slice(0, 5).forEach(day => {
+        updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
+      });
+    } else {
+      updatedSchedule[`${operatorId}_${dateStr}`] = shiftCode;
+    }
+
     setScheduleData(updatedSchedule);
     setSelectedCell(null);
+    setApplyToFullWeek(false);
 
     try {
       await redis.set('sf_scheduleData', updatedSchedule);
@@ -369,7 +402,6 @@ export default function App() {
     }
   };
 
-  // ACTUALIZACIÓN: Reflejo automático en la matriz al aprobar un permiso/incapacidad
   const handleVacationStatus = async (id, newStatus) => {
     if (!canApproveVacations) return;
     isUpdatingRef.current = true;
@@ -466,6 +498,8 @@ export default function App() {
       </div>
     );
   }
+
+  const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
 
   return (
     <div className="min-h-screen bg-[#021f12] text-emerald-50 font-sans pb-12">
@@ -699,16 +733,41 @@ export default function App() {
         )}
       </main>
 
+      {/* Modal para cambiar turno */}
       {selectedCell && canEditShifts && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-bold text-white">Cambiar Turno ({selectedCell.dateStr})</h3>
-              <button onClick={() => setSelectedCell(null)} className="text-emerald-400"><X className="w-5 h-5"/></button>
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white">Cambiar Turno</h3>
+                <p className="text-xs text-emerald-300 font-semibold">{selectedOperator?.name || ''}</p>
+                <p className="text-[11px] text-emerald-400/80">Día seleccionado: {selectedCell.dateStr}</p>
+              </div>
+              <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
             </div>
+
+            {/* Opción para cambiar toda la semana */}
+            <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Vie)</span>
+              </div>
+              <input 
+                type="checkbox" 
+                id="applyWeekCheckbox"
+                checked={applyToFullWeek} 
+                onChange={(e) => setApplyToFullWeek(e.target.checked)} 
+                className="w-4 h-4 accent-emerald-500 cursor-pointer"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (
-                <button key={code} onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code)} className={`p-3 rounded-xl border text-left text-xs font-bold ${config.color}`}>
+                <button 
+                  key={code} 
+                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)} 
+                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
+                >
                   {code}: {config.label}
                 </button>
               ))}

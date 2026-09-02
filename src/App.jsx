@@ -110,8 +110,9 @@ export default function App() {
   const [operators, setOperators] = useState(INITIAL_OPERATORS);
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  // Cargar datos guardados en la NUBE (Upstash)
+  // 1. Cargar datos iniciales desde Upstash
   useEffect(() => {
     const loadCloudData = async () => {
       try {
@@ -123,25 +124,49 @@ export default function App() {
         if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
         if (savedVac && Array.isArray(savedVac) && savedVac.length > 0) setVacationRequests(savedVac);
       } catch (error) {
-        console.error("Error al cargar datos de la nube:", error);
+        console.error("Error al cargar datos:", error);
+      } finally {
+        setIsLoaded(true);
       }
     };
 
     loadCloudData();
   }, []);
 
-  // Guardar en la nube cada vez que cambien los datos
+  // 2. Polling: Sincronización en segundo plano cada 3 segundos
   useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const savedOps = await redis.get('sf_operators');
+        const savedSchedule = await redis.get('sf_scheduleData');
+        const savedVac = await redis.get('sf_vacations');
+
+        if (savedOps) setOperators(savedOps);
+        if (savedSchedule) setScheduleData(savedSchedule);
+        if (savedVac) setVacationRequests(savedVac);
+      } catch (err) {
+        console.error("Error en sincronización continua:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // 3. Guardar en la nube SOLO cuando la carga inicial haya terminado (isLoaded === true)
+  useEffect(() => {
+    if (!isLoaded) return;
     redis.set('sf_operators', operators).catch(console.error);
-  }, [operators]);
+  }, [operators, isLoaded]);
 
   useEffect(() => {
+    if (!isLoaded) return;
     redis.set('sf_scheduleData', scheduleData).catch(console.error);
-  }, [scheduleData]);
+  }, [scheduleData, isLoaded]);
 
   useEffect(() => {
+    if (!isLoaded) return;
     redis.set('sf_vacations', vacationRequests).catch(console.error);
-  }, [vacationRequests]);
+  }, [vacationRequests, isLoaded]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState('Todas las zonas');
@@ -193,6 +218,7 @@ export default function App() {
   }, [currentWeekStart]);
 
   useEffect(() => {
+    if (!isLoaded) return;
     const newSchedule = { ...scheduleData };
     let changed = false;
 
@@ -213,7 +239,7 @@ export default function App() {
     });
 
     if (changed) setScheduleData(newSchedule);
-  }, [operators, weekDays]);
+  }, [operators, weekDays, isLoaded]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -391,7 +417,6 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        {/* TAB 1: MATRIZ */}
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-center justify-between gap-4">
@@ -476,7 +501,6 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: PERSONAL */}
         {activeTab === 'operators' && (
           <div className="space-y-5">
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
@@ -535,7 +559,6 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 3: PERMISOS */}
         {activeTab === 'vacations' && (
           <div className="space-y-5">
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
@@ -588,7 +611,6 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL CAMBIAR TURNO */}
       {selectedCell && canEditShifts && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
@@ -607,7 +629,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL REGISTRAR / EDITAR OPERADOR */}
       {isAddOperatorOpen && canManageOperators && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
@@ -684,7 +705,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL REGISTRAR PERMISO */}
       {isRequestVacationOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">

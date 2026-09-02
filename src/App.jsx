@@ -1,5 +1,3 @@
-Se ha ajustado la función y la etiqueta para abarcar los 7 días (Lunes a Domingo) al marcar la casilla.
-App.jsx (Código actualizado)
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { redis } from './db';
 import { 

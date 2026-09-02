@@ -69,12 +69,12 @@ const ABSENCE_TYPES = [
 ];
 
 const INITIAL_OPERATORS = [
-  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo' },
-  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
-  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo' },
-  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo' },
-  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' },
-  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo' }
+  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo', rotationOffset: 0 },
+  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo', rotationOffset: 0 },
+  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo', rotationOffset: 1 },
+  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo', rotationOffset: 2 },
+  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo', rotationOffset: 3 },
+  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo', rotationOffset: 4 }
 ];
 
 const INITIAL_VACATION_REQUESTS = [
@@ -116,6 +116,18 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   }
 };
 
+// Rotación de 5 semanas: M -> T -> M -> T -> N
+const getRotatingShift = (weekStartDateStr, offset = 0) => {
+  const ROTATION_PATTERN = ['M', 'T', 'M', 'T', 'N'];
+  const baseDate = new Date('2026-01-05T00:00:00'); // Lunes de referencia base
+
+  const currentDate = new Date(weekStartDateStr + 'T00:00:00');
+  const diffWeeks = Math.floor((currentDate - baseDate) / (1000 * 60 * 60 * 24 * 7));
+  const cycleIndex = ((diffWeeks + offset) % 5 + 5) % 5;
+
+  return ROTATION_PATTERN[cycleIndex];
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
@@ -132,7 +144,6 @@ export default function App() {
   const isUpdatingRef = useRef(false);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
-
   const [applyToFullWeek, setApplyToFullWeek] = useState(false);
 
   useEffect(() => {
@@ -207,7 +218,8 @@ export default function App() {
     zone: WAREHOUSE_ZONES[1],
     equipment: FORKLIFT_TYPES[0],
     shiftPattern: 'Mañana',
-    licenseExpiry: '2027-12-31'
+    licenseExpiry: '2027-12-31',
+    rotationOffset: 0
   });
 
   const [newVac, setNewVac] = useState({
@@ -244,16 +256,21 @@ export default function App() {
     let changed = false;
 
     operators.forEach((op) => {
+      let assignedShift = 'M';
+
+      // CONDICIÓN: Únicamente la zona de Materiales entra a la rotación de 5 semanas
+      if (op.zone === 'Materiales / Entrada a Línea') {
+        assignedShift = getRotatingShift(currentWeekStart, op.rotationOffset || 0);
+      } else {
+        if (op.shiftPattern === 'Mañana') assignedShift = 'M';
+        else if (op.shiftPattern === 'Tarde') assignedShift = 'T';
+        else if (op.shiftPattern === 'Noche') assignedShift = 'N';
+      }
+
       weekDays.forEach((day, idx) => {
         const key = `${op.id}_${day.dateStr}`;
         if (!newSchedule[key]) {
-          if (idx === 5 || idx === 6) {
-            newSchedule[key] = 'DES';
-          } else {
-            if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
-            else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
-            else newSchedule[key] = 'N';
-          }
+          newSchedule[key] = (idx === 5 || idx === 6) ? 'DES' : assignedShift;
           changed = true;
         }
       });
@@ -263,7 +280,7 @@ export default function App() {
       setScheduleData(newSchedule);
       redis.set('sf_scheduleData', newSchedule).catch(console.error);
     }
-  }, [operators, weekDays, isLoaded]);
+  }, [operators, weekDays, isLoaded, currentWeekStart]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -292,7 +309,6 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  // Modificado para cubrir de Lunes a Domingo (los 7 días)
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
@@ -300,7 +316,6 @@ export default function App() {
     const updatedSchedule = { ...scheduleData };
 
     if (isFullWeek) {
-      // Aplica a todos los días de la semana activa (Lunes a Domingo)
       weekDays.forEach(day => {
         updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
       });
@@ -637,7 +652,8 @@ export default function App() {
                     zone: WAREHOUSE_ZONES[1],
                     equipment: FORKLIFT_TYPES[0],
                     shiftPattern: 'Mañana',
-                    licenseExpiry: formatDateLocal(new Date())
+                    licenseExpiry: formatDateLocal(new Date()),
+                    rotationOffset: 0
                   });
                   setIsAddOperatorOpen(true); 
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
@@ -665,7 +681,7 @@ export default function App() {
                     <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
                       <div className="flex justify-between"><span>Zona:</span><span className="font-semibold text-white">{op.zone}</span></div>
                       <div className="flex justify-between"><span>Equipo:</span><span className="font-semibold text-white">{op.equipment}</span></div>
-                      <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
+                      <div className="flex justify-between"><span>Esquema:</span><span className="font-semibold text-white">{op.zone === 'Materiales / Entrada a Línea' ? 'Rotación 5 Semanas' : `Fijo (${op.shiftPattern})`}</span></div>
                       <div className="flex justify-between items-center pt-1">
                         <span>Licencia DC3:</span>
                         <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>
@@ -732,7 +748,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal para cambiar turno */}
       {selectedCell && canEditShifts && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
@@ -745,7 +760,6 @@ export default function App() {
               <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
             </div>
 
-            {/* Opción para cambiar toda la semana (Lunes a Domingo) */}
             <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
@@ -819,7 +833,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
+                <label className="block text-emerald-300 font-bold mb-1">Turno Base (Para áreas no rotativas)</label>
                 <select 
                   value={newOp.shiftPattern} 
                   onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} 

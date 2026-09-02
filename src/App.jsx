@@ -72,12 +72,13 @@ const INITIAL_OPERATORS = [
   { id: 'M-102', name: 'Ricardo Alamilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
   { id: 'M-103', name: 'Ana Patricia Silva', zone: 'Embarques / Surtido', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Tarde', licenseExpiry: '2026-09-25', status: 'Activo' },
   { id: 'M-104', name: 'Jorge Luis Martínez', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Noche', licenseExpiry: '2025-12-01', status: 'Activo' },
-  { id: 'M-105', name: 'David Hernández', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' }
+  { id: 'M-105', name: 'David Hernández', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' },
+  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Recepción / Carga', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo' }
 ];
 
 const INITIAL_VACATION_REQUESTS = [
   { id: 1, operatorId: 'M-103', operatorName: 'Ana Patricia Silva', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
-  { id: 2, operatorId: 'M-105', operatorName: 'David Hernández', startDate: '2026-09-02', endDate: '2026-09-03', type: 'Día de Descanso Especial', status: 'Aprobado', reason: 'Asunto personal familiar' }
+  { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
 ];
 
 const formatDateLocal = (date) => {
@@ -127,12 +128,10 @@ export default function App() {
   const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Bandera para pausar el polling durante escrituras manuales (evita condiciones de carrera)
   const isUpdatingRef = useRef(false);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
 
-  // 1. Cargar datos iniciales desde Upstash
   useEffect(() => {
     const loadCloudData = async () => {
       try {
@@ -145,7 +144,7 @@ export default function App() {
         if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
       } catch (error) {
         console.error("Error al cargar datos:", error);
-      } finally {
+      } flex: {
         setIsLoaded(true);
       }
     };
@@ -153,7 +152,6 @@ export default function App() {
     loadCloudData();
   }, []);
 
-  // 2. Polling seguro: ignora la lectura de Redis si estamos escribiendo un cambio local
   useEffect(() => {
     const interval = setInterval(async () => {
       if (isUpdatingRef.current) return;
@@ -361,13 +359,6 @@ export default function App() {
     const updatedVac = [newReq, ...vacationRequests];
     setVacationRequests(updatedVac);
     setIsRequestVacationOpen(false);
-    setNewVac({
-      operatorId: operators[0]?.id || 'M-101',
-      startDate: formatDateLocal(new Date()),
-      endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
-      type: 'Vacaciones',
-      reason: ''
-    });
 
     try {
       await redis.set('sf_vacations', updatedVac);
@@ -378,17 +369,45 @@ export default function App() {
     }
   };
 
+  // ACTUALIZACIÓN: Reflejo automático en la matriz al aprobar un permiso/incapacidad
   const handleVacationStatus = async (id, newStatus) => {
     if (!canApproveVacations) return;
     isUpdatingRef.current = true;
 
+    const req = vacationRequests.find(r => r.id === id);
     const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
     setVacationRequests(updatedVac);
 
+    let updatedSchedule = { ...scheduleData };
+
+    if (newStatus === 'Aprobado' && req) {
+      let shiftCode = 'DES';
+      if (req.type === 'Vacaciones') shiftCode = 'VAC';
+      else if (req.type === 'Incapacidad') shiftCode = 'INC';
+      else if (req.type === 'Día de Descanso Especial' || req.type === 'Permiso Personal') shiftCode = 'DES';
+
+      const [sY, sM, sD] = req.startDate.split('-').map(Number);
+      const [eY, eM, eD] = req.endDate.split('-').map(Number);
+
+      let curr = new Date(sY, sM - 1, sD);
+      const end = new Date(eY, eM - 1, eD);
+
+      while (curr <= end) {
+        const dateStr = formatDateLocal(curr);
+        updatedSchedule[`${req.operatorId}_${dateStr}`] = shiftCode;
+        curr.setDate(curr.getDate() + 1);
+      }
+
+      setScheduleData(updatedSchedule);
+    }
+
     try {
       await redis.set('sf_vacations', updatedVac);
+      if (newStatus === 'Aprobado' && req) {
+        await redis.set('sf_scheduleData', updatedSchedule);
+      }
     } catch (error) {
-      console.error("Error al cambiar estado de permiso:", error);
+      console.error("Error al actualizar estado del permiso:", error);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }

@@ -1,3 +1,5 @@
+Se ha ajustado la función y la etiqueta para abarcar los 7 días (Lunes a Domingo) al marcar la casilla.
+App.jsx (Código actualizado)
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { redis } from './db';
 import { 
@@ -20,14 +22,14 @@ import {
   Star, 
   Check, 
   X, 
+  FileImage,
   Pencil,
   Trash2,
   Lock,
   LogOut,
   UserCheck,
   ShieldCheck,
-  Layers,
-  ArrowRight
+  Layers
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -37,21 +39,13 @@ const MOCK_USERS = [
 ];
 
 const SHIFT_TYPES = {
-  M: { code: 'M', label: 'Mañana', color: 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200', icon: Sunrise },
-  T: { code: 'T', label: 'Tarde', color: 'bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200', icon: Sun },
-  N: { code: 'N', label: 'Noche', color: 'bg-indigo-900 text-indigo-100 border-indigo-700 hover:bg-indigo-800', icon: Moon },
-  DES: { code: 'DES', label: 'Descanso', color: 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700', icon: Coffee },
-  VAC: { code: 'VAC', label: 'Vacaciones', color: 'bg-emerald-900 text-emerald-200 border-emerald-600 hover:bg-emerald-800', icon: Palmtree },
-  INC: { code: 'INC', label: 'Incapacidad', color: 'bg-rose-900 text-rose-200 border-rose-600 hover:bg-rose-800', icon: AlertTriangle }
+  M: { code: 'M', label: 'Mañana', color: 'bg-emerald-800/80 text-emerald-100 border-emerald-500/50 hover:bg-emerald-700/90', icon: Sunrise },
+  T: { code: 'T', label: 'Tarde', color: 'bg-amber-600/40 text-amber-200 border-amber-500/50 hover:bg-amber-600/60', icon: Sun },
+  N: { code: 'N', label: 'Noche', color: 'bg-indigo-900/80 text-indigo-100 border-indigo-500/50 hover:bg-indigo-800/90', icon: Moon },
+  DES: { code: 'DES', label: 'Descanso', color: 'bg-emerald-950 text-emerald-400 border-emerald-800/60 hover:bg-emerald-900', icon: Coffee },
+  VAC: { code: 'VAC', label: 'Vacaciones', color: 'bg-purple-900/70 text-purple-200 border-purple-500/50 hover:bg-purple-800/70', icon: Palmtree },
+  INC: { code: 'INC', label: 'Incapacidad', color: 'bg-red-900/80 text-red-200 border-red-500/50 hover:bg-red-800/80', icon: AlertTriangle }
 };
-
-const MATERIALES_CYCLE = [
-  { week: 1, code: 'M', title: 'Semana 1', label: 'Turno Mañana (06:00 - 14:00)', badge: 'Mañana', bgBadge: 'bg-amber-100 text-amber-800' },
-  { week: 2, code: 'T', title: 'Semana 2', label: 'Turno Tarde (14:00 - 22:00)', badge: 'Tarde', bgBadge: 'bg-blue-100 text-blue-800' },
-  { week: 3, code: 'M', title: 'Semana 3', label: 'Turno Mañana (06:00 - 14:00)', badge: 'Mañana', bgBadge: 'bg-amber-100 text-amber-800' },
-  { week: 4, code: 'T', title: 'Semana 4', label: 'Turno Tarde (14:00 - 22:00)', badge: 'Tarde', bgBadge: 'bg-blue-100 text-blue-800' },
-  { week: 5, code: 'N', title: 'Semana 5', label: 'Turno Noche (22:00 - 06:00)', badge: 'Noche', bgBadge: 'bg-indigo-900 text-indigo-100' }
-];
 
 const WAREHOUSE_ZONES = [
   'Todas las zonas',
@@ -76,10 +70,19 @@ const ABSENCE_TYPES = [
   'Permiso Personal'
 ];
 
-const parseLocalDate = (dateStr) => {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d);
-};
+const INITIAL_OPERATORS = [
+  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo' },
+  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
+  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo' },
+  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo' },
+  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' },
+  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo' }
+];
+
+const INITIAL_VACATION_REQUESTS = [
+  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
+  { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
+];
 
 const formatDateLocal = (date) => {
   const y = date.getFullYear();
@@ -96,75 +99,132 @@ const getMondayOfCurrentWeek = (refDate = new Date()) => {
   return formatDateLocal(d);
 };
 
-const INITIAL_OPERATORS = [
-  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15' },
-  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31' },
-  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25' },
-  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01' },
-  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20' },
-  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01' }
-];
+const getLicenseStatusStyle = (expiryDateStr) => {
+  if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
 
-const INITIAL_VACATION_REQUESTS = [
-  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales' }
-];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiryDate = new Date(expiryDateStr + 'T00:00:00');
+  const diffTime = expiryDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return 'bg-red-950 text-red-300 border-red-700/80 font-bold';
+  } else if (diffDays <= 30) {
+    return 'bg-amber-950 text-amber-300 border-amber-600/80 font-bold';
+  } else {
+    return 'bg-emerald-950 text-emerald-300 border-emerald-800';
+  }
+};
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState({ id: 1, email: 'admin@empresa.com', name: 'Administrador General', role: 'Admin' });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+  const [loginError, setLoginError] = useState('');
+
   const [activeTab, setActiveTab] = useState('scheduler');
+
+  const [operators, setOperators] = useState(INITIAL_OPERATORS);
+  const [scheduleData, setScheduleData] = useState({});
+  const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  const isUpdatingRef = useRef(false);
+
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
 
-  const [operators, setOperators] = useState(() => {
-    const local = localStorage.getItem('sf_operators');
-    return local ? JSON.parse(local) : INITIAL_OPERATORS;
-  });
+  const [applyToFullWeek, setApplyToFullWeek] = useState(false);
 
-  const [scheduleData, setScheduleData] = useState(() => {
-    const local = localStorage.getItem('sf_scheduleData');
-    return local ? JSON.parse(local) : {};
-  });
+  useEffect(() => {
+    const checkWeekChange = () => {
+      const actualMonday = getMondayOfCurrentWeek();
+      if (actualMonday !== currentWeekStart) {
+        setCurrentWeekStart(actualMonday);
+      }
+    };
 
-  const [vacationRequests, setVacationRequests] = useState(() => {
-    const local = localStorage.getItem('sf_vacations');
-    return local ? JSON.parse(local) : INITIAL_VACATION_REQUESTS;
-  });
+    const interval = setInterval(checkWeekChange, 60000);
+    window.addEventListener('focus', checkWeekChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkWeekChange);
+    };
+  }, [currentWeekStart]);
+
+  useEffect(() => {
+    const loadCloudData = async () => {
+      try {
+        const savedOps = await redis.get('sf_operators');
+        const savedSchedule = await redis.get('sf_scheduleData');
+        const savedVac = await redis.get('sf_vacations');
+
+        if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
+        if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+        if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
+      } catch (error) {
+        console.error("Error al cargar datos:", error);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+
+    loadCloudData();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (isUpdatingRef.current) return;
+
+      try {
+        const savedOps = await redis.get('sf_operators');
+        const savedSchedule = await redis.get('sf_scheduleData');
+        const savedVac = await redis.get('sf_vacations');
+
+        if (!isUpdatingRef.current) {
+          if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
+          if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+          if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
+        }
+      } catch (err) {
+        console.error("Error en sincronización continua:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedZone, setSelectedZone] = useState('Materiales / Entrada a Línea');
-
-  const [selectedCell, setSelectedCell] = useState(null);
-  const [selectedCycleWeek, setSelectedCycleWeek] = useState(1);
-  const [selectedException, setSelectedException] = useState(null);
-  const [continueSequence, setContinueSequence] = useState(true);
+  const [selectedZone, setSelectedZone] = useState('Todas las zonas');
 
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
+  const [selectedCell, setSelectedCell] = useState(null);
 
-  const [newOp, setNewOp] = useState({ name: '', zone: WAREHOUSE_ZONES[4], equipment: FORKLIFT_TYPES[0], shiftPattern: 'Mañana', licenseExpiry: '2027-12-31' });
-  const [newVac, setNewVac] = useState({ operatorId: INITIAL_OPERATORS[0]?.id || 'M-101', startDate: formatDateLocal(new Date()), endDate: formatDateLocal(new Date()), type: 'Vacaciones', reason: '' });
+  const [newOp, setNewOp] = useState({
+    name: '',
+    zone: WAREHOUSE_ZONES[1],
+    equipment: FORKLIFT_TYPES[0],
+    shiftPattern: 'Mañana',
+    licenseExpiry: '2027-12-31'
+  });
 
-  const saveState = async (newSchedule, newOps = operators, newVacations = vacationRequests) => {
-    setScheduleData(newSchedule);
-    setOperators(newOps);
-    setVacationRequests(newVacations);
-
-    localStorage.setItem('sf_scheduleData', JSON.stringify(newSchedule));
-    localStorage.setItem('sf_operators', JSON.stringify(newOps));
-    localStorage.setItem('sf_vacations', JSON.stringify(newVacations));
-
-    try {
-      await redis.set('sf_scheduleData', newSchedule);
-      await redis.set('sf_operators', newOps);
-      await redis.set('sf_vacations', newVacations);
-    } catch (e) {
-      console.error("Error al guardar:", e);
-    }
-  };
+  const [newVac, setNewVac] = useState({
+    operatorId: INITIAL_OPERATORS[0]?.id || 'M-101',
+    startDate: formatDateLocal(new Date()),
+    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
+    type: 'Vacaciones',
+    reason: ''
+  });
 
   const weekDays = useMemo(() => {
     const days = [];
-    const start = parseLocalDate(currentWeekStart);
+    const [year, month, day] = currentWeekStart.split('-').map(Number);
+    const start = new Date(year, month - 1, day);
+
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
@@ -180,15 +240,51 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
-  const getOperatorShift = (op, dateStr) => {
-    const overrideKey = `${op.id}_${dateStr}`;
-    if (scheduleData[overrideKey]) return scheduleData[overrideKey];
+  useEffect(() => {
+    if (!isLoaded || isUpdatingRef.current) return;
+    const newSchedule = { ...scheduleData };
+    let changed = false;
 
-    const d = parseLocalDate(dateStr);
-    if (d.getDay() === 0 || d.getDay() === 6) return 'DES';
+    operators.forEach((op) => {
+      weekDays.forEach((day, idx) => {
+        const key = `${op.id}_${day.dateStr}`;
+        if (!newSchedule[key]) {
+          if (idx === 5 || idx === 6) {
+            newSchedule[key] = 'DES';
+          } else {
+            if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
+            else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
+            else newSchedule[key] = 'N';
+          }
+          changed = true;
+        }
+      });
+    });
 
-    return op.shiftPattern === 'Tarde' ? 'T' : op.shiftPattern === 'Noche' ? 'N' : 'M';
+    if (changed) {
+      setScheduleData(newSchedule);
+      redis.set('sf_scheduleData', newSchedule).catch(console.error);
+    }
+  }, [operators, weekDays, isLoaded]);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    const user = MOCK_USERS.find(u => u.email === loginEmail && u.pass === loginPass);
+    if (user) {
+      setCurrentUser(user);
+      setLoginError('');
+    } else {
+      setLoginError('Correo o contraseña incorrectos.');
+    }
   };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+  };
+
+  const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+  const canManageOperators = currentUser && currentUser.role === 'Admin';
+  const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
 
   const filteredOperators = useMemo(() => {
     return operators.filter(op => {
@@ -198,84 +294,213 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
-  const isMaterialesOperator = selectedOperator?.zone === 'Materiales / Entrada a Línea';
+  // Modificado para cubrir de Lunes a Domingo (los 7 días)
+  const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
+    if (!canEditShifts) return;
+    isUpdatingRef.current = true;
 
-  const handleOpenEditModal = (opId, dateStr) => {
-    const currentShift = getOperatorShift(operators.find(o => o.id === opId), dateStr);
-    setSelectedCell({ operatorId: opId, dateStr, currentShift });
+    const updatedSchedule = { ...scheduleData };
 
-    if (['DES', 'VAC', 'INC'].includes(currentShift)) {
-      setSelectedException(currentShift);
-      setSelectedCycleWeek(null);
+    if (isFullWeek) {
+      // Aplica a todos los días de la semana activa (Lunes a Domingo)
+      weekDays.forEach(day => {
+        updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
+      });
     } else {
-      setSelectedException(null);
-      const matchedCycle = MATERIALES_CYCLE.find(c => c.code === currentShift);
-      setSelectedCycleWeek(matchedCycle ? matchedCycle.week : 1);
-    }
-    setContinueSequence(true);
-  };
-
-  const handleSaveMaterialesShift = () => {
-    if (!selectedCell) return;
-    const { operatorId, dateStr } = selectedCell;
-    const newSchedule = { ...scheduleData };
-
-    if (selectedException) {
-      if (continueSequence) {
-        weekDays.forEach(d => {
-          newSchedule[`${operatorId}_${d.dateStr}`] = selectedException;
-        });
-      } else {
-        newSchedule[`${operatorId}_${dateStr}`] = selectedException;
-      }
-    } else if (selectedCycleWeek) {
-      const startMon = parseLocalDate(getMondayOfCurrentWeek(parseLocalDate(dateStr)));
-      const totalWeeks = continueSequence ? 12 : 1;
-
-      for (let w = 0; w < totalWeeks; w++) {
-        const cycleIdx = (selectedCycleWeek - 1 + w) % 5;
-        const targetCode = MATERIALES_CYCLE[cycleIdx].code;
-
-        for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
-          const currDate = new Date(startMon);
-          currDate.setDate(startMon.getDate() + (w * 7) + dayIdx);
-          const dStr = formatDateLocal(currDate);
-
-          if (currDate.getDay() === 0 || currDate.getDay() === 6) {
-            newSchedule[`${operatorId}_${dStr}`] = 'DES';
-          } else {
-            newSchedule[`${operatorId}_${dStr}`] = targetCode;
-          }
-        }
-      }
+      updatedSchedule[`${operatorId}_${dateStr}`] = shiftCode;
     }
 
-    saveState(newSchedule);
+    setScheduleData(updatedSchedule);
     setSelectedCell(null);
+    setApplyToFullWeek(false);
+
+    try {
+      await redis.set('sf_scheduleData', updatedSchedule);
+    } catch (error) {
+      console.error("Error al guardar turno:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
   };
 
-  const handleResetOriginal = () => {
-    if (!selectedCell) return;
-    const { operatorId, dateStr } = selectedCell;
-    const newSchedule = { ...scheduleData };
+  const handleSaveOperator = async (e) => {
+    e.preventDefault();
+    if (!newOp.name || !canManageOperators) return;
 
-    const startMon = parseLocalDate(getMondayOfCurrentWeek(parseLocalDate(dateStr)));
-    for (let i = 0; i < 84; i++) {
-      const d = new Date(startMon);
-      d.setDate(startMon.getDate() + i);
-      delete newSchedule[`${operatorId}_${formatDateLocal(d)}`];
+    isUpdatingRef.current = true;
+    let updatedOps;
+
+    if (editingOperator) {
+      updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp } : op);
+    } else {
+      const maxIdNum = operators.reduce((max, op) => {
+        const num = parseInt(op.id.replace(/\D/g, ''), 10);
+        return !isNaN(num) && num > max ? num : max;
+      }, 100);
+      const newId = `M-${maxIdNum + 1}`;
+      updatedOps = [...operators, { id: newId, ...newOp, status: 'Activo' }];
     }
 
-    saveState(newSchedule);
-    setSelectedCell(null);
+    setOperators(updatedOps);
+    setIsAddOperatorOpen(false);
+    setEditingOperator(null);
+
+    try {
+      await redis.set('sf_operators', updatedOps);
+    } catch (error) {
+      console.error("Error al guardar operador:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
   };
 
-  const getDateFormattedLong = (dateStr) => {
-    if (!dateStr) return '';
-    const d = parseLocalDate(dateStr);
-    return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  const handleDeleteOperator = async (operatorId) => {
+    if (!canManageOperators) return;
+
+    if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
+      isUpdatingRef.current = true;
+
+      const updatedOps = operators.filter(op => op.id !== operatorId);
+      setOperators(updatedOps);
+
+      try {
+        await redis.set('sf_operators', updatedOps);
+      } catch (error) {
+        console.error("Error al eliminar en la base de datos:", error);
+      } finally {
+        setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+      }
+    }
   };
+
+  const handleCreateVacationRequest = async (e) => {
+    e.preventDefault();
+    const op = operators.find(o => o.id === newVac.operatorId);
+    if (!op) return;
+
+    isUpdatingRef.current = true;
+    const newReq = {
+      id: vacationRequests.length + 1,
+      operatorId: op.id,
+      operatorName: op.name,
+      startDate: newVac.startDate,
+      endDate: newVac.endDate,
+      type: newVac.type,
+      status: 'Pendiente',
+      reason: newVac.reason || 'Sin motivo especificado'
+    };
+
+    const updatedVac = [newReq, ...vacationRequests];
+    setVacationRequests(updatedVac);
+    setIsRequestVacationOpen(false);
+
+    try {
+      await redis.set('sf_vacations', updatedVac);
+    } catch (error) {
+      console.error("Error al guardar permiso:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  const handleVacationStatus = async (id, newStatus) => {
+    if (!canApproveVacations) return;
+    isUpdatingRef.current = true;
+
+    const req = vacationRequests.find(r => r.id === id);
+    const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
+    setVacationRequests(updatedVac);
+
+    let updatedSchedule = { ...scheduleData };
+
+    if (newStatus === 'Aprobado' && req) {
+      let shiftCode = 'DES';
+      if (req.type === 'Vacaciones') shiftCode = 'VAC';
+      else if (req.type === 'Incapacidad') shiftCode = 'INC';
+      else if (req.type === 'Día de Descanso Especial' || req.type === 'Permiso Personal') shiftCode = 'DES';
+
+      const [sY, sM, sD] = req.startDate.split('-').map(Number);
+      const [eY, eM, eD] = req.endDate.split('-').map(Number);
+
+      let curr = new Date(sY, sM - 1, sD);
+      const end = new Date(eY, eM - 1, eD);
+
+      while (curr <= end) {
+        const dateStr = formatDateLocal(curr);
+        updatedSchedule[`${req.operatorId}_${dateStr}`] = shiftCode;
+        curr.setDate(curr.getDate() + 1);
+      }
+
+      setScheduleData(updatedSchedule);
+    }
+
+    try {
+      await redis.set('sf_vacations', updatedVac);
+      if (newStatus === 'Aprobado' && req) {
+        await redis.set('sf_scheduleData', updatedSchedule);
+      }
+    } catch (error) {
+      console.error("Error al actualizar estado del permiso:", error);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
+        <div className="bg-[#002e14] border border-emerald-700 rounded-3xl max-w-md w-full p-8 shadow-2xl">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/40 flex items-center justify-center mx-auto mb-3 shadow-lg relative">
+              <Truck className="w-8 h-8 text-emerald-200" />
+              <Star className="w-5 h-5 text-red-600 fill-red-600 absolute -top-1 -right-1" />
+            </div>
+            <h2 className="text-2xl font-bold text-white tracking-wide">ShiftForklift</h2>
+            <p className="text-xs text-emerald-300/80 mt-1">Iniciar Sesión para acceder al control de turnos</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4 text-xs">
+            {loginError && (
+              <div className="p-3 bg-red-950/80 border border-red-800 rounded-xl text-red-200 text-center font-bold">
+                {loginError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-emerald-300 font-bold mb-1">Correo Electrónico</label>
+              <input
+                type="email"
+                required
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-emerald-300 font-bold mb-1">Contraseña</label>
+              <input
+                type="password"
+                required
+                value={loginPass}
+                onChange={(e) => setLoginPass(e.target.value)}
+                className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition shadow-lg text-sm mt-2"
+            >
+              Ingresar al Sistema
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
 
   return (
     <div className="min-h-screen bg-[#021f12] text-emerald-50 font-sans pb-12">
@@ -287,15 +512,28 @@ export default function App() {
               <Star className="w-4 h-4 text-red-600 fill-red-600 absolute -top-1 -right-1" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">ShiftForklift</h1>
-              <p className="text-xs text-emerald-300/80">Gestión de Materiales y Turnos</p>
+              <h1 className="text-lg font-bold text-white flex items-center gap-2">ShiftForklift</h1>
+              <p className="text-xs text-emerald-300/80">Gestión de Turnos y Personal</p>
             </div>
           </div>
 
-          <nav className="flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
+          <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button onClick={() => setActiveTab('scheduler')} className={`px-4 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
             <button onClick={() => setActiveTab('operators')} className={`px-4 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
+            <button onClick={() => setActiveTab('vacations')} className={`px-4 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
           </nav>
+
+          <div className="flex items-center space-x-3">
+            <div className="text-right hidden sm:block">
+              <div className="text-xs font-bold text-white">{currentUser.name}</div>
+              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${currentUser.role === 'Admin' ? 'bg-red-900 text-red-200' : currentUser.role === 'Supervisor' ? 'bg-emerald-900 text-emerald-200' : 'bg-amber-950 text-amber-200'}`}>
+                {currentUser.role}
+              </span>
+            </div>
+            <button onClick={handleLogout} className="p-2 bg-red-950/80 hover:bg-red-800 border border-red-800 text-red-200 rounded-xl transition" title="Cerrar Sesión">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -305,19 +543,19 @@ export default function App() {
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-3">
                 <button onClick={() => {
-                  const start = parseLocalDate(currentWeekStart);
-                  start.setDate(start.getDate() - 7);
-                  setCurrentWeekStart(formatDateLocal(start));
+                  const [y, m, d] = currentWeekStart.split('-').map(Number);
+                  const prevWeek = new Date(y, m - 1, d - 7);
+                  setCurrentWeekStart(formatDateLocal(prevWeek));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronLeft className="w-5 h-5"/></button>
 
                 <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900">
-                  Semana: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
+                  Plan Semanal: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
                 </div>
 
                 <button onClick={() => {
-                  const start = parseLocalDate(currentWeekStart);
-                  start.setDate(start.getDate() + 7);
-                  setCurrentWeekStart(formatDateLocal(start));
+                  const [y, m, d] = currentWeekStart.split('-').map(Number);
+                  const nextWeek = new Date(y, m - 1, d + 7);
+                  setCurrentWeekStart(formatDateLocal(nextWeek));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronRight className="w-5 h-5"/></button>
               </div>
 
@@ -332,7 +570,7 @@ export default function App() {
                 <select
                   value={selectedZone}
                   onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-xl px-3 py-2 text-xs text-emerald-200 font-bold"
+                  className="bg-[#02180d] border border-emerald-900 rounded-xl px-3 py-2 text-xs text-emerald-200"
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
@@ -361,16 +599,17 @@ export default function App() {
                           <div className="text-xs text-emerald-400/80">{op.id} • {op.zone}</div>
                         </td>
                         {weekDays.map(day => {
-                          const shiftCode = getOperatorShift(op, day.dateStr);
+                          const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
                           const shift = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
                           const IconComp = shift.icon;
                           return (
                             <td key={day.dateStr} className="p-1.5 text-center border-l border-emerald-900/40">
                               <button
-                                onClick={() => handleOpenEditModal(op.id, day.dateStr)}
-                                className={`w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center transition-all shadow-sm ${shift.color} hover:scale-105`}
+                                disabled={!canEditShifts}
+                                onClick={() => setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
+                                className={`w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${!canEditShifts ? 'cursor-default opacity-90' : 'hover:scale-105'}`}
                               >
-                                <IconComp className="w-3.5 h-3.5 mb-0.5" />
+                                <IconComp className="w-3.5 h-3.5" />
                                 <span>{shift.code}</span>
                               </button>
                             </td>
@@ -384,123 +623,282 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {activeTab === 'operators' && (
+          <div className="space-y-5">
+            <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
+              <div>
+                <h2 className="text-lg font-bold text-white">Plantilla de Montacargistas</h2>
+                <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
+              </div>
+              {canManageOperators && (
+                <button onClick={() => { 
+                  setEditingOperator(null); 
+                  setNewOp({
+                    name: '',
+                    zone: WAREHOUSE_ZONES[1],
+                    equipment: FORKLIFT_TYPES[0],
+                    shiftPattern: 'Mañana',
+                    licenseExpiry: formatDateLocal(new Date())
+                  });
+                  setIsAddOperatorOpen(true); 
+                }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
+                  <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {operators.map(op => (
+                <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
+                        <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
+                      </div>
+                      {canManageOperators && (
+                        <div className="flex space-x-1">
+                          <button onClick={() => { setEditingOperator(op); setNewOp(op); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg"><Pencil className="w-3.5 h-3.5"/></button>
+                          <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
+                      <div className="flex justify-between"><span>Zona:</span><span className="font-semibold text-white">{op.zone}</span></div>
+                      <div className="flex justify-between"><span>Equipo:</span><span className="font-semibold text-white">{op.equipment}</span></div>
+                      <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
+                      <div className="flex justify-between items-center pt-1">
+                        <span>Licencia DC3:</span>
+                        <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>
+                          {op.licenseExpiry || 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'vacations' && (
+          <div className="space-y-5">
+            <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
+              <h2 className="text-lg font-bold text-white">Solicitudes de Ausencia</h2>
+              <button onClick={() => setIsRequestVacationOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
+                <Plus className="w-4 h-4"/><span>Registrar Solicitud</span>
+              </button>
+            </div>
+
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-[#001f0d] text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                    <th className="p-3.5">Operador</th>
+                    <th className="p-3.5">Tipo</th>
+                    <th className="p-3.5">Periodo</th>
+                    <th className="p-3.5">Motivo / Razón</th>
+                    <th className="p-3.5">Estado</th>
+                    <th className="p-3.5 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-900/50">
+                  {vacationRequests.map(req => (
+                    <tr key={req.id}>
+                      <td className="p-3.5"><div className="font-bold text-white">{req.operatorName}</div><div className="text-[10px] text-emerald-400">{req.operatorId}</div></td>
+                      <td className="p-3.5 font-semibold text-emerald-200">{req.type}</td>
+                      <td className="p-3.5 text-emerald-200">{req.startDate} al {req.endDate}</td>
+                      <td className="p-3.5 text-white/90 max-w-xs">{req.reason}</td>
+                      <td className="p-3.5">
+                        <span className={`px-2 py-0.5 rounded font-bold ${req.status === 'Aprobado' ? 'bg-emerald-950 text-emerald-300' : req.status === 'Rechazado' ? 'bg-red-950 text-red-300' : 'bg-amber-950 text-amber-300'}`}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        {req.status === 'Pendiente' && canApproveVacations ? (
+                          <div className="flex justify-center space-x-1">
+                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar"><Check className="w-4 h-4"/></button>
+                            <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition" title="Rechazar"><X className="w-4 h-4"/></button>
+                          </div>
+                        ) : (
+                          <span className="text-emerald-600 text-[10px]">Sin acciones</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* MODAL DE EDICIÓN DE HORARIO Y ESTADO ESTILO MATERIALES */}
-      {selectedCell && isMaterialesOperator && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white text-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-start mb-4">
+      {/* Modal para cambiar turno */}
+      {selectedCell && canEditShifts && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-start mb-3">
               <div>
-                <h3 className="text-lg font-extrabold text-slate-800">Editar Horario / Estado</h3>
-                <p className="text-xs font-medium text-slate-500">{selectedOperator?.name} ({getDateFormattedLong(selectedCell.dateStr)})</p>
+                <h3 className="text-sm font-bold text-white">Cambiar Turno</h3>
+                <p className="text-xs text-emerald-300 font-semibold">{selectedOperator?.name || ''}</p>
+                <p className="text-[11px] text-emerald-400/80">Día seleccionado: {selectedCell.dateStr}</p>
               </div>
-              <button onClick={() => setSelectedCell(null)} className="text-slate-400 hover:text-slate-700 transition">
-                <X className="w-5 h-5"/>
-              </button>
+              <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
             </div>
 
-            {/* SECCIÓN 1: NÚMERO DE SEMANA DEL CICLO */}
-            <div className="space-y-2 mb-5">
-              <label className="block text-xs font-bold text-slate-700">Seleccionar Número de Semana del Ciclo:</label>
-              <div className="space-y-2">
-                {MATERIALES_CYCLE.map((item) => {
-                  const isSelected = selectedCycleWeek === item.week && !selectedException;
-                  return (
-                    <div
-                      key={item.week}
-                      onClick={() => { setSelectedCycleWeek(item.week); setSelectedException(null); }}
-                      className={`flex items-center justify-between p-3 rounded-2xl border cursor-pointer transition-all ${isSelected ? 'border-amber-500 bg-amber-50/50 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-amber-500 bg-amber-500' : 'border-slate-300'}`}>
-                          {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
-                        </div>
-                        <div>
-                          <span className="text-xs font-bold text-slate-800 block">{item.title}</span>
-                          <span className="text-[11px] text-slate-500">{item.label}</span>
-                        </div>
-                      </div>
-                      <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-md ${item.bgBadge}`}>
-                        {item.badge}
-                      </span>
-                    </div>
-                  );
-                })}
+            {/* Opción para cambiar toda la semana (Lunes a Domingo) */}
+            <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Dom)</span>
               </div>
+              <input 
+                type="checkbox" 
+                id="applyWeekCheckbox"
+                checked={applyToFullWeek} 
+                onChange={(e) => setApplyToFullWeek(e.target.checked)} 
+                className="w-4 h-4 accent-emerald-500 cursor-pointer"
+              />
             </div>
 
-            {/* SECCIÓN 2: EXCEPCIÓN PUNTUAL */}
-            <div className="space-y-2 mb-5">
-              <label className="block text-xs font-bold text-slate-700">O Excepción Puntual:</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { code: 'DES', label: 'Descanso', color: 'border-slate-300 bg-slate-50 text-slate-700' },
-                  { code: 'VAC', label: '🌴 Vacaciones', color: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
-                  { code: 'INC', label: '🏥 Incapacidad', color: 'border-rose-300 bg-rose-50 text-rose-800' }
-                ].map((exc) => {
-                  const isSelected = selectedException === exc.code;
-                  return (
-                    <div
-                      key={exc.code}
-                      onClick={() => { setSelectedException(exc.code); setSelectedCycleWeek(null); }}
-                      className={`flex items-center space-x-2 p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition ${exc.color} ${isSelected ? 'ring-2 ring-slate-800 border-transparent' : ''}`}
-                    >
-                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-slate-800 bg-slate-800' : 'border-slate-400'}`}>
-                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                      </div>
-                      <span className="text-[11px]">{exc.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(SHIFT_TYPES).map(([code, config]) => (
+                <button 
+                  key={code} 
+                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)} 
+                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
+                >
+                  {code}: {config.label}
+                </button>
+              ))}
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* SECCIÓN 3: CONTINUAR SECUENCIA */}
-            <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-3.5 mb-6">
-              <label className="flex items-start space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={continueSequence}
-                  onChange={(e) => setContinueSequence(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
+      {isAddOperatorOpen && canManageOperators && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-4">{editingOperator ? 'Editar Operador' : 'Registrar Operador'}</h3>
+            <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder="Ej. Juan Pérez" 
+                  value={newOp.name} 
+                  onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" 
                 />
-                <div>
-                  <span className="text-xs font-bold text-amber-950 block">Continuar secuencia en las semanas siguientes</span>
-                  <span className="text-[10px] text-amber-800 leading-tight block mt-0.5">
-                    Las semanas futuras avanzarán automáticamente respetando la rotación a partir de esta semana seleccionada.
-                  </span>
-                </div>
-              </label>
-            </div>
-
-            {/* BOTONES DE ACCIÓN */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-              <button
-                onClick={handleResetOriginal}
-                className="text-xs font-bold text-slate-500 hover:text-slate-800 underline underline-offset-2"
-              >
-                Restablecer original!
-              </button>
-
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setSelectedCell(null)}
-                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleSaveMaterialesShift}
-                  className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-500/20 transition"
-                >
-                  Guardar Cambio
-                </button>
               </div>
-            </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Zona de Trabajo</label>
+                <select 
+                  value={newOp.zone} 
+                  onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                >
+                  {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => (
+                    <option key={z} value={z}>{z}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
+                <select 
+                  value={newOp.equipment} 
+                  onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                >
+                  {FORKLIFT_TYPES.map(eq => (
+                    <option key={eq} value={eq}>{eq}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
+                <select 
+                  value={newOp.shiftPattern} 
+                  onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
+                >
+                  <option value="Mañana">Mañana</option>
+                  <option value="Tarde">Tarde</option>
+                  <option value="Noche">Noche</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
+                <input 
+                  type="date" 
+                  required 
+                  value={newOp.licenseExpiry} 
+                  onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} 
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" 
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3">
+                <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isRequestVacationOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-4">Registrar Solicitud de Permiso</h3>
+            <form onSubmit={handleCreateVacationRequest} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Operador</label>
+                <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
+                <select value={newVac.type} onChange={(e) => setNewVac({ ...newVac, type: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {ABSENCE_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
+                  <input type="date" value={newVac.startDate} onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
+                  <input type="date" value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Motivo / Razón</label>
+                <textarea rows={3} placeholder="Escribe la razón detallada..." value={newVac.reason} onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button type="button" onClick={() => setIsRequestVacationOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Enviar</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
 }
+

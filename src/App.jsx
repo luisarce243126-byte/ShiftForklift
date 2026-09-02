@@ -43,7 +43,6 @@ const SHIFT_TYPES = {
   INC: { code: 'INC', label: 'Incapacidad', color: 'bg-red-900/80 text-red-200 border-red-500/50 hover:bg-red-800/80', canvasColor: '#991b1b', icon: AlertTriangle }
 };
 
-// Se actualizan las zonas para incluir Materiales / Entrada a Línea
 const WAREHOUSE_ZONES = [
   'Todas las zonas',
   'Recepción / Carga',
@@ -69,11 +68,34 @@ const ABSENCE_TYPES = [
 
 const INITIAL_OPERATORS = [
   { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo' },
-  { id: 'M-102', name: 'Roberto Gómez', zone: 'Recepción / Carga', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2027-02-10', status: 'Activo' },
-  { id: 'M-103', name: 'Ana Patricia Silva', zone: 'Embarques / Surtido', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Tarde', licenseExpiry: '2026-09-01', status: 'Activo' },
+  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
+  { id: 'M-103', name: 'Ana Patricia Silva', zone: 'Embarques / Surtido', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Tarde', licenseExpiry: '2026-09-25', status: 'Activo' },
   { id: 'M-104', name: 'Jorge Luis Martínez', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Noche', licenseExpiry: '2025-12-01', status: 'Activo' },
   { id: 'M-105', name: 'David Hernández', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' }
 ];
+
+// Función para determinar el estilo según la fecha de vencimiento
+const getLicenseStatusStyle = (expiryDateStr) => {
+  if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiryDate = new Date(expiryDateStr + 'T00:00:00');
+  const diffTime = expiryDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    // Vencida -> Rojo
+    return 'bg-red-950 text-red-300 border-red-700/80 font-bold';
+  } else if (diffDays <= 30) {
+    // Próxima a vencer (30 días o menos) -> Amarillo
+    return 'bg-amber-950 text-amber-300 border-amber-600/80 font-bold';
+  } else {
+    // Vigente -> Verde
+    return 'bg-emerald-950 text-emerald-300 border-emerald-800';
+  }
+};
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -469,7 +491,7 @@ export default function App() {
                       <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
                       <div className="flex justify-between items-center pt-1">
                         <span>Licencia DC3:</span>
-                        <span className="font-semibold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[11px]">
+                        <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>
                           {op.licenseExpiry || 'N/A'}
                         </span>
                       </div>

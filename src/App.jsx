@@ -21,13 +21,16 @@ import {
   Check, 
   X, 
   FileImage,
+  FileText,
+  Image as ImageIcon,
   Pencil,
   Trash2,
   Lock,
   LogOut,
   UserCheck,
   ShieldCheck,
-  Layers
+  Layers,
+  Loader2
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -130,10 +133,140 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   const isUpdatingRef = useRef(false);
+  const scheduleRef = useRef(null);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
-
   const [applyToFullWeek, setApplyToFullWeek] = useState(false);
+
+  // Estados para exportación (PNG, JPG, PDF)
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportMenuRef = useRef(null);
+
+  // Cierra el menú desplegable si se hace clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Función para cargar dinámicamente html2canvas y jsPDF desde CDN
+  const loadExportLibraries = async () => {
+    if (!window.html2canvas) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+    if (!window.jspdf) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+  };
+
+  const handleExport = async (format) => {
+    if (!scheduleRef.current) return;
+    setIsExporting(true);
+    setShowExportMenu(false);
+
+    try {
+      await loadExportLibraries();
+
+      const element = scheduleRef.current;
+      
+      // Capturar la tabla de horarios usando html2canvas
+      const canvas = await window.html2canvas(element, {
+        scale: 2, // Calidad HD
+        backgroundColor: '#002812',
+        useCORS: true,
+        logging: false,
+        windowWidth: element.scrollWidth + 80
+      });
+
+      const fileName = `Horario_Semanal_${currentWeekStart}`;
+
+      if (format === 'png') {
+        const image = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = image;
+        link.download = `${fileName}.png`;
+        link.click();
+      } else if (format === 'jpg') {
+        const image = canvas.toDataURL('image/jpeg', 0.95);
+        const link = document.createElement('a');
+        link.href = image;
+        link.download = `${fileName}.jpg`;
+        link.click();
+      } else if (format === 'pdf') {
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+
+        // Crear PDF horizontal A4
+        const pdf = new jsPDF({
+          orientation: 'landscape',
+          unit: 'mm',
+          format: 'a4'
+        });
+
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+
+        // Encabezado del reporte PDF
+        pdf.setFillColor(2, 31, 18); // Verde oscuro #021f12
+        pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
+
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(14);
+        pdf.text('ShiftForklift - Reporte de Programación de Turnos', 12, 12);
+
+        pdf.setFontSize(9);
+        pdf.setTextColor(167, 243, 208);
+        const dateRangeText = `Plan Semanal: ${weekDays[0].dayNumber} ${weekDays[0].monthName} - ${weekDays[6].dayNumber} ${weekDays[6].monthName} | Filtro: ${selectedZone}`;
+        pdf.text(dateRangeText, 12, 18);
+
+        const imgWidth = pdfWidth - 24; // Margen de 12mm a los lados
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let positionY = 22;
+        const maxHeight = pdfHeight - 32;
+
+        if (imgHeight <= maxHeight) {
+          pdf.addImage(imgData, 'PNG', 12, positionY, imgWidth, imgHeight);
+        } else {
+          // Ajustar escalado para no desbordar verticalmente
+          const scaleFactor = maxHeight / imgHeight;
+          const adjustedWidth = imgWidth * scaleFactor;
+          const adjustedHeight = imgHeight * scaleFactor;
+          const xOffset = (pdfWidth - adjustedWidth) / 2;
+          pdf.addImage(imgData, 'PNG', xOffset, positionY, adjustedWidth, adjustedHeight);
+        }
+
+        // Pie de página
+        pdf.setFontSize(8);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text(`Exportado el: ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 12, pdfHeight - 5);
+
+        pdf.save(`${fileName}.pdf`);
+      }
+    } catch (error) {
+      console.error('Error al exportar horario:', error);
+      alert('No se pudo generar la descarga. Intente nuevamente.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     const checkWeekChange = () => {
@@ -292,7 +425,6 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
-  // Modificado para cubrir de Lunes a Domingo (los 7 días)
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
@@ -300,7 +432,6 @@ export default function App() {
     const updatedSchedule = { ...scheduleData };
 
     if (isFullWeek) {
-      // Aplica a todos los días de la semana activa (Lunes a Domingo)
       weekDays.forEach(day => {
         updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
       });
@@ -535,6 +666,7 @@ export default function App() {
         </div>
       </header>
 
+      {}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
@@ -544,7 +676,7 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const prevWeek = new Date(y, m - 1, d - 7);
                   setCurrentWeekStart(formatDateLocal(prevWeek));
-                }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronLeft className="w-5 h-5"/></button>
+                }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-5 h-5"/></button>
 
                 <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900">
                   Plan Semanal: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
@@ -554,10 +686,10 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const nextWeek = new Date(y, m - 1, d + 7);
                   setCurrentWeekStart(formatDateLocal(nextWeek));
-                }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60"><ChevronRight className="w-5 h-5"/></button>
+                }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-5 h-5"/></button>
               </div>
 
-              <div className="flex items-center gap-3 w-full lg:w-auto">
+              <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap">
                 <input
                   type="text"
                   placeholder="Buscar operador..."
@@ -572,10 +704,72 @@ export default function App() {
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
+
+                {/* BOTÓN Y MENÚ DESPLEGABLE DE EXPORTACIÓN (PNG, JPG, PDF) */}
+                <div className="relative" ref={exportMenuRef}>
+                  <button
+                    disabled={isExporting}
+                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-emerald-500/50 shadow"
+                  >
+                    {isExporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Generando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        <span>Exportar Horario</span>
+                      </>
+                    )}
+                  </button>
+
+                  {showExportMenu && (
+                    <div className="absolute right-0 mt-2 w-52 bg-[#002e14] border border-emerald-700 rounded-xl shadow-2xl z-50 overflow-hidden text-xs">
+                      <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                        Selecciona el formato
+                      </div>
+                      <button
+                        onClick={() => handleExport('png')}
+                        className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition"
+                      >
+                        <ImageIcon className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <div className="font-bold">Imagen PNG</div>
+                          <div className="text-[10px] text-emerald-400/80">Alta calidad con transparencia</div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => handleExport('jpg')}
+                        className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60"
+                      >
+                        <FileImage className="w-4 h-4 text-amber-400" />
+                        <div>
+                          <div className="font-bold">Imagen JPG</div>
+                          <div className="text-[10px] text-emerald-400/80">Formato ligero ideal para compartir</div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => handleExport('pdf')}
+                        className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60"
+                      >
+                        <FileText className="w-4 h-4 text-red-400" />
+                        <div>
+                          <div className="font-bold">Documento PDF</div>
+                          <div className="text-[10px] text-emerald-400/80">Listo para imprimir en hoja A4</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-2xl">
+            {/* TABLA PRINCIPAL DEL HORARIO CON REFERENCIA REF PARA CAPTURA */}
+            <div ref={scheduleRef} className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-2xl p-1">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
@@ -605,7 +799,7 @@ export default function App() {
                               <button
                                 disabled={!canEditShifts}
                                 onClick={() => setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
-                                className={`w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${!canEditShifts ? 'cursor-default opacity-90' : 'hover:scale-105'}`}
+                                className={`w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${!canEditShifts ? 'cursor-default opacity-90' : 'hover:scale-105 transition-transform'}`}
                               >
                                 <IconComp className="w-3.5 h-3.5" />
                                 <span>{shift.code}</span>
@@ -622,6 +816,7 @@ export default function App() {
           </div>
         )}
 
+        {}
         {activeTab === 'operators' && (
           <div className="space-y-5">
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
@@ -640,7 +835,7 @@ export default function App() {
                     licenseExpiry: formatDateLocal(new Date())
                   });
                   setIsAddOperatorOpen(true); 
-                }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
+                }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
                 </button>
               )}
@@ -657,8 +852,8 @@ export default function App() {
                       </div>
                       {canManageOperators && (
                         <div className="flex space-x-1">
-                          <button onClick={() => { setEditingOperator(op); setNewOp(op); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg"><Pencil className="w-3.5 h-3.5"/></button>
-                          <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+                          <button onClick={() => { setEditingOperator(op); setNewOp(op); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
+                          <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
                         </div>
                       )}
                     </div>
@@ -680,11 +875,12 @@ export default function App() {
           </div>
         )}
 
+        {}
         {activeTab === 'vacations' && (
           <div className="space-y-5">
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <h2 className="text-lg font-bold text-white">Solicitudes de Ausencia</h2>
-              <button onClick={() => setIsRequestVacationOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2">
+              <button onClick={() => setIsRequestVacationOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
                 <Plus className="w-4 h-4"/><span>Registrar Solicitud</span>
               </button>
             </div>
@@ -732,7 +928,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal para cambiar turno */}
+      {}
       {selectedCell && canEditShifts && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
@@ -745,7 +941,6 @@ export default function App() {
               <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
             </div>
 
-            {/* Opción para cambiar toda la semana (Lunes a Domingo) */}
             <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
@@ -899,4 +1094,3 @@ export default function App() {
     </div>
   );
 }
-

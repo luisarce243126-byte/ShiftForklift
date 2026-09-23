@@ -30,9 +30,23 @@ import {
   UserCheck,
   ShieldCheck,
   Layers,
-  Loader2
+  Loader2,
+  Bell,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle2,
+  CloudOff
 } from 'lucide-react';
 
+// ⚠️ ADVERTENCIA DE SEGURIDAD:
+// Esta lista de usuarios vive en el bundle de React y es visible para cualquiera
+// que inspeccione el código del cliente (DevTools > Sources). Es válida solo para
+// demos/prototipos. Para producción, reemplaza este login por autenticación real
+// en el servidor (p. ej. NextAuth, Supabase Auth, Clerk, o un endpoint propio que
+// verifique credenciales con hash bcrypt/argon2 y devuelva un token de sesión).
+// El bloqueo por intentos fallidos que se agregó abajo es solo una mitigación de
+// UX, no un reemplazo de autenticación server-side.
 const MOCK_USERS = [
   { id: 1, email: 'admin@empresa.com', pass: '123456', name: 'Administrador General', role: 'Admin' },
   { id: 2, email: 'supervisor@empresa.com', pass: '123456', name: 'Supervisor Logística', role: 'Supervisor' },
@@ -85,6 +99,15 @@ const INITIAL_VACATION_REQUESTS = [
   { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
 ];
 
+// Genera un id único (usa crypto.randomUUID si está disponible, con respaldo)
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+};
+
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_MS = 30000; // 30 segundos de bloqueo tras exceder intentos
+
 const formatDateLocal = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -124,6 +147,24 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [showLoginPass, setShowLoginPass] = useState(false);
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState(null);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  // Estado global de sincronización con la base de datos (Redis)
+  const [syncStatus, setSyncStatus] = useState('idle'); // idle | saving | saved | error
+  const syncStatusTimeoutRef = useRef(null);
+
+  const reportSyncResult = (ok) => {
+    setSyncStatus(ok ? 'saved' : 'error');
+    if (syncStatusTimeoutRef.current) clearTimeout(syncStatusTimeoutRef.current);
+    syncStatusTimeoutRef.current = setTimeout(() => setSyncStatus('idle'), ok ? 2000 : 4000);
+  };
+
+  // Panel de alertas de licencias por vencer / vencidas
+  const [showLicenseAlerts, setShowLicenseAlerts] = useState(true);
+  const [vacDateError, setVacDateError] = useState('');
 
   const [activeTab, setActiveTab] = useState('scheduler');
 
@@ -142,6 +183,22 @@ export default function App() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportMenuRef = useRef(null);
+
+  // Cuenta regresiva del bloqueo de acceso tras intentos fallidos de login
+  useEffect(() => {
+    if (!lockoutUntil) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((lockoutUntil - Date.now()) / 1000));
+      setLockoutRemaining(remaining);
+      if (remaining <= 0) {
+        setLockoutUntil(null);
+        setLoginAttempts(0);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [lockoutUntil]);
 
   // Cierra el menú desplegable si se hace clic fuera
   useEffect(() => {
@@ -400,22 +457,66 @@ export default function App() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    const user = MOCK_USERS.find(u => u.email === loginEmail && u.pass === loginPass);
+    if (lockoutUntil && Date.now() < lockoutUntil) return;
+
+    const email = loginEmail.trim().toLowerCase();
+    const user = MOCK_USERS.find(u => u.email.toLowerCase() === email && u.pass === loginPass);
+
     if (user) {
       setCurrentUser(user);
       setLoginError('');
+      setLoginAttempts(0);
+      setLoginPass('');
+      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* almacenamiento no disponible */ }
     } else {
-      setLoginError('Correo o contraseña incorrectos.');
+      const attempts = loginAttempts + 1;
+      setLoginAttempts(attempts);
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        setLockoutUntil(Date.now() + LOCKOUT_MS);
+        setLoginError(`Demasiados intentos fallidos. Espera ${LOCKOUT_MS / 1000}s para volver a intentar.`);
+      } else {
+        setLoginError(`Correo o contraseña incorrectos. (${MAX_LOGIN_ATTEMPTS - attempts} intento(s) restante(s))`);
+      }
     }
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
+    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* almacenamiento no disponible */ }
   };
+
+  // Restaura la sesión activa al recargar la página (sin exponer credenciales)
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('sf_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const stillValid = MOCK_USERS.some(u => u.id === parsed.id && u.email === parsed.email);
+        if (stillValid) setCurrentUser(parsed);
+      }
+    } catch (err) { /* almacenamiento no disponible o dato corrupto */ }
+  }, []);
 
   const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
   const canManageOperators = currentUser && currentUser.role === 'Admin';
   const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+
+  // Operadores con licencia DC3 vencida o próxima a vencer (≤30 días)
+  const licenseAlerts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return operators
+      .map(op => {
+        if (!op.licenseExpiry) return null;
+        const expiry = new Date(op.licenseExpiry + 'T00:00:00');
+        const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 30) return null;
+        return { ...op, diffDays, expired: diffDays < 0 };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.diffDays - b.diffDays);
+  }, [operators]);
 
   const filteredOperators = useMemo(() => {
     return operators.filter(op => {
@@ -428,6 +529,7 @@ export default function App() {
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     isUpdatingRef.current = true;
+    setSyncStatus('saving');
 
     const updatedSchedule = { ...scheduleData };
 
@@ -445,8 +547,10 @@ export default function App() {
 
     try {
       await redis.set('sf_scheduleData', updatedSchedule);
+      reportSyncResult(true);
     } catch (error) {
       console.error("Error al guardar turno:", error);
+      reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -473,11 +577,14 @@ export default function App() {
     setOperators(updatedOps);
     setIsAddOperatorOpen(false);
     setEditingOperator(null);
+    setSyncStatus('saving');
 
     try {
       await redis.set('sf_operators', updatedOps);
+      reportSyncResult(true);
     } catch (error) {
       console.error("Error al guardar operador:", error);
+      reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -488,14 +595,17 @@ export default function App() {
 
     if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
       isUpdatingRef.current = true;
+      setSyncStatus('saving');
 
       const updatedOps = operators.filter(op => op.id !== operatorId);
       setOperators(updatedOps);
 
       try {
         await redis.set('sf_operators', updatedOps);
+        reportSyncResult(true);
       } catch (error) {
         console.error("Error al eliminar en la base de datos:", error);
+        reportSyncResult(false);
       } finally {
         setTimeout(() => { isUpdatingRef.current = false; }, 2500);
       }
@@ -507,9 +617,20 @@ export default function App() {
     const op = operators.find(o => o.id === newVac.operatorId);
     if (!op) return;
 
+    if (!newVac.startDate || !newVac.endDate) {
+      setVacDateError('Selecciona ambas fechas.');
+      return;
+    }
+    if (newVac.endDate < newVac.startDate) {
+      setVacDateError('La fecha de fin no puede ser anterior a la fecha de inicio.');
+      return;
+    }
+    setVacDateError('');
+
     isUpdatingRef.current = true;
+    setSyncStatus('saving');
     const newReq = {
-      id: vacationRequests.length + 1,
+      id: generateId(),
       operatorId: op.id,
       operatorName: op.name,
       startDate: newVac.startDate,
@@ -525,8 +646,31 @@ export default function App() {
 
     try {
       await redis.set('sf_vacations', updatedVac);
+      reportSyncResult(true);
     } catch (error) {
       console.error("Error al guardar permiso:", error);
+      reportSyncResult(false);
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  // Permite cancelar una solicitud pendiente (el propio operador que la generó o un Admin/Supervisor)
+  const handleCancelVacationRequest = async (id) => {
+    if (!canApproveVacations) return;
+    if (!window.confirm('¿Cancelar esta solicitud de permiso?')) return;
+
+    isUpdatingRef.current = true;
+    setSyncStatus('saving');
+    const updatedVac = vacationRequests.filter(r => r.id !== id);
+    setVacationRequests(updatedVac);
+
+    try {
+      await redis.set('sf_vacations', updatedVac);
+      reportSyncResult(true);
+    } catch (error) {
+      console.error("Error al cancelar permiso:", error);
+      reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -535,6 +679,7 @@ export default function App() {
   const handleVacationStatus = async (id, newStatus) => {
     if (!canApproveVacations) return;
     isUpdatingRef.current = true;
+    setSyncStatus('saving');
 
     const req = vacationRequests.find(r => r.id === id);
     const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
@@ -568,8 +713,10 @@ export default function App() {
       if (newStatus === 'Aprobado' && req) {
         await redis.set('sf_scheduleData', updatedSchedule);
       }
+      reportSyncResult(true);
     } catch (error) {
       console.error("Error al actualizar estado del permiso:", error);
+      reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -608,20 +755,32 @@ export default function App() {
 
             <div>
               <label className="block text-emerald-300 font-bold mb-1">Contraseña</label>
-              <input
-                type="password"
-                required
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-                className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm"
-              />
+              <div className="relative">
+                <input
+                  type={showLoginPass ? 'text' : 'password'}
+                  required
+                  value={loginPass}
+                  onChange={(e) => setLoginPass(e.target.value)}
+                  disabled={!!lockoutUntil}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 pr-10 text-white focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPass(v => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-400 hover:text-emerald-200"
+                  tabIndex={-1}
+                >
+                  {showLoginPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition shadow-lg text-sm mt-2"
+              disabled={!!lockoutUntil}
+              className="w-full py-3 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition shadow-lg text-sm mt-2"
             >
-              Ingresar al Sistema
+              {lockoutUntil ? `Bloqueado (${lockoutRemaining}s)` : 'Ingresar al Sistema'}
             </button>
           </form>
         </div>
@@ -653,6 +812,32 @@ export default function App() {
           </nav>
 
           <div className="flex items-center space-x-3">
+            {/* Indicador de estado de sincronización con la base de datos */}
+            {syncStatus !== 'idle' && (
+              <div className={`hidden sm:flex items-center space-x-1.5 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${
+                syncStatus === 'saving' ? 'bg-amber-950 text-amber-300 border-amber-700/60' :
+                syncStatus === 'saved' ? 'bg-emerald-950 text-emerald-300 border-emerald-700/60' :
+                'bg-red-950 text-red-300 border-red-700/60'
+              }`}>
+                {syncStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin" /><span>Guardando...</span></>}
+                {syncStatus === 'saved' && <><CheckCircle2 className="w-3 h-3" /><span>Guardado</span></>}
+                {syncStatus === 'error' && <><CloudOff className="w-3 h-3" /><span>Error al guardar</span></>}
+              </div>
+            )}
+
+            {licenseAlerts.length > 0 && (
+              <button
+                onClick={() => { setActiveTab('operators'); setShowLicenseAlerts(true); }}
+                className="relative p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-xl transition"
+                title="Licencias por vencer"
+              >
+                <Bell className="w-4 h-4" />
+                <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
+                  {licenseAlerts.length}
+                </span>
+              </button>
+            )}
+
             <div className="text-right hidden sm:block">
               <div className="text-xs font-bold text-white">{currentUser.name}</div>
               <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${currentUser.role === 'Admin' ? 'bg-red-900 text-red-200' : currentUser.role === 'Supervisor' ? 'bg-emerald-900 text-emerald-200' : 'bg-amber-950 text-amber-200'}`}>
@@ -819,6 +1004,29 @@ export default function App() {
         {}
         {activeTab === 'operators' && (
           <div className="space-y-5">
+            {licenseAlerts.length > 0 && showLicenseAlerts && (
+              <div className="bg-amber-950/60 border border-amber-700/60 rounded-2xl p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start space-x-3">
+                    <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h3 className="text-sm font-bold text-amber-200">
+                        {licenseAlerts.length} licencia(s) DC3 {licenseAlerts.some(a => a.expired) ? 'vencida(s) o ' : ''}por vencer
+                      </h3>
+                      <ul className="mt-2 space-y-1 text-xs text-amber-100/90">
+                        {licenseAlerts.map(a => (
+                          <li key={a.id}>
+                            <span className="font-bold">{a.name}</span> ({a.id}) — {a.expired ? `vencida hace ${Math.abs(a.diffDays)} día(s)` : `vence en ${a.diffDays} día(s)`} ({a.licenseExpiry})
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowLicenseAlerts(false)} className="text-amber-400 hover:text-amber-200 shrink-0"><X className="w-4 h-4" /></button>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Plantilla de Montacargistas</h2>
@@ -880,7 +1088,7 @@ export default function App() {
           <div className="space-y-5">
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <h2 className="text-lg font-bold text-white">Solicitudes de Ausencia</h2>
-              <button onClick={() => setIsRequestVacationOpen(true)} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
+              <button onClick={() => { setVacDateError(''); setIsRequestVacationOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
                 <Plus className="w-4 h-4"/><span>Registrar Solicitud</span>
               </button>
             </div>
@@ -914,6 +1122,7 @@ export default function App() {
                           <div className="flex justify-center space-x-1">
                             <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar"><Check className="w-4 h-4"/></button>
                             <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition" title="Rechazar"><X className="w-4 h-4"/></button>
+                            <button onClick={() => handleCancelVacationRequest(req.id)} className="p-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition" title="Cancelar solicitud"><Trash2 className="w-4 h-4"/></button>
                           </div>
                         ) : (
                           <span className="text-emerald-600 text-[10px]">Sin acciones</span>
@@ -1051,6 +1260,12 @@ export default function App() {
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white mb-4">Registrar Solicitud de Permiso</h3>
             <form onSubmit={handleCreateVacationRequest} className="space-y-3 text-xs">
+              {vacDateError && (
+                <div className="p-2.5 bg-red-950/80 border border-red-800 rounded-xl text-red-200 font-bold flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{vacDateError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Operador</label>
                 <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
@@ -1074,7 +1289,7 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
-                  <input type="date" value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                  <input type="date" min={newVac.startDate} value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
                 </div>
               </div>
 
@@ -1084,7 +1299,7 @@ export default function App() {
               </div>
 
               <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => setIsRequestVacationOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="button" onClick={() => { setIsRequestVacationOpen(false); setVacDateError(''); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Enviar</button>
               </div>
             </form>

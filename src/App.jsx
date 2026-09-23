@@ -36,7 +36,8 @@ import {
   EyeOff,
   AlertCircle,
   CheckCircle2,
-  CloudOff
+  CloudOff,
+  RefreshCw
 } from 'lucide-react';
 
 // ⚠️ ADVERTENCIA DE SEGURIDAD:
@@ -45,8 +46,6 @@ import {
 // demos/prototipos. Para producción, reemplaza este login por autenticación real
 // en el servidor (p. ej. NextAuth, Supabase Auth, Clerk, o un endpoint propio que
 // verifique credenciales con hash bcrypt/argon2 y devuelva un token de sesión).
-// El bloqueo por intentos fallidos que se agregó abajo es solo una mitigación de
-// UX, no un reemplazo de autenticación server-side.
 const MOCK_USERS = [
   { id: 1, email: 'admin@empresa.com', pass: '123456', name: 'Administrador General', role: 'Admin' },
   { id: 2, email: 'supervisor@empresa.com', pass: '123456', name: 'Supervisor Logística', role: 'Supervisor' },
@@ -85,28 +84,13 @@ const ABSENCE_TYPES = [
   'Permiso Personal'
 ];
 
-const INITIAL_OPERATORS = [
-  { id: 'M-101', name: 'Carlos Mendoza', zone: 'Pasillos Alta Montaña (Reach)', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2026-11-15', status: 'Activo' },
-  { id: 'M-102', name: 'Ricardo Salarmilla Osornio', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-08-31', status: 'Activo' },
-  { id: 'M-103', name: 'Jesús León', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-25', status: 'Activo' },
-  { id: 'M-104', name: 'Heleodoro Cervantes Arredondo', zone: 'Materiales / Entrada a Línea', equipment: 'Trilateral / Pasillo Angosto', shiftPattern: 'Mañana', licenseExpiry: '2025-12-01', status: 'Activo' },
-  { id: 'M-105', name: 'José Manuel Sánchez Anguamea', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Parado (Reach)', shiftPattern: 'Mañana', licenseExpiry: '2027-05-20', status: 'Activo' },
-  { id: 'M-106', name: 'Lauro Domínguez Morales', zone: 'Materiales / Entrada a Línea', equipment: 'Hombre Sentado (Eléctrico)', shiftPattern: 'Mañana', licenseExpiry: '2026-09-01', status: 'Activo' }
-];
-
-const INITIAL_VACATION_REQUESTS = [
-  { id: 1, operatorId: 'M-103', operatorName: 'Jesús León', startDate: '2026-09-10', endDate: '2026-09-18', type: 'Vacaciones', status: 'Pendiente', reason: 'Vacaciones anuales reglamentarias' },
-  { id: 2, operatorId: 'M-106', operatorName: 'Lauro Domínguez Morales', startDate: '2026-09-01', endDate: '2026-09-06', type: 'Día de Descanso Especial', status: 'Pendiente', reason: 'Asuntos Familiares' }
-];
-
-// Genera un id único (usa crypto.randomUUID si está disponible, con respaldo)
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 };
 
 const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_MS = 30000; // 30 segundos de bloqueo tras exceder intentos
+const LOCKOUT_MS = 30000;
 
 const formatDateLocal = (date) => {
   const y = date.getFullYear();
@@ -152,8 +136,7 @@ export default function App() {
   const [lockoutUntil, setLockoutUntil] = useState(null);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
 
-  // Estado global de sincronización con la base de datos (Redis)
-  const [syncStatus, setSyncStatus] = useState('idle'); // idle | saving | saved | error
+  const [syncStatus, setSyncStatus] = useState('idle');
   const syncStatusTimeoutRef = useRef(null);
 
   const reportSyncResult = (ok) => {
@@ -162,16 +145,17 @@ export default function App() {
     syncStatusTimeoutRef.current = setTimeout(() => setSyncStatus('idle'), ok ? 2000 : 4000);
   };
 
-  // Panel de alertas de licencias por vencer / vencidas
   const [showLicenseAlerts, setShowLicenseAlerts] = useState(true);
   const [vacDateError, setVacDateError] = useState('');
 
   const [activeTab, setActiveTab] = useState('scheduler');
 
-  const [operators, setOperators] = useState(INITIAL_OPERATORS);
+  // ✅ Estados SIN seeds: arrancan vacíos y solo se llenan desde Redis.
+  const [operators, setOperators] = useState([]);
   const [scheduleData, setScheduleData] = useState({});
-  const [vacationRequests, setVacationRequests] = useState(INITIAL_VACATION_REQUESTS);
+  const [vacationRequests, setVacationRequests] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   const isUpdatingRef = useRef(false);
   const scheduleRef = useRef(null);
@@ -179,12 +163,11 @@ export default function App() {
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
   const [applyToFullWeek, setApplyToFullWeek] = useState(false);
 
-  // Estados para exportación (PNG, JPG, PDF)
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportMenuRef = useRef(null);
 
-  // Cuenta regresiva del bloqueo de acceso tras intentos fallidos de login
+  // Cuenta regresiva del bloqueo de acceso
   useEffect(() => {
     if (!lockoutUntil) return;
     const tick = () => {
@@ -200,7 +183,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [lockoutUntil]);
 
-  // Cierra el menú desplegable si se hace clic fuera
+  // Cierra el menú de exportación al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
@@ -211,7 +194,6 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Función para cargar dinámicamente html2canvas y jsPDF desde CDN
   const loadExportLibraries = async () => {
     if (!window.html2canvas) {
       await new Promise((resolve, reject) => {
@@ -242,10 +224,9 @@ export default function App() {
       await loadExportLibraries();
 
       const element = scheduleRef.current;
-      
-      // Capturar la tabla de horarios usando html2canvas
+
       const canvas = await window.html2canvas(element, {
-        scale: 2, // Calidad HD
+        scale: 2,
         backgroundColor: '#002812',
         useCORS: true,
         logging: false,
@@ -270,7 +251,6 @@ export default function App() {
         const imgData = canvas.toDataURL('image/png');
         const { jsPDF } = window.jspdf;
 
-        // Crear PDF horizontal A4
         const pdf = new jsPDF({
           orientation: 'landscape',
           unit: 'mm',
@@ -280,8 +260,7 @@ export default function App() {
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
 
-        // Encabezado del reporte PDF
-        pdf.setFillColor(2, 31, 18); // Verde oscuro #021f12
+        pdf.setFillColor(2, 31, 18);
         pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
 
         pdf.setTextColor(255, 255, 255);
@@ -293,7 +272,7 @@ export default function App() {
         const dateRangeText = `Plan Semanal: ${weekDays[0].dayNumber} ${weekDays[0].monthName} - ${weekDays[6].dayNumber} ${weekDays[6].monthName} | Filtro: ${selectedZone}`;
         pdf.text(dateRangeText, 12, 18);
 
-        const imgWidth = pdfWidth - 24; // Margen de 12mm a los lados
+        const imgWidth = pdfWidth - 24;
         const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
         let positionY = 22;
@@ -302,7 +281,6 @@ export default function App() {
         if (imgHeight <= maxHeight) {
           pdf.addImage(imgData, 'PNG', 12, positionY, imgWidth, imgHeight);
         } else {
-          // Ajustar escalado para no desbordar verticalmente
           const scaleFactor = maxHeight / imgHeight;
           const adjustedWidth = imgWidth * scaleFactor;
           const adjustedHeight = imgHeight * scaleFactor;
@@ -310,7 +288,6 @@ export default function App() {
           pdf.addImage(imgData, 'PNG', xOffset, positionY, adjustedWidth, adjustedHeight);
         }
 
-        // Pie de página
         pdf.setFontSize(8);
         pdf.setTextColor(100, 116, 139);
         pdf.text(`Exportado el: ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 12, pdfHeight - 5);
@@ -342,47 +319,61 @@ export default function App() {
     };
   }, [currentWeekStart]);
 
+  // ✅ CARGA INICIAL SIN SEEDS
+  // Solo se cargan los datos que existan en Redis. Si está vacío, la app
+  // arranca sin operadores y tú los agregas manualmente.
+  const loadCloudData = async () => {
+    setIsLoaded(false);
+    setLoadError('');
+    try {
+      const [savedOps, savedSchedule, savedVac] = await Promise.all([
+        redis.get('sf_operators'),
+        redis.get('sf_scheduleData'),
+        redis.get('sf_vacations'),
+      ]);
+
+      setOperators(Array.isArray(savedOps) ? savedOps : []);
+      setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
+      setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
+    } catch (error) {
+      console.error('Error al cargar datos:', error);
+      setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
+    } finally {
+      setIsLoaded(true);
+    }
+  };
+
   useEffect(() => {
-    const loadCloudData = async () => {
-      try {
-        const savedOps = await redis.get('sf_operators');
-        const savedSchedule = await redis.get('sf_scheduleData');
-        const savedVac = await redis.get('sf_vacations');
-
-        if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
-        if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-        if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
-      } catch (error) {
-        console.error("Error al cargar datos:", error);
-      } finally {
-        setIsLoaded(true);
-      }
-    };
-
     loadCloudData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Polling: solo arranca DESPUÉS de la carga inicial exitosa
   useEffect(() => {
+    if (!isLoaded || loadError) return;
+
     const interval = setInterval(async () => {
       if (isUpdatingRef.current) return;
 
       try {
-        const savedOps = await redis.get('sf_operators');
-        const savedSchedule = await redis.get('sf_scheduleData');
-        const savedVac = await redis.get('sf_vacations');
+        const [savedOps, savedSchedule, savedVac] = await Promise.all([
+          redis.get('sf_operators'),
+          redis.get('sf_scheduleData'),
+          redis.get('sf_vacations'),
+        ]);
 
         if (!isUpdatingRef.current) {
-          if (savedOps !== null && Array.isArray(savedOps)) setOperators(savedOps);
-          if (savedSchedule !== null && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-          if (savedVac !== null && Array.isArray(savedVac)) setVacationRequests(savedVac);
+          if (Array.isArray(savedOps)) setOperators(savedOps);
+          if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+          if (Array.isArray(savedVac)) setVacationRequests(savedVac);
         }
       } catch (err) {
-        console.error("Error en sincronización continua:", err);
+        console.error('Error en sincronización continua:', err);
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isLoaded, loadError]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState('Todas las zonas');
@@ -401,7 +392,7 @@ export default function App() {
   });
 
   const [newVac, setNewVac] = useState({
-    operatorId: INITIAL_OPERATORS[0]?.id || 'M-101',
+    operatorId: '',
     startDate: formatDateLocal(new Date()),
     endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
     type: 'Vacaciones',
@@ -428,8 +419,12 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
+  // Autollenado de turnos base: solo para operadores que existan en Redis.
+  // No siembra operadores nuevos, solo rellena celdas vacías.
   useEffect(() => {
     if (!isLoaded || isUpdatingRef.current) return;
+    if (operators.length === 0) return;
+
     const newSchedule = { ...scheduleData };
     let changed = false;
 
@@ -467,7 +462,7 @@ export default function App() {
       setLoginError('');
       setLoginAttempts(0);
       setLoginPass('');
-      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* almacenamiento no disponible */ }
+      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* no-op */ }
     } else {
       const attempts = loginAttempts + 1;
       setLoginAttempts(attempts);
@@ -482,10 +477,9 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* almacenamiento no disponible */ }
+    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* no-op */ }
   };
 
-  // Restaura la sesión activa al recargar la página (sin exponer credenciales)
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem('sf_session');
@@ -494,14 +488,13 @@ export default function App() {
         const stillValid = MOCK_USERS.some(u => u.id === parsed.id && u.email === parsed.email);
         if (stillValid) setCurrentUser(parsed);
       }
-    } catch (err) { /* almacenamiento no disponible o dato corrupto */ }
+    } catch (err) { /* no-op */ }
   }, []);
 
   const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
   const canManageOperators = currentUser && currentUser.role === 'Admin';
   const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
 
-  // Operadores con licencia DC3 vencida o próxima a vencer (≤30 días)
   const licenseAlerts = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -549,7 +542,7 @@ export default function App() {
       await redis.set('sf_scheduleData', updatedSchedule);
       reportSyncResult(true);
     } catch (error) {
-      console.error("Error al guardar turno:", error);
+      console.error('Error al guardar turno:', error);
       reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
@@ -583,7 +576,7 @@ export default function App() {
       await redis.set('sf_operators', updatedOps);
       reportSyncResult(true);
     } catch (error) {
-      console.error("Error al guardar operador:", error);
+      console.error('Error al guardar operador:', error);
       reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
@@ -604,7 +597,7 @@ export default function App() {
         await redis.set('sf_operators', updatedOps);
         reportSyncResult(true);
       } catch (error) {
-        console.error("Error al eliminar en la base de datos:", error);
+        console.error('Error al eliminar en la base de datos:', error);
         reportSyncResult(false);
       } finally {
         setTimeout(() => { isUpdatingRef.current = false; }, 2500);
@@ -615,7 +608,10 @@ export default function App() {
   const handleCreateVacationRequest = async (e) => {
     e.preventDefault();
     const op = operators.find(o => o.id === newVac.operatorId);
-    if (!op) return;
+    if (!op) {
+      setVacDateError('Selecciona un operador válido.');
+      return;
+    }
 
     if (!newVac.startDate || !newVac.endDate) {
       setVacDateError('Selecciona ambas fechas.');
@@ -648,14 +644,13 @@ export default function App() {
       await redis.set('sf_vacations', updatedVac);
       reportSyncResult(true);
     } catch (error) {
-      console.error("Error al guardar permiso:", error);
+      console.error('Error al guardar permiso:', error);
       reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
   };
 
-  // Permite cancelar una solicitud pendiente (el propio operador que la generó o un Admin/Supervisor)
   const handleCancelVacationRequest = async (id) => {
     if (!canApproveVacations) return;
     if (!window.confirm('¿Cancelar esta solicitud de permiso?')) return;
@@ -669,7 +664,7 @@ export default function App() {
       await redis.set('sf_vacations', updatedVac);
       reportSyncResult(true);
     } catch (error) {
-      console.error("Error al cancelar permiso:", error);
+      console.error('Error al cancelar permiso:', error);
       reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
@@ -715,13 +710,16 @@ export default function App() {
       }
       reportSyncResult(true);
     } catch (error) {
-      console.error("Error al actualizar estado del permiso:", error);
+      console.error('Error al actualizar estado del permiso:', error);
       reportSyncResult(false);
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
   };
 
+  // ─────────────────────────────────────────────────────────────
+  // PANTALLA DE LOGIN
+  // ─────────────────────────────────────────────────────────────
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
@@ -788,6 +786,47 @@ export default function App() {
     );
   }
 
+  // ✅ Pantalla de carga: nada se muestra hasta que Redis responde
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-[#021f12] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-emerald-300">
+          <Loader2 className="w-10 h-10 animate-spin" />
+          <span className="text-sm font-bold tracking-wide">Cargando datos…</span>
+          <span className="text-[10px] text-emerald-500">Sincronizando con la base de datos</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Pantalla de error si Redis no responde
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
+        <div className="bg-[#002e14] border border-red-700 rounded-3xl max-w-md w-full p-8 shadow-2xl text-center">
+          <div className="w-16 h-16 rounded-2xl bg-red-950 border border-red-700/60 flex items-center justify-center mx-auto mb-4">
+            <CloudOff className="w-8 h-8 text-red-300" />
+          </div>
+          <h2 className="text-lg font-bold text-white mb-2">Error de conexión</h2>
+          <p className="text-xs text-emerald-200/80 mb-5">{loadError}</p>
+          <button
+            onClick={loadCloudData}
+            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Reintentar
+          </button>
+          <button
+            onClick={handleLogout}
+            className="w-full mt-2 py-2 bg-transparent hover:bg-red-950/60 text-red-300 font-bold rounded-xl transition text-xs border border-red-900/60"
+          >
+            Cerrar Sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
 
   return (
@@ -812,7 +851,6 @@ export default function App() {
           </nav>
 
           <div className="flex items-center space-x-3">
-            {/* Indicador de estado de sincronización con la base de datos */}
             {syncStatus !== 'idle' && (
               <div className={`hidden sm:flex items-center space-x-1.5 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${
                 syncStatus === 'saving' ? 'bg-amber-950 text-amber-300 border-amber-700/60' :
@@ -851,7 +889,6 @@ export default function App() {
         </div>
       </header>
 
-      {}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
@@ -890,7 +927,6 @@ export default function App() {
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
 
-                {/* BOTÓN Y MENÚ DESPLEGABLE DE EXPORTACIÓN (PNG, JPG, PDF) */}
                 <div className="relative" ref={exportMenuRef}>
                   <button
                     disabled={isExporting}
@@ -953,7 +989,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* TABLA PRINCIPAL DEL HORARIO CON REFERENCIA REF PARA CAPTURA */}
             <div ref={scheduleRef} className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-2xl p-1">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse min-w-[900px]">
@@ -994,6 +1029,17 @@ export default function App() {
                         })}
                       </tr>
                     ))}
+                    {filteredOperators.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="py-12 text-center">
+                          <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                          <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
+                          <p className="text-emerald-500 text-xs mt-1">
+                            {canManageOperators ? 'Ve a la pestaña "Personal" para agregar el primero.' : 'Pídele a un administrador que registre personal.'}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1001,7 +1047,6 @@ export default function App() {
           </div>
         )}
 
-        {}
         {activeTab === 'operators' && (
           <div className="space-y-5">
             {licenseAlerts.length > 0 && showLicenseAlerts && (
@@ -1033,8 +1078,8 @@ export default function App() {
                 <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
               </div>
               {canManageOperators && (
-                <button onClick={() => { 
-                  setEditingOperator(null); 
+                <button onClick={() => {
+                  setEditingOperator(null);
                   setNewOp({
                     name: '',
                     zone: WAREHOUSE_ZONES[1],
@@ -1042,53 +1087,88 @@ export default function App() {
                     shiftPattern: 'Mañana',
                     licenseExpiry: formatDateLocal(new Date())
                   });
-                  setIsAddOperatorOpen(true); 
+                  setIsAddOperatorOpen(true);
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
                 </button>
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {operators.map(op => (
-                <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
-                        <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
-                      </div>
-                      {canManageOperators && (
-                        <div className="flex space-x-1">
-                          <button onClick={() => { setEditingOperator(op); setNewOp(op); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
-                          <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
+            {operators.length === 0 ? (
+              <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
+                <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-white mb-1">Sin personal registrado</h3>
+                <p className="text-xs text-emerald-400/80 mb-4">
+                  {canManageOperators ? 'Agrega el primer montacargista para comenzar a planear turnos.' : 'Pídele a un administrador que registre personal.'}
+                </p>
+                {canManageOperators && (
+                  <button
+                    onClick={() => {
+                      setEditingOperator(null);
+                      setNewOp({
+                        name: '',
+                        zone: WAREHOUSE_ZONES[1],
+                        equipment: FORKLIFT_TYPES[0],
+                        shiftPattern: 'Mañana',
+                        licenseExpiry: formatDateLocal(new Date())
+                      });
+                      setIsAddOperatorOpen(true);
+                    }}
+                    className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center space-x-2 transition"
+                  >
+                    <Plus className="w-4 h-4"/><span>Agregar primer operador</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {operators.map(op => (
+                  <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
+                          <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
                         </div>
-                      )}
-                    </div>
-                    <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
-                      <div className="flex justify-between"><span>Zona:</span><span className="font-semibold text-white">{op.zone}</span></div>
-                      <div className="flex justify-between"><span>Equipo:</span><span className="font-semibold text-white">{op.equipment}</span></div>
-                      <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
-                      <div className="flex justify-between items-center pt-1">
-                        <span>Licencia DC3:</span>
-                        <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>
-                          {op.licenseExpiry || 'N/A'}
-                        </span>
+                        {canManageOperators && (
+                          <div className="flex space-x-1">
+                            <button onClick={() => { setEditingOperator(op); setNewOp(op); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
+                            <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
+                        <div className="flex justify-between"><span>Zona:</span><span className="font-semibold text-white">{op.zone}</span></div>
+                        <div className="flex justify-between"><span>Equipo:</span><span className="font-semibold text-white">{op.equipment}</span></div>
+                        <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
+                        <div className="flex justify-between items-center pt-1">
+                          <span>Licencia DC3:</span>
+                          <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>
+                            {op.licenseExpiry || 'N/A'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {}
         {activeTab === 'vacations' && (
           <div className="space-y-5">
             <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
               <h2 className="text-lg font-bold text-white">Solicitudes de Ausencia</h2>
-              <button onClick={() => { setVacDateError(''); setIsRequestVacationOpen(true); }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
+              <button
+                disabled={operators.length === 0}
+                onClick={() => {
+                  setVacDateError('');
+                  setNewVac(prev => ({ ...prev, operatorId: operators[0]?.id || '' }));
+                  setIsRequestVacationOpen(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition"
+              >
                 <Plus className="w-4 h-4"/><span>Registrar Solicitud</span>
               </button>
             </div>
@@ -1130,6 +1210,15 @@ export default function App() {
                       </td>
                     </tr>
                   ))}
+                  {vacationRequests.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-12 text-center">
+                        <CalendarIcon className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                        <p className="text-emerald-300 font-bold text-sm">Sin solicitudes</p>
+                        <p className="text-emerald-500 text-xs mt-1">Aún no hay permisos registrados.</p>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1137,7 +1226,6 @@ export default function App() {
         )}
       </main>
 
-      {}
       {selectedCell && canEditShifts && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
@@ -1155,20 +1243,20 @@ export default function App() {
                 <Layers className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Dom)</span>
               </div>
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 id="applyWeekCheckbox"
-                checked={applyToFullWeek} 
-                onChange={(e) => setApplyToFullWeek(e.target.checked)} 
+                checked={applyToFullWeek}
+                onChange={(e) => setApplyToFullWeek(e.target.checked)}
                 className="w-4 h-4 accent-emerald-500 cursor-pointer"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (
-                <button 
-                  key={code} 
-                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)} 
+                <button
+                  key={code}
+                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
                   className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
                 >
                   {code}: {config.label}
@@ -1186,21 +1274,21 @@ export default function App() {
             <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
-                <input 
-                  type="text" 
-                  required 
-                  placeholder="Ej. Juan Pérez" 
-                  value={newOp.name} 
-                  onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} 
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" 
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. Juan Pérez"
+                  value={newOp.name}
+                  onChange={(e) => setNewOp({ ...newOp, name: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Zona de Trabajo</label>
-                <select 
-                  value={newOp.zone} 
-                  onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} 
+                <select
+                  value={newOp.zone}
+                  onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })}
                   className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
                 >
                   {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => (
@@ -1211,9 +1299,9 @@ export default function App() {
 
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
-                <select 
-                  value={newOp.equipment} 
-                  onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} 
+                <select
+                  value={newOp.equipment}
+                  onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })}
                   className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
                 >
                   {FORKLIFT_TYPES.map(eq => (
@@ -1224,9 +1312,9 @@ export default function App() {
 
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
-                <select 
-                  value={newOp.shiftPattern} 
-                  onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} 
+                <select
+                  value={newOp.shiftPattern}
+                  onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })}
                   className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
                 >
                   <option value="Mañana">Mañana</option>
@@ -1237,12 +1325,12 @@ export default function App() {
 
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
-                <input 
-                  type="date" 
-                  required 
-                  value={newOp.licenseExpiry} 
-                  onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} 
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" 
+                <input
+                  type="date"
+                  required
+                  value={newOp.licenseExpiry}
+                  onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })}
+                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
                 />
               </div>
 

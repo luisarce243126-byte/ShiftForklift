@@ -60,7 +60,7 @@ const WAREHOUSE_ZONES = [
   'Todas las zonas',
   'Recepción / Carga',
   'Pasillos Alta Montaña (Reach)',
-  'Embarques / Surtido',
+  'Embarcaciones / Surtido',
   'Materiales / Entrada a Línea',
   'Patio de Contenedores'
 ];
@@ -409,13 +409,13 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
-  // ✅ NUEVO: detecta si la semana mostrada es anterior a la semana actual
+  // ✅ Detecta si la semana mostrada es anterior a la semana actual
   const isHistoricalWeek = useMemo(() => {
     const currentMonday = getMondayOfCurrentWeek();
     return currentWeekStart < currentMonday;
   }, [currentWeekStart]);
 
-  // ✅ NUEVO: conjunto de celdas bloqueadas por ausencias aprobadas
+  // ✅ Conjunto GLOBAL de celdas bloqueadas por ausencias aprobadas.
   // Formato de cada entrada: `${operatorId}_${YYYY-MM-DD}`
   const lockedCells = useMemo(() => {
     const locked = new Set();
@@ -434,7 +434,19 @@ export default function App() {
     return locked;
   }, [vacationRequests]);
 
-  // ✅ NUEVO: helper para saber si una celda específica es editable
+  // ✅ NUEVO: cuenta SOLO las celdas bloqueadas que caen dentro de la semana visible.
+  // Se usa para el banner informativo. No afecta la lógica de bloqueo real.
+  const lockedCellsInView = useMemo(() => {
+    let count = 0;
+    operators.forEach(op => {
+      weekDays.forEach(day => {
+        if (lockedCells.has(`${op.id}_${day.dateStr}`)) count++;
+      });
+    });
+    return count;
+  }, [operators, weekDays, lockedCells]);
+
+  // ✅ Helper para saber si una celda específica es editable
   const canEditCell = (operatorId, dateStr) => {
     if (!canEditShifts) return false;
     if (isHistoricalWeek) return false;
@@ -443,11 +455,11 @@ export default function App() {
   };
 
   // Autollenado de turnos base SOLO en semanas actuales/futuras.
-  // No tocamos semanas históricas para no inventar historia.
+  // No tocamos semanas históricas ni celdas bloqueadas por ausencias.
   useEffect(() => {
     if (!isLoaded || isUpdatingRef.current) return;
     if (operators.length === 0) return;
-    if (isHistoricalWeek) return; // 👈 no rellenar semanas pasadas
+    if (isHistoricalWeek) return;
 
     const newSchedule = { ...scheduleData };
     let changed = false;
@@ -455,7 +467,6 @@ export default function App() {
     operators.forEach((op) => {
       weekDays.forEach((day, idx) => {
         const key = `${op.id}_${day.dateStr}`;
-        // No rellenar celdas bloqueadas por ausencia
         if (lockedCells.has(key)) return;
         if (!newSchedule[key]) {
           if (idx === 5 || idx === 6) {
@@ -547,10 +558,10 @@ export default function App() {
 
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
-    if (isHistoricalWeek) return; // ✅ seguridad extra
+    if (isHistoricalWeek) return;
 
     const clickedKey = `${operatorId}_${dateStr}`;
-    if (lockedCells.has(clickedKey)) return; // ✅ no permitir modificar celdas bloqueadas
+    if (lockedCells.has(clickedKey)) return;
 
     isUpdatingRef.current = true;
     setSyncStatus('saving');
@@ -558,7 +569,6 @@ export default function App() {
     const updatedSchedule = { ...scheduleData };
 
     if (isFullWeek) {
-      // ✅ saltamos celdas bloqueadas al aplicar a toda la semana
       weekDays.forEach(day => {
         const key = `${operatorId}_${day.dateStr}`;
         if (!lockedCells.has(key)) {
@@ -926,7 +936,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
-            {/* ✅ Banner de semana histórica */}
+            {/* Banner de semana histórica */}
             {isHistoricalWeek && (
               <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
@@ -942,12 +952,12 @@ export default function App() {
               </div>
             )}
 
-            {/* Leyenda de candados cuando hay celdas bloqueadas por ausencias */}
-            {!isHistoricalWeek && lockedCells.size > 0 && (
+            {/* ✅ Banner de celdas bloqueadas — ahora usa lockedCellsInView */}
+            {!isHistoricalWeek && lockedCellsInView > 0 && (
               <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2.5 flex items-center gap-2">
                 <Lock className="w-4 h-4 text-purple-300 shrink-0" />
                 <p className="text-[11px] text-purple-200">
-                  Hay <span className="font-bold">{lockedCells.size}</span> turno(s) bloqueado(s) por ausencias aprobadas. Se muestran con un candado y no se pueden modificar.
+                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s) por ausencias aprobadas en esta semana. Se muestran con un candado y no se pueden modificar.
                 </p>
               </div>
             )}
@@ -1086,7 +1096,6 @@ export default function App() {
                           const isLockedByAbsence = lockedCells.has(cellKey);
                           const editable = canEditCell(op.id, day.dateStr);
 
-                          // Tooltip según estado
                           let tooltip = '';
                           if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
                           else if (isLockedByAbsence) tooltip = 'Bloqueado por ausencia aprobada';
@@ -1114,7 +1123,6 @@ export default function App() {
                               >
                                 <IconComp className="w-3.5 h-3.5" />
                                 <span>{shift.code}</span>
-                                {/* Icono de candado cuando está bloqueado */}
                                 {(isLockedByAbsence || isHistoricalWeek) && (
                                   <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${
                                     isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'

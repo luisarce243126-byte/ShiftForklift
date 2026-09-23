@@ -139,32 +139,30 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   }
 };
 
+// ✅ Colores compactos para indicadores pequeños
 const INDICATOR_ACCENTS = {
-  emerald: { bg: 'bg-emerald-950/70', border: 'border-emerald-700/60', text: 'text-emerald-200', icon: 'text-emerald-300', value: 'text-emerald-100' },
-  amber:   { bg: 'bg-amber-950/70',   border: 'border-amber-700/60',   text: 'text-amber-200',   icon: 'text-amber-300',   value: 'text-amber-100' },
-  indigo:  { bg: 'bg-indigo-950/70',  border: 'border-indigo-700/60',  text: 'text-indigo-200',  icon: 'text-indigo-300',  value: 'text-indigo-100' },
-  slate:   { bg: 'bg-slate-900/70',   border: 'border-slate-700/60',   text: 'text-slate-200',   icon: 'text-slate-300',   value: 'text-slate-100' },
-  purple:  { bg: 'bg-purple-950/70',  border: 'border-purple-700/60',  text: 'text-purple-200',  icon: 'text-purple-300',  value: 'text-purple-100' },
-  red:     { bg: 'bg-red-950/70',     border: 'border-red-700/60',     text: 'text-red-200',     icon: 'text-red-300',     value: 'text-red-100' },
-  cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-200',    icon: 'text-cyan-300',    value: 'text-cyan-100' }
+  emerald: { bg: 'bg-emerald-950/70', border: 'border-emerald-700/60', text: 'text-emerald-300', value: 'text-emerald-100' },
+  amber:   { bg: 'bg-amber-950/70',   border: 'border-amber-700/60',   text: 'text-amber-300',   value: 'text-amber-100' },
+  indigo:  { bg: 'bg-indigo-950/70',  border: 'border-indigo-700/60',  text: 'text-indigo-300',  value: 'text-indigo-100' },
+  slate:   { bg: 'bg-slate-900/70',   border: 'border-slate-700/60',   text: 'text-slate-300',   value: 'text-slate-100' },
+  purple:  { bg: 'bg-purple-950/70',  border: 'border-purple-700/60',  text: 'text-purple-300',  value: 'text-purple-100' },
+  red:     { bg: 'bg-red-950/70',     border: 'border-red-700/60',     text: 'text-red-300',     value: 'text-red-100' },
+  cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-300',    value: 'text-cyan-100' }
 };
 
-function IndicatorCard({ icon: Icon, label, value, accent = 'emerald', pulse = false, subtitle = null }) {
+// ✅ Componente de indicador COMPACTO
+function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle = null }) {
   const c = INDICATOR_ACCENTS[accent] || INDICATOR_ACCENTS.emerald;
   return (
-    <div className={`relative rounded-2xl border ${c.bg} ${c.border} p-3.5 shadow-lg transition-all`}>
-      {pulse && (
-        <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-        </span>
-      )}
-      <div className="flex items-center space-x-2 mb-1.5">
-        <Icon className={`w-3.5 h-3.5 ${c.icon}`} />
-        <span className={`text-[10px] font-bold uppercase tracking-wider ${c.text}`}>{label}</span>
+    <div className={`flex items-center gap-2 rounded-lg border ${c.bg} ${c.border} px-2.5 py-1.5`}>
+      <Icon className={`w-3.5 h-3.5 ${c.text} shrink-0`} />
+      <div className="min-w-0 flex-1">
+        <div className={`text-[9px] font-bold uppercase tracking-wider ${c.text} leading-none`}>{label}</div>
+        <div className="flex items-baseline gap-1.5">
+          <span className={`text-base font-extrabold ${c.value} leading-none`}>{value}</span>
+          {subtitle && <span className={`text-[9px] ${c.text} opacity-70 leading-none`}>{subtitle}</span>}
+        </div>
       </div>
-      <div className={`text-2xl font-extrabold leading-none ${c.value}`}>{value}</div>
-      {subtitle && <div className={`text-[10px] mt-1 ${c.text} opacity-80`}>{subtitle}</div>}
     </div>
   );
 }
@@ -479,9 +477,8 @@ export default function App() {
 
   const statsDateLabel = useMemo(() => {
     if (isCurrentWeek) return 'HOY';
-    if (isHistoricalWeek) return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
     return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
-  }, [isCurrentWeek, isHistoricalWeek, weekDays]);
+  }, [isCurrentWeek, weekDays]);
 
   const shiftStats = useMemo(() => {
     const stats = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0, total: operators.length };
@@ -1007,7 +1004,7 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {activeTab === 'scheduler' && (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {/* Banner de semana histórica */}
             {isHistoricalWeek && (
               <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-4 flex items-center gap-3">
@@ -1026,25 +1023,25 @@ export default function App() {
 
             {/* Banner de celdas bloqueadas */}
             {!isHistoricalWeek && lockedCellsInView > 0 && (
-              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2.5 flex items-center gap-2">
-                <Lock className="w-4 h-4 text-purple-300 shrink-0" />
-                <p className="text-[11px] text-purple-200">
-                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s) por ausencias aprobadas en esta semana. Se muestran con un candado y no se pueden modificar.
+              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2 flex items-center gap-2">
+                <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
+                <p className="text-[10px] text-purple-200">
+                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s) por ausencias aprobadas en esta semana.
                 </p>
               </div>
             )}
 
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-center justify-between gap-4">
-              <div className="flex items-center space-x-3">
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 flex flex-col lg:flex-row items-center justify-between gap-3">
+              <div className="flex items-center space-x-2">
                 <button onClick={() => {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const prevWeek = new Date(y, m - 1, d - 7);
                   setCurrentWeekStart(formatDateLocal(prevWeek));
-                }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-5 h-5"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
 
-                <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900 flex items-center gap-2">
-                  {isHistoricalWeek && <History className="w-3.5 h-3.5 text-slate-400" />}
-                  {isCurrentWeek && <Activity className="w-3.5 h-3.5 text-emerald-400" />}
+                <div className="text-xs font-bold text-white bg-[#02180d] px-3 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-2">
+                  {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
+                  {isCurrentWeek && <Activity className="w-3 h-3 text-emerald-400" />}
                   Plan Semanal: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
                 </div>
 
@@ -1052,12 +1049,12 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const nextWeek = new Date(y, m - 1, d + 7);
                   setCurrentWeekStart(formatDateLocal(nextWeek));
-                }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-5 h-5"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
 
                 {!isCurrentWeek && (
                   <button
                     onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())}
-                    className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-bold transition border border-emerald-500/50 flex items-center gap-1.5"
+                    className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition border border-emerald-500/50 flex items-center gap-1"
                     title="Volver a la semana actual"
                   >
                     <Activity className="w-3 h-3" />
@@ -1066,18 +1063,18 @@ export default function App() {
                 )}
               </div>
 
-              <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap">
+              <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
                 <input
                   type="text"
                   placeholder="Buscar operador..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
                 />
                 <select
                   value={selectedZone}
                   onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-xl px-3 py-2 text-xs text-emerald-200"
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200"
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
@@ -1086,17 +1083,17 @@ export default function App() {
                   <button
                     disabled={isExporting}
                     onClick={() => setShowExportMenu(!showExportMenu)}
-                    className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center space-x-2 transition border border-emerald-500/50 shadow"
+                    className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 transition border border-emerald-500/50 shadow"
                   >
                     {isExporting ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>Generando...</span>
                       </>
                     ) : (
                       <>
-                        <Download className="w-4 h-4" />
-                        <span>Exportar Horario</span>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Exportar</span>
                       </>
                     )}
                   </button>
@@ -1154,7 +1151,7 @@ export default function App() {
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
                     <tr className={`border-b ${isHistoricalWeek ? 'bg-slate-950/80 border-slate-700/70' : 'bg-[#001f0d] border-emerald-800/80'}`}>
-                      <th className={`py-3.5 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>
+                      <th className={`py-3 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>
                         Montacargista / Área
                       </th>
                       {weekDays.map(day => {
@@ -1162,7 +1159,7 @@ export default function App() {
                         return (
                           <th
                             key={day.dateStr}
-                            className={`py-3.5 px-2 text-center border-l ${
+                            className={`py-3 px-2 text-center border-l ${
                               isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'
                             } ${isToday && isCurrentWeek ? 'bg-emerald-900/40' : ''}`}
                           >
@@ -1254,73 +1251,50 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ PANEL DE INDICADORES EN VIVO — ahora debajo de la matriz */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            {/* ✅ INDICADORES COMPACTOS — una sola fila horizontal */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Turno en vivo */}
               {isCurrentWeek ? (
-                <div className="col-span-2 md:col-span-1 relative rounded-2xl border border-emerald-500/60 bg-gradient-to-br from-emerald-950/90 to-[#003818] p-3.5 shadow-xl">
-                  <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
+                <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
+                  <span className="relative flex h-2 w-2 shrink-0">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                   </span>
-                  <div className="flex items-center space-x-2 mb-1.5">
-                    <ActiveShiftIcon className="w-3.5 h-3.5 text-emerald-300" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-200">Turno en vivo</span>
+                  <ActiveShiftIcon className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-300 leading-none">En vivo</div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-base font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
+                      <span className="text-[9px] text-emerald-400 font-mono leading-none">{formatTimeLocal(now)}</span>
+                    </div>
                   </div>
-                  <div className="text-2xl font-extrabold leading-none text-emerald-100">{SHIFT_TYPES[activeShiftCode].label}</div>
-                  <div className="text-[10px] mt-1 text-emerald-300 font-mono">{formatTimeLocal(now)}</div>
                 </div>
               ) : (
-                <div className="col-span-2 md:col-span-1 rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3.5 shadow-lg">
-                  <div className="flex items-center space-x-2 mb-1.5">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Resumen</span>
+                <div className="flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/60 px-2.5 py-1.5">
+                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <div>
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none">Resumen</div>
+                    <div className="text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
                   </div>
-                  <div className="text-sm font-extrabold leading-tight text-slate-200">{statsDateLabel}</div>
-                  <div className="text-[10px] mt-1 text-slate-400">{isHistoricalWeek ? 'Semana histórica' : 'Semana futura'}</div>
                 </div>
               )}
 
-              <IndicatorCard
-                icon={Sunrise}
-                label="Mañana"
-                value={shiftStats.M}
-                accent="emerald"
-                subtitle={isCurrentWeek ? 'Hoy · 07:00–15:00' : statsDateLabel}
-              />
-              <IndicatorCard
-                icon={Sun}
-                label="Tarde"
-                value={shiftStats.T}
-                accent="amber"
-                subtitle={isCurrentWeek ? 'Hoy · 15:00–22:30' : statsDateLabel}
-              />
-              <IndicatorCard
-                icon={Moon}
-                label="Noche"
-                value={shiftStats.N}
-                accent="indigo"
-                subtitle={isCurrentWeek ? 'Hoy · 22:30–07:00' : statsDateLabel}
-              />
-              <IndicatorCard
-                icon={Coffee}
-                label="Descanso"
-                value={shiftStats.DES}
-                accent="slate"
-                subtitle={isCurrentWeek ? 'Hoy' : statsDateLabel}
-              />
-              <IndicatorCard
+              <MiniIndicator icon={Sunrise} label="Mañana" value={shiftStats.M} accent="emerald" />
+              <MiniIndicator icon={Sun} label="Tarde" value={shiftStats.T} accent="amber" />
+              <MiniIndicator icon={Moon} label="Noche" value={shiftStats.N} accent="indigo" />
+              <MiniIndicator icon={Coffee} label="Descanso" value={shiftStats.DES} accent="slate" />
+              <MiniIndicator
                 icon={AlertTriangle}
                 label="Ausentes"
                 value={shiftStats.absent}
                 accent={shiftStats.absent > 0 ? 'red' : 'slate'}
-                subtitle={shiftStats.absent > 0 ? `${shiftStats.VAC} vac · ${shiftStats.INC} inc` : 'Sin ausencias'}
               />
-              <IndicatorCard
+              <MiniIndicator
                 icon={Users}
                 label="Plantilla"
                 value={shiftStats.total}
                 accent="cyan"
-                subtitle={`${shiftStats.active} activos`}
+                subtitle={`${shiftStats.active} act.`}
               />
             </div>
           </div>

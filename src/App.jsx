@@ -37,15 +37,10 @@ import {
   AlertCircle,
   CheckCircle2,
   CloudOff,
-  RefreshCw
+  RefreshCw,
+  History
 } from 'lucide-react';
 
-// ⚠️ ADVERTENCIA DE SEGURIDAD:
-// Esta lista de usuarios vive en el bundle de React y es visible para cualquiera
-// que inspeccione el código del cliente (DevTools > Sources). Es válida solo para
-// demos/prototipos. Para producción, reemplaza este login por autenticación real
-// en el servidor (p. ej. NextAuth, Supabase Auth, Clerk, o un endpoint propio que
-// verifique credenciales con hash bcrypt/argon2 y devuelva un token de sesión).
 const MOCK_USERS = [
   { id: 1, email: 'admin@empresa.com', pass: '123456', name: 'Administrador General', role: 'Admin' },
   { id: 2, email: 'supervisor@empresa.com', pass: '123456', name: 'Supervisor Logística', role: 'Supervisor' },
@@ -150,7 +145,6 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('scheduler');
 
-  // ✅ Estados SIN seeds: arrancan vacíos y solo se llenan desde Redis.
   const [operators, setOperators] = useState([]);
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState([]);
@@ -319,9 +313,6 @@ export default function App() {
     };
   }, [currentWeekStart]);
 
-  // ✅ CARGA INICIAL SIN SEEDS
-  // Solo se cargan los datos que existan en Redis. Si está vacío, la app
-  // arranca sin operadores y tú los agregas manualmente.
   const loadCloudData = async () => {
     setIsLoaded(false);
     setLoadError('');
@@ -348,7 +339,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Polling: solo arranca DESPUÉS de la carga inicial exitosa
   useEffect(() => {
     if (!isLoaded || loadError) return;
 
@@ -419,11 +409,45 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
-  // Autollenado de turnos base: solo para operadores que existan en Redis.
-  // No siembra operadores nuevos, solo rellena celdas vacías.
+  // ✅ NUEVO: detecta si la semana mostrada es anterior a la semana actual
+  const isHistoricalWeek = useMemo(() => {
+    const currentMonday = getMondayOfCurrentWeek();
+    return currentWeekStart < currentMonday;
+  }, [currentWeekStart]);
+
+  // ✅ NUEVO: conjunto de celdas bloqueadas por ausencias aprobadas
+  // Formato de cada entrada: `${operatorId}_${YYYY-MM-DD}`
+  const lockedCells = useMemo(() => {
+    const locked = new Set();
+    vacationRequests
+      .filter(r => r.status === 'Aprobado')
+      .forEach(req => {
+        const [sY, sM, sD] = req.startDate.split('-').map(Number);
+        const [eY, eM, eD] = req.endDate.split('-').map(Number);
+        let curr = new Date(sY, sM - 1, sD);
+        const end = new Date(eY, eM - 1, eD);
+        while (curr <= end) {
+          locked.add(`${req.operatorId}_${formatDateLocal(curr)}`);
+          curr.setDate(curr.getDate() + 1);
+        }
+      });
+    return locked;
+  }, [vacationRequests]);
+
+  // ✅ NUEVO: helper para saber si una celda específica es editable
+  const canEditCell = (operatorId, dateStr) => {
+    if (!canEditShifts) return false;
+    if (isHistoricalWeek) return false;
+    if (lockedCells.has(`${operatorId}_${dateStr}`)) return false;
+    return true;
+  };
+
+  // Autollenado de turnos base SOLO en semanas actuales/futuras.
+  // No tocamos semanas históricas para no inventar historia.
   useEffect(() => {
     if (!isLoaded || isUpdatingRef.current) return;
     if (operators.length === 0) return;
+    if (isHistoricalWeek) return; // 👈 no rellenar semanas pasadas
 
     const newSchedule = { ...scheduleData };
     let changed = false;
@@ -431,6 +455,8 @@ export default function App() {
     operators.forEach((op) => {
       weekDays.forEach((day, idx) => {
         const key = `${op.id}_${day.dateStr}`;
+        // No rellenar celdas bloqueadas por ausencia
+        if (lockedCells.has(key)) return;
         if (!newSchedule[key]) {
           if (idx === 5 || idx === 6) {
             newSchedule[key] = 'DES';
@@ -448,7 +474,7 @@ export default function App() {
       setScheduleData(newSchedule);
       redis.set('sf_scheduleData', newSchedule).catch(console.error);
     }
-  }, [operators, weekDays, isLoaded]);
+  }, [operators, weekDays, isLoaded, isHistoricalWeek, lockedCells]);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -521,17 +547,26 @@ export default function App() {
 
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
+    if (isHistoricalWeek) return; // ✅ seguridad extra
+
+    const clickedKey = `${operatorId}_${dateStr}`;
+    if (lockedCells.has(clickedKey)) return; // ✅ no permitir modificar celdas bloqueadas
+
     isUpdatingRef.current = true;
     setSyncStatus('saving');
 
     const updatedSchedule = { ...scheduleData };
 
     if (isFullWeek) {
+      // ✅ saltamos celdas bloqueadas al aplicar a toda la semana
       weekDays.forEach(day => {
-        updatedSchedule[`${operatorId}_${day.dateStr}`] = shiftCode;
+        const key = `${operatorId}_${day.dateStr}`;
+        if (!lockedCells.has(key)) {
+          updatedSchedule[key] = shiftCode;
+        }
       });
     } else {
-      updatedSchedule[`${operatorId}_${dateStr}`] = shiftCode;
+      updatedSchedule[clickedKey] = shiftCode;
     }
 
     setScheduleData(updatedSchedule);
@@ -786,7 +821,7 @@ export default function App() {
     );
   }
 
-  // ✅ Pantalla de carga: nada se muestra hasta que Redis responde
+  // Pantalla de carga: nada se muestra hasta que Redis responde
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-[#021f12] flex items-center justify-center">
@@ -799,7 +834,6 @@ export default function App() {
     );
   }
 
-  // ✅ Pantalla de error si Redis no responde
   if (loadError) {
     return (
       <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
@@ -892,6 +926,32 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
+            {/* ✅ Banner de semana histórica */}
+            {isHistoricalWeek && (
+              <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
+                  <History className="w-5 h-5 text-slate-300" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-slate-100">Semana histórica — Solo lectura</h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Esta semana ya pasó. Los turnos están bloqueados y no se pueden modificar. Solo puedes consultarlos o exportarlos.
+                  </p>
+                </div>
+                <Lock className="w-5 h-5 text-slate-400 shrink-0" />
+              </div>
+            )}
+
+            {/* Leyenda de candados cuando hay celdas bloqueadas por ausencias */}
+            {!isHistoricalWeek && lockedCells.size > 0 && (
+              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2.5 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-purple-300 shrink-0" />
+                <p className="text-[11px] text-purple-200">
+                  Hay <span className="font-bold">{lockedCells.size}</span> turno(s) bloqueado(s) por ausencias aprobadas. Se muestran con un candado y no se pueden modificar.
+                </p>
+              </div>
+            )}
+
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-center justify-between gap-4">
               <div className="flex items-center space-x-3">
                 <button onClick={() => {
@@ -900,7 +960,8 @@ export default function App() {
                   setCurrentWeekStart(formatDateLocal(prevWeek));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-5 h-5"/></button>
 
-                <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900">
+                <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900 flex items-center gap-2">
+                  {isHistoricalWeek && <History className="w-3.5 h-3.5 text-slate-400" />}
                   Plan Semanal: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
                 </div>
 
@@ -989,15 +1050,22 @@ export default function App() {
               </div>
             </div>
 
-            <div ref={scheduleRef} className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-2xl p-1">
+            <div
+              ref={scheduleRef}
+              className={`bg-[#002812] border rounded-2xl overflow-hidden shadow-2xl p-1 ${
+                isHistoricalWeek ? 'border-slate-700/70 opacity-[0.97]' : 'border-emerald-800/80'
+              }`}
+            >
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
-                    <tr className="bg-[#001f0d] border-b border-emerald-800/80">
-                      <th className="py-3.5 px-4 text-left text-xs font-bold text-emerald-300 uppercase w-64">Montacargista / Área</th>
+                    <tr className={`border-b ${isHistoricalWeek ? 'bg-slate-950/80 border-slate-700/70' : 'bg-[#001f0d] border-emerald-800/80'}`}>
+                      <th className={`py-3.5 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>
+                        Montacargista / Área
+                      </th>
                       {weekDays.map(day => (
-                        <th key={day.dateStr} className="py-3.5 px-2 text-center border-l border-emerald-900/60">
-                          <div className="text-xs font-bold text-emerald-200 uppercase">{day.dayName}</div>
+                        <th key={day.dateStr} className={`py-3.5 px-2 text-center border-l ${isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'}`}>
+                          <div className={`text-xs font-bold uppercase ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-200'}`}>{day.dayName}</div>
                           <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>{day.dayNumber}</div>
                         </th>
                       ))}
@@ -1014,15 +1082,44 @@ export default function App() {
                           const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
                           const shift = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
                           const IconComp = shift.icon;
+                          const cellKey = `${op.id}_${day.dateStr}`;
+                          const isLockedByAbsence = lockedCells.has(cellKey);
+                          const editable = canEditCell(op.id, day.dateStr);
+
+                          // Tooltip según estado
+                          let tooltip = '';
+                          if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
+                          else if (isLockedByAbsence) tooltip = 'Bloqueado por ausencia aprobada';
+                          else if (!canEditShifts) tooltip = 'No tienes permisos para editar turnos';
+
                           return (
                             <td key={day.dateStr} className="p-1.5 text-center border-l border-emerald-900/40">
                               <button
-                                disabled={!canEditShifts}
-                                onClick={() => setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
-                                className={`w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${!canEditShifts ? 'cursor-default opacity-90' : 'hover:scale-105 transition-transform'}`}
+                                disabled={!editable}
+                                onClick={() => editable && setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
+                                title={tooltip}
+                                className={`relative w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${
+                                  !editable
+                                    ? 'cursor-not-allowed'
+                                    : 'hover:scale-105 transition-transform'
+                                } ${
+                                  isLockedByAbsence && !isHistoricalWeek
+                                    ? 'ring-2 ring-purple-400/60 shadow-purple-900/40'
+                                    : ''
+                                } ${
+                                  isHistoricalWeek
+                                    ? 'grayscale-[0.35] opacity-90'
+                                    : ''
+                                }`}
                               >
                                 <IconComp className="w-3.5 h-3.5" />
                                 <span>{shift.code}</span>
+                                {/* Icono de candado cuando está bloqueado */}
+                                {(isLockedByAbsence || isHistoricalWeek) && (
+                                  <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${
+                                    isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'
+                                  }`} />
+                                )}
                               </button>
                             </td>
                           );
@@ -1193,16 +1290,28 @@ export default function App() {
                       <td className="p-3.5 text-emerald-200">{req.startDate} al {req.endDate}</td>
                       <td className="p-3.5 text-white/90 max-w-xs">{req.reason}</td>
                       <td className="p-3.5">
-                        <span className={`px-2 py-0.5 rounded font-bold ${req.status === 'Aprobado' ? 'bg-emerald-950 text-emerald-300' : req.status === 'Rechazado' ? 'bg-red-950 text-red-300' : 'bg-amber-950 text-amber-300'}`}>
+                        <span className={`px-2 py-0.5 rounded font-bold inline-flex items-center gap-1 ${
+                          req.status === 'Aprobado' ? 'bg-emerald-950 text-emerald-300' : 
+                          req.status === 'Rechazado' ? 'bg-red-950 text-red-300' : 
+                          'bg-amber-950 text-amber-300'
+                        }`}>
+                          {req.status === 'Aprobado' && <Lock className="w-3 h-3" />}
                           {req.status}
                         </span>
                       </td>
                       <td className="p-3.5 text-center">
                         {req.status === 'Pendiente' && canApproveVacations ? (
                           <div className="flex justify-center space-x-1">
-                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar"><Check className="w-4 h-4"/></button>
+                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar (bloqueará los turnos)"><Check className="w-4 h-4"/></button>
                             <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition" title="Rechazar"><X className="w-4 h-4"/></button>
                             <button onClick={() => handleCancelVacationRequest(req.id)} className="p-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition" title="Cancelar solicitud"><Trash2 className="w-4 h-4"/></button>
+                          </div>
+                        ) : req.status === 'Aprobado' && canApproveVacations ? (
+                          <div className="flex justify-center">
+                            <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="px-2 py-1 bg-red-900 hover:bg-red-800 text-red-100 rounded-lg transition text-[10px] font-bold flex items-center gap-1" title="Revocar aprobación (desbloquea las celdas)">
+                              <Lock className="w-3 h-3" />
+                              Revocar
+                            </button>
                           </div>
                         ) : (
                           <span className="text-emerald-600 text-[10px]">Sin acciones</span>
@@ -1226,7 +1335,7 @@ export default function App() {
         )}
       </main>
 
-      {selectedCell && canEditShifts && (
+      {selectedCell && canEditShifts && !isHistoricalWeek && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <div className="flex justify-between items-start mb-3">
@@ -1251,6 +1360,11 @@ export default function App() {
                 className="w-4 h-4 accent-emerald-500 cursor-pointer"
               />
             </div>
+
+            <p className="text-[10px] text-amber-300/90 mb-2 flex items-center gap-1">
+              <Lock className="w-3 h-3" />
+              Las celdas bloqueadas por ausencias aprobadas no se modificarán.
+            </p>
 
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (

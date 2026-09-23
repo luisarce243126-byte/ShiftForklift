@@ -38,7 +38,10 @@ import {
   CheckCircle2,
   CloudOff,
   RefreshCw,
-  History
+  History,
+  Activity,
+  UserX,
+  TrendingUp
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -60,7 +63,7 @@ const WAREHOUSE_ZONES = [
   'Todas las zonas',
   'Recepción / Carga',
   'Pasillos Alta Montaña (Reach)',
-  'Embarcaciones / Surtido',
+  'Embarques / Surtido',
   'Materiales / Entrada a Línea',
   'Patio de Contenedores'
 ];
@@ -79,6 +82,23 @@ const ABSENCE_TYPES = [
   'Permiso Personal'
 ];
 
+// ✅ Rangos de turno en minutos desde medianoche
+const SHIFT_WINDOWS = {
+  M: { start: 7 * 60,        end: 15 * 60,       label: '07:00 - 15:00' },
+  T: { start: 15 * 60,       end: 22 * 60 + 30,  label: '15:00 - 22:30' },
+  N: { start: 22 * 60 + 30,  end: 24 * 60 + 7 * 60, label: '22:30 - 07:00' } // cruza medianoche
+};
+
+const getShiftCodeForDate = (date) => {
+  const totalMinutes = date.getHours() * 60 + date.getMinutes();
+  // Mañana: 07:00 - 14:59
+  if (totalMinutes >= SHIFT_WINDOWS.M.start && totalMinutes < SHIFT_WINDOWS.M.end) return 'M';
+  // Tarde: 15:00 - 22:29
+  if (totalMinutes >= SHIFT_WINDOWS.T.start && totalMinutes < SHIFT_WINDOWS.T.end) return 'T';
+  // Noche: 22:30 - 06:59
+  return 'N';
+};
+
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -92,6 +112,10 @@ const formatDateLocal = (date) => {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+};
+
+const formatTimeLocal = (date) => {
+  return date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
 const getMondayOfCurrentWeek = (refDate = new Date()) => {
@@ -120,6 +144,37 @@ const getLicenseStatusStyle = (expiryDateStr) => {
     return 'bg-emerald-950 text-emerald-300 border-emerald-800';
   }
 };
+
+// ✅ Colores por acento para las tarjetas de indicadores
+const INDICATOR_ACCENTS = {
+  emerald: { bg: 'bg-emerald-950/70', border: 'border-emerald-700/60', text: 'text-emerald-200', icon: 'text-emerald-300', value: 'text-emerald-100' },
+  amber:   { bg: 'bg-amber-950/70',   border: 'border-amber-700/60',   text: 'text-amber-200',   icon: 'text-amber-300',   value: 'text-amber-100' },
+  indigo:  { bg: 'bg-indigo-950/70',  border: 'border-indigo-700/60',  text: 'text-indigo-200',  icon: 'text-indigo-300',  value: 'text-indigo-100' },
+  slate:   { bg: 'bg-slate-900/70',   border: 'border-slate-700/60',   text: 'text-slate-200',   icon: 'text-slate-300',   value: 'text-slate-100' },
+  purple:  { bg: 'bg-purple-950/70',  border: 'border-purple-700/60',  text: 'text-purple-200',  icon: 'text-purple-300',  value: 'text-purple-100' },
+  red:     { bg: 'bg-red-950/70',     border: 'border-red-700/60',     text: 'text-red-200',     icon: 'text-red-300',     value: 'text-red-100' },
+  cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-200',    icon: 'text-cyan-300',    value: 'text-cyan-100' }
+};
+
+function IndicatorCard({ icon: Icon, label, value, accent = 'emerald', pulse = false, subtitle = null }) {
+  const c = INDICATOR_ACCENTS[accent] || INDICATOR_ACCENTS.emerald;
+  return (
+    <div className={`relative rounded-2xl border ${c.bg} ${c.border} p-3.5 shadow-lg transition-all`}>
+      {pulse && (
+        <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+      )}
+      <div className="flex items-center space-x-2 mb-1.5">
+        <Icon className={`w-3.5 h-3.5 ${c.icon}`} />
+        <span className={`text-[10px] font-bold uppercase tracking-wider ${c.text}`}>{label}</span>
+      </div>
+      <div className={`text-2xl font-extrabold leading-none ${c.value}`}>{value}</div>
+      {subtitle && <div className={`text-[10px] mt-1 ${c.text} opacity-80`}>{subtitle}</div>}
+    </div>
+  );
+}
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -160,6 +215,13 @@ export default function App() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportMenuRef = useRef(null);
+
+  // ✅ Reloj en vivo: se actualiza cada 30 s (suficiente para indicadores)
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(tick);
+  }, []);
 
   // Cuenta regresiva del bloqueo de acceso
   useEffect(() => {
@@ -409,14 +471,47 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
-  // ✅ Detecta si la semana mostrada es anterior a la semana actual
+  // Detecta si la semana mostrada es anterior a la semana actual
   const isHistoricalWeek = useMemo(() => {
     const currentMonday = getMondayOfCurrentWeek();
     return currentWeekStart < currentMonday;
   }, [currentWeekStart]);
 
-  // ✅ Conjunto GLOBAL de celdas bloqueadas por ausencias aprobadas.
-  // Formato de cada entrada: `${operatorId}_${YYYY-MM-DD}`
+  // Detecta si la semana mostrada es la semana actual
+  const isCurrentWeek = useMemo(() => {
+    return currentWeekStart === getMondayOfCurrentWeek();
+  }, [currentWeekStart]);
+
+  // ✅ Turno activo según la hora actual
+  const activeShiftCode = useMemo(() => getShiftCodeForDate(now), [now]);
+
+  // ✅ Fecha objetivo para las estadísticas:
+  // - Si vemos la semana actual → HOY
+  // - Si vemos otra semana → primer día de esa semana
+  const statsDateStr = useMemo(() => {
+    if (isCurrentWeek) return formatDateLocal(now);
+    return weekDays[0]?.dateStr || formatDateLocal(now);
+  }, [isCurrentWeek, now, weekDays]);
+
+  const statsDateLabel = useMemo(() => {
+    if (isCurrentWeek) return 'HOY';
+    if (isHistoricalWeek) return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
+    return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
+  }, [isCurrentWeek, isHistoricalWeek, weekDays]);
+
+  // ✅ Conteo por turno para la fecha objetivo
+  const shiftStats = useMemo(() => {
+    const stats = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0, total: operators.length };
+    operators.forEach(op => {
+      const code = scheduleData[`${op.id}_${statsDateStr}`] || 'DES';
+      if (stats[code] !== undefined) stats[code]++;
+    });
+    stats.active = stats.M + stats.T + stats.N;
+    stats.absent = stats.VAC + stats.INC;
+    return stats;
+  }, [operators, scheduleData, statsDateStr]);
+
+  // Conjunto GLOBAL de celdas bloqueadas por ausencias aprobadas
   const lockedCells = useMemo(() => {
     const locked = new Set();
     vacationRequests
@@ -434,8 +529,7 @@ export default function App() {
     return locked;
   }, [vacationRequests]);
 
-  // ✅ NUEVO: cuenta SOLO las celdas bloqueadas que caen dentro de la semana visible.
-  // Se usa para el banner informativo. No afecta la lógica de bloqueo real.
+  // Cuenta SOLO las celdas bloqueadas dentro de la semana visible
   const lockedCellsInView = useMemo(() => {
     let count = 0;
     operators.forEach(op => {
@@ -446,7 +540,6 @@ export default function App() {
     return count;
   }, [operators, weekDays, lockedCells]);
 
-  // ✅ Helper para saber si una celda específica es editable
   const canEditCell = (operatorId, dateStr) => {
     if (!canEditShifts) return false;
     if (isHistoricalWeek) return false;
@@ -454,8 +547,6 @@ export default function App() {
     return true;
   };
 
-  // Autollenado de turnos base SOLO en semanas actuales/futuras.
-  // No tocamos semanas históricas ni celdas bloqueadas por ausencias.
   useEffect(() => {
     if (!isLoaded || isUpdatingRef.current) return;
     if (operators.length === 0) return;
@@ -831,7 +922,6 @@ export default function App() {
     );
   }
 
-  // Pantalla de carga: nada se muestra hasta que Redis responde
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-[#021f12] flex items-center justify-center">
@@ -872,6 +962,7 @@ export default function App() {
   }
 
   const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
+  const ActiveShiftIcon = SHIFT_TYPES[activeShiftCode].icon;
 
   return (
     <div className="min-h-screen bg-[#021f12] text-emerald-50 font-sans pb-12">
@@ -936,6 +1027,78 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {activeTab === 'scheduler' && (
           <div className="space-y-5">
+            {/* ✅ PANEL DE INDICADORES EN VIVO */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+              {/* Turno activo AHORA - solo se muestra si estamos viendo la semana actual */}
+              {isCurrentWeek ? (
+                <div className="col-span-2 md:col-span-1 relative rounded-2xl border border-emerald-500/60 bg-gradient-to-br from-emerald-950/90 to-[#003818] p-3.5 shadow-xl">
+                  <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                  <div className="flex items-center space-x-2 mb-1.5">
+                    <ActiveShiftIcon className="w-3.5 h-3.5 text-emerald-300" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-200">Turno en vivo</span>
+                  </div>
+                  <div className="text-2xl font-extrabold leading-none text-emerald-100">{SHIFT_TYPES[activeShiftCode].label}</div>
+                  <div className="text-[10px] mt-1 text-emerald-300 font-mono">{formatTimeLocal(now)}</div>
+                </div>
+              ) : (
+                <div className="col-span-2 md:col-span-1 rounded-2xl border border-slate-700/60 bg-slate-900/60 p-3.5 shadow-lg">
+                  <div className="flex items-center space-x-2 mb-1.5">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Resumen</span>
+                  </div>
+                  <div className="text-sm font-extrabold leading-tight text-slate-200">{statsDateLabel}</div>
+                  <div className="text-[10px] mt-1 text-slate-400">{isHistoricalWeek ? 'Semana histórica' : 'Semana futura'}</div>
+                </div>
+              )}
+
+              {/* Conteo por turno */}
+              <IndicatorCard
+                icon={Sunrise}
+                label="Mañana"
+                value={shiftStats.M}
+                accent="emerald"
+                subtitle={isCurrentWeek ? 'Hoy · 07:00–15:00' : statsDateLabel}
+              />
+              <IndicatorCard
+                icon={Sun}
+                label="Tarde"
+                value={shiftStats.T}
+                accent="amber"
+                subtitle={isCurrentWeek ? 'Hoy · 15:00–22:30' : statsDateLabel}
+              />
+              <IndicatorCard
+                icon={Moon}
+                label="Noche"
+                value={shiftStats.N}
+                accent="indigo"
+                subtitle={isCurrentWeek ? 'Hoy · 22:30–07:00' : statsDateLabel}
+              />
+              <IndicatorCard
+                icon={Coffee}
+                label="Descanso"
+                value={shiftStats.DES}
+                accent="slate"
+                subtitle={isCurrentWeek ? 'Hoy' : statsDateLabel}
+              />
+              <IndicatorCard
+                icon={AlertTriangle}
+                label="Ausentes"
+                value={shiftStats.absent}
+                accent={shiftStats.absent > 0 ? 'red' : 'slate'}
+                subtitle={shiftStats.absent > 0 ? `${shiftStats.VAC} vac · ${shiftStats.INC} inc` : 'Sin ausencias'}
+              />
+              <IndicatorCard
+                icon={Users}
+                label="Plantilla"
+                value={shiftStats.total}
+                accent="cyan"
+                subtitle={`${shiftStats.active} activos`}
+              />
+            </div>
+
             {/* Banner de semana histórica */}
             {isHistoricalWeek && (
               <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-4 flex items-center gap-3">
@@ -952,7 +1115,7 @@ export default function App() {
               </div>
             )}
 
-            {/* ✅ Banner de celdas bloqueadas — ahora usa lockedCellsInView */}
+            {/* Banner de celdas bloqueadas */}
             {!isHistoricalWeek && lockedCellsInView > 0 && (
               <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2.5 flex items-center gap-2">
                 <Lock className="w-4 h-4 text-purple-300 shrink-0" />
@@ -972,6 +1135,7 @@ export default function App() {
 
                 <div className="text-xs sm:text-sm font-bold text-white bg-[#02180d] px-4 py-2 rounded-xl border border-emerald-900 flex items-center gap-2">
                   {isHistoricalWeek && <History className="w-3.5 h-3.5 text-slate-400" />}
+                  {isCurrentWeek && <Activity className="w-3.5 h-3.5 text-emerald-400" />}
                   Plan Semanal: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
                 </div>
 
@@ -980,6 +1144,17 @@ export default function App() {
                   const nextWeek = new Date(y, m - 1, d + 7);
                   setCurrentWeekStart(formatDateLocal(nextWeek));
                 }} className="p-2 bg-[#022415] hover:bg-emerald-900 rounded-xl text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-5 h-5"/></button>
+
+                {!isCurrentWeek && (
+                  <button
+                    onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())}
+                    className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-[10px] font-bold transition border border-emerald-500/50 flex items-center gap-1.5"
+                    title="Volver a la semana actual"
+                  >
+                    <Activity className="w-3 h-3" />
+                    Hoy
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-3 w-full lg:w-auto flex-wrap">
@@ -1073,12 +1248,23 @@ export default function App() {
                       <th className={`py-3.5 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>
                         Montacargista / Área
                       </th>
-                      {weekDays.map(day => (
-                        <th key={day.dateStr} className={`py-3.5 px-2 text-center border-l ${isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'}`}>
-                          <div className={`text-xs font-bold uppercase ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-200'}`}>{day.dayName}</div>
-                          <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>{day.dayNumber}</div>
-                        </th>
-                      ))}
+                      {weekDays.map(day => {
+                        const isToday = day.dateStr === formatDateLocal(now);
+                        return (
+                          <th
+                            key={day.dateStr}
+                            className={`py-3.5 px-2 text-center border-l ${
+                              isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'
+                            } ${isToday && isCurrentWeek ? 'bg-emerald-900/40' : ''}`}
+                          >
+                            <div className={`text-xs font-bold uppercase ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-200'}`}>{day.dayName}</div>
+                            <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>{day.dayNumber}</div>
+                            {isToday && isCurrentWeek && (
+                              <div className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">Hoy</div>
+                            )}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-900/50">
@@ -1095,6 +1281,8 @@ export default function App() {
                           const cellKey = `${op.id}_${day.dateStr}`;
                           const isLockedByAbsence = lockedCells.has(cellKey);
                           const editable = canEditCell(op.id, day.dateStr);
+                          const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
+                          const isCurrentShiftForMe = isToday && shiftCode === activeShiftCode;
 
                           let tooltip = '';
                           if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
@@ -1102,7 +1290,10 @@ export default function App() {
                           else if (!canEditShifts) tooltip = 'No tienes permisos para editar turnos';
 
                           return (
-                            <td key={day.dateStr} className="p-1.5 text-center border-l border-emerald-900/40">
+                            <td
+                              key={day.dateStr}
+                              className={`p-1.5 text-center border-l border-emerald-900/40 ${isToday ? 'bg-emerald-950/30' : ''}`}
+                            >
                               <button
                                 disabled={!editable}
                                 onClick={() => editable && setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
@@ -1118,6 +1309,10 @@ export default function App() {
                                 } ${
                                   isHistoricalWeek
                                     ? 'grayscale-[0.35] opacity-90'
+                                    : ''
+                                } ${
+                                  isCurrentShiftForMe
+                                    ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg'
                                     : ''
                                 }`}
                               >

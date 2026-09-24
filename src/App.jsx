@@ -41,7 +41,9 @@ import {
   History,
   Activity,
   Undo2,
-  Info
+  Info,
+  Copy,
+  FilterX
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -123,6 +125,13 @@ const getMondayOfCurrentWeek = (refDate = new Date()) => {
   return formatDateLocal(d);
 };
 
+const addDaysToDateStr = (dateStr, days) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + days);
+  return formatDateLocal(date);
+};
+
 const getLicenseStatusStyle = (expiryDateStr) => {
   if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
 
@@ -168,7 +177,6 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
   );
 }
 
-// ✅ Sistema de Toasts
 const TOAST_STYLES = {
   success: { bg: 'bg-emerald-900 border-emerald-500/60', text: 'text-emerald-100', icon: CheckCircle2, iconColor: 'text-emerald-400' },
   error:   { bg: 'bg-red-900 border-red-500/60',         text: 'text-red-100',     icon: AlertCircle,   iconColor: 'text-red-400' },
@@ -180,7 +188,7 @@ function Toast({ toast, onDismiss, onUndo }) {
   const s = TOAST_STYLES[toast.type] || TOAST_STYLES.info;
   const Icon = s.icon;
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl ${s.bg} ${s.text} min-w-[280px] max-w-md animate-in`}>
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl ${s.bg} ${s.text} min-w-[280px] max-w-md`}>
       <Icon className={`w-4 h-4 ${s.iconColor} shrink-0`} />
       <span className="text-xs font-semibold flex-1">{toast.message}</span>
       {toast.undoAction && (
@@ -212,7 +220,6 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('idle');
   const syncStatusTimeoutRef = useRef(null);
 
-  // ✅ Toasts
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
 
@@ -231,7 +238,6 @@ export default function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  // ✅ Celdas que acaban de cambiar (para animación flash)
   const [flashCells, setFlashCells] = useState(new Set());
   const flashCellsTimeoutRef = useRef(null);
   const triggerFlash = useCallback((keys) => {
@@ -478,6 +484,9 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState('Todas las zonas');
+  // ✅ Nuevos filtros
+  const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
+  const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
 
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
@@ -586,18 +595,61 @@ export default function App() {
     return true;
   };
 
-  // ✅ Detección de conflictos antes de guardar
-  const detectConflicts = (operatorId, dateStr, newShiftCode) => {
+  // ✅ Detección de conflictos mejorada
+  const detectConflicts = (operatorId, dateStr, newShiftCode, isFullWeek = false) => {
     const conflicts = [];
     const currentCode = scheduleData[`${operatorId}_${dateStr}`];
+    const op = operators.find(o => o.id === operatorId);
 
     // No hay cambio real
-    if (currentCode === newShiftCode) return conflicts;
+    if (currentCode === newShiftCode && !isFullWeek) return conflicts;
 
     // Conflicto con ausencia aprobada
     if (lockedCells.has(`${operatorId}_${dateStr}`)) {
-      const op = operators.find(o => o.id === operatorId);
       conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
+      return conflicts;
+    }
+
+    // ✅ Validar horas semanales si es un turno de trabajo
+    if (['M', 'T', 'N'].includes(newShiftCode)) {
+      const weekDates = weekDays.map(d => d.dateStr);
+      let weeklyHours = 0;
+      let newShiftHours = 8;
+      if (newShiftCode === 'N') newShiftHours = 8.5;
+
+      weekDates.forEach(date => {
+        const key = `${operatorId}_${date}`;
+        const code = date === dateStr ? newShiftCode : scheduleData[key];
+        if (code === 'M' || code === 'T') weeklyHours += 8;
+        else if (code === 'N') weeklyHours += 8.5;
+      });
+
+      if (weeklyHours + newShiftHours > 48) {
+        conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
+      }
+    }
+
+    // ✅ Validar turnos nocturnos consecutivos (máximo 5)
+    if (newShiftCode === 'N' && !isFullWeek) {
+      const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
+      if (currentIdx >= 0) {
+        let consecutiveN = 1;
+        // Contar hacia atrás
+        for (let i = currentIdx - 1; i >= 0; i--) {
+          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
+          if (code === 'N') consecutiveN++;
+          else break;
+        }
+        // Contar hacia adelante
+        for (let i = currentIdx + 1; i < 7; i++) {
+          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
+          if (code === 'N') consecutiveN++;
+          else break;
+        }
+        if (consecutiveN > 5) {
+          conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
+        }
+      }
     }
 
     return conflicts;
@@ -680,55 +732,6 @@ export default function App() {
   const canManageOperators = currentUser && currentUser.role === 'Admin';
   const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
 
-  // ✅ Atajos de teclado
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const handler = (e) => {
-      // Ignorar si está escribiendo en un input/select/textarea
-      const tag = document.activeElement?.tagName;
-      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
-
-      // Esc cierra modales
-      if (e.key === 'Escape') {
-        if (selectedCell) { setSelectedCell(null); setApplyToFullWeek(false); return; }
-        if (isAddOperatorOpen) { setIsAddOperatorOpen(false); return; }
-        if (isRequestVacationOpen) { setIsRequestVacationOpen(false); return; }
-        if (showExportMenu) { setShowExportMenu(false); return; }
-      }
-
-      // ← → navegar semanas
-      if (activeTab === 'scheduler' && !selectedCell) {
-        if (e.key === 'ArrowLeft') {
-          const [y, m, d] = currentWeekStart.split('-').map(Number);
-          const prevWeek = new Date(y, m - 1, d - 7);
-          setCurrentWeekStart(formatDateLocal(prevWeek));
-          return;
-        }
-        if (e.key === 'ArrowRight') {
-          const [y, m, d] = currentWeekStart.split('-').map(Number);
-          const nextWeek = new Date(y, m - 1, d + 7);
-          setCurrentWeekStart(formatDateLocal(nextWeek));
-          return;
-        }
-      }
-
-      // 1-6 dentro del modal de turnos
-      if (selectedCell && canEditShifts && !isHistoricalWeek) {
-        const codes = Object.keys(SHIFT_TYPES);
-        const num = parseInt(e.key, 10);
-        if (num >= 1 && num <= codes.length) {
-          const code = codes[num - 1];
-          handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentWeekStart, selectedCell, canEditShifts, isHistoricalWeek, applyToFullWeek, isAddOperatorOpen, isRequestVacationOpen, showExportMenu]);
-
   const licenseAlerts = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -745,15 +748,48 @@ export default function App() {
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [operators]);
 
+  // ✅ Filtros combinados
   const filteredOperators = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     return operators.filter(op => {
       const matchesSearch = op.name.toLowerCase().includes(searchQuery.toLowerCase()) || op.id.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesZone = selectedZone === 'Todas las zonas' || op.zone === selectedZone;
-      return matchesSearch && matchesZone;
-    });
-  }, [operators, searchQuery, selectedZone]);
+      const matchesEquipment = selectedEquipment === 'Todos los equipos' || op.equipment === selectedEquipment;
 
-  // ✅ handleSetShift con optimistic + rollback + undo + flash
+      let matchesExpiring = true;
+      if (onlyExpiringLicenses) {
+        if (!op.licenseExpiry) matchesExpiring = false;
+        else {
+          const expiry = new Date(op.licenseExpiry + 'T00:00:00');
+          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          matchesExpiring = diffDays <= 30;
+        }
+      }
+
+      return matchesSearch && matchesZone && matchesEquipment && matchesExpiring;
+    });
+  }, [operators, searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
+
+  // ✅ Contar filtros activos
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count++;
+    if (selectedZone !== 'Todas las zonas') count++;
+    if (selectedEquipment !== 'Todos los equipos') count++;
+    if (onlyExpiringLicenses) count++;
+    return count;
+  }, [searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setSelectedZone('Todas las zonas');
+    setSelectedEquipment('Todos los equipos');
+    setOnlyExpiringLicenses(false);
+    pushToast('info', 'Filtros limpiados');
+  };
+
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     if (isHistoricalWeek) return;
@@ -761,14 +797,12 @@ export default function App() {
     const clickedKey = `${operatorId}_${dateStr}`;
     if (lockedCells.has(clickedKey)) return;
 
-    // Detección de conflictos
-    const conflicts = detectConflicts(operatorId, dateStr, shiftCode);
+    const conflicts = detectConflicts(operatorId, dateStr, shiftCode, isFullWeek);
     if (conflicts.length > 0) {
-      pushToast('warning', conflicts[0]);
+      pushToast('warning', conflicts[0], { duration: 5000 });
       return;
     }
 
-    // Guardar snapshot para rollback/undo
     const previousSchedule = { ...scheduleData };
     const previousValue = scheduleData[clickedKey];
     const newValue = shiftCode;
@@ -782,7 +816,6 @@ export default function App() {
     isUpdatingRef.current = true;
     setSyncStatus('saving');
 
-    // Optimistic update: aplicamos ya, revertimos si falla
     const updatedSchedule = { ...scheduleData };
     const affectedKeys = [];
 
@@ -822,10 +855,97 @@ export default function App() {
       });
     } catch (error) {
       console.error('Error al guardar turno:', error);
-      // Rollback
       setScheduleData(previousSchedule);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar. Cambio revertido.');
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  // ✅ Duplicar semana anterior
+  const handleDuplicatePreviousWeek = async () => {
+    if (!canEditShifts) return;
+    if (isHistoricalWeek) {
+      pushToast('warning', 'No se puede duplicar desde una semana histórica.');
+      return;
+    }
+
+    const prevMonday = addDaysToDateStr(currentWeekStart, -7);
+
+    // Verificar que hay datos en la semana anterior
+    const hasData = operators.some(op => 
+      weekDays.some((_, idx) => scheduleData[`${op.id}_${addDaysToDateStr(prevMonday, idx)}`])
+    );
+
+    if (!hasData) {
+      pushToast('warning', 'La semana anterior no tiene horarios guardados.');
+      return;
+    }
+
+    const ok = window.confirm(
+      '¿Copiar los turnos de la semana anterior a la semana actual?\n\n' +
+      '• No se sobreescribirán las celdas bloqueadas por ausencias aprobadas.\n' +
+      '• No se sobreescribirán las celdas que ya tienen un turno asignado en esta semana.'
+    );
+    if (!ok) return;
+
+    isUpdatingRef.current = true;
+    setSyncStatus('saving');
+
+    const previousSchedule = { ...scheduleData };
+    const updatedSchedule = { ...scheduleData };
+    let copied = 0;
+    const affectedKeys = [];
+
+    operators.forEach(op => {
+      weekDays.forEach((day, idx) => {
+        const currentKey = `${op.id}_${day.dateStr}`;
+        const prevDateStr = addDaysToDateStr(prevMonday, idx);
+        const prevKey = `${op.id}_${prevDateStr}`;
+        const prevValue = scheduleData[prevKey];
+
+        // No sobreescribir bloqueados ni celdas ya con valor
+        if (lockedCells.has(currentKey)) return;
+        if (updatedSchedule[currentKey] && updatedSchedule[currentKey] !== 'DES') return;
+        if (!prevValue) return;
+
+        if (updatedSchedule[currentKey] !== prevValue) {
+          updatedSchedule[currentKey] = prevValue;
+          affectedKeys.push(currentKey);
+          copied++;
+        }
+      });
+    });
+
+    if (copied === 0) {
+      pushToast('info', 'No hay nada nuevo que copiar.');
+      isUpdatingRef.current = false;
+      setSyncStatus('idle');
+      return;
+    }
+
+    setScheduleData(updatedSchedule);
+    triggerFlash(affectedKeys);
+
+    try {
+      await redis.set('sf_scheduleData', updatedSchedule);
+      reportSyncResult(true);
+      pushToast('success', `Se copiaron ${copied} turnos de la semana anterior`, {
+        undoAction: () => {
+          setScheduleData(previousSchedule);
+          redis.set('sf_scheduleData', previousSchedule).then(() => {
+            pushToast('info', 'Duplicado deshecho');
+          }).catch(() => {
+            pushToast('error', 'No se pudo deshacer');
+          });
+        }
+      });
+    } catch (error) {
+      console.error('Error al duplicar semana:', error);
+      setScheduleData(previousSchedule);
+      reportSyncResult(false);
+      pushToast('error', 'Error al duplicar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -861,7 +981,7 @@ export default function App() {
       pushToast('success', editingOperator ? 'Operador actualizado' : 'Operador registrado');
     } catch (error) {
       console.error('Error al guardar operador:', error);
-      setOperators(previousOps); // rollback
+      setOperators(previousOps);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar operador. Cambio revertido.');
     } finally {
@@ -886,7 +1006,7 @@ export default function App() {
         pushToast('success', 'Operador eliminado');
       } catch (error) {
         console.error('Error al eliminar en la base de datos:', error);
-        setOperators(previousOps); // rollback
+        setOperators(previousOps);
         reportSyncResult(false);
         pushToast('error', 'Error al eliminar. Cambio revertido.');
       } finally {
@@ -937,7 +1057,7 @@ export default function App() {
       pushToast('success', 'Solicitud registrada');
     } catch (error) {
       console.error('Error al guardar permiso:', error);
-      setVacationRequests(previousVac); // rollback
+      setVacationRequests(previousVac);
       reportSyncResult(false);
       pushToast('error', 'Error al registrar solicitud. Cambio revertido.');
     } finally {
@@ -961,7 +1081,7 @@ export default function App() {
       pushToast('success', 'Solicitud cancelada');
     } catch (error) {
       console.error('Error al cancelar permiso:', error);
-      setVacationRequests(previousVac); // rollback
+      setVacationRequests(previousVac);
       reportSyncResult(false);
       pushToast('error', 'Error al cancelar. Cambio revertido.');
     } finally {
@@ -1012,8 +1132,8 @@ export default function App() {
       pushToast('success', `Solicitud marcada como ${newStatus}`);
     } catch (error) {
       console.error('Error al actualizar estado del permiso:', error);
-      setVacationRequests(previousVac); // rollback
-      setScheduleData(previousSchedule); // rollback
+      setVacationRequests(previousVac);
+      setScheduleData(previousSchedule);
       reportSyncResult(false);
       pushToast('error', 'Error al actualizar. Cambio revertido.');
     } finally {
@@ -1134,7 +1254,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#021f12] text-emerald-50 font-sans pb-12">
-      {/* ✅ Contenedor de toasts */}
       <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
         <div className="pointer-events-auto flex flex-col gap-2">
           {toasts.map(t => (
@@ -1242,7 +1361,7 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const prevWeek = new Date(y, m - 1, d - 7);
                   setCurrentWeekStart(formatDateLocal(prevWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana anterior (←)"><ChevronLeft className="w-4 h-4"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana anterior"><ChevronLeft className="w-4 h-4"/></button>
 
                 <div className="text-xs font-bold text-white bg-[#02180d] px-3 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-2">
                   {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
@@ -1254,7 +1373,7 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const nextWeek = new Date(y, m - 1, d + 7);
                   setCurrentWeekStart(formatDateLocal(nextWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana siguiente (→)"><ChevronRight className="w-4 h-4"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana siguiente"><ChevronRight className="w-4 h-4"/></button>
 
                 {!isCurrentWeek && (
                   <button
@@ -1266,23 +1385,74 @@ export default function App() {
                     Hoy
                   </button>
                 )}
+
+                {/* ✅ Botón Duplicar semana anterior */}
+                {canEditShifts && !isHistoricalWeek && (
+                  <button
+                    onClick={handleDuplicatePreviousWeek}
+                    className="px-2.5 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg text-[10px] font-bold transition border border-indigo-500/50 flex items-center gap-1"
+                    title="Copiar los turnos de la semana anterior"
+                  >
+                    <Copy className="w-3 h-3" />
+                    Duplicar semana anterior
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
-                <input
-                  type="text"
-                  placeholder="Buscar operador..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
-                />
+                <div className="relative">
+                  <Search className="w-3 h-3 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Buscar operador..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700 w-40"
+                  />
+                </div>
                 <select
                   value={selectedZone}
                   onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200"
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none"
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
+
+                {/* ✅ Filtro por equipo */}
+                <select
+                  value={selectedEquipment}
+                  onChange={(e) => setSelectedEquipment(e.target.value)}
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none"
+                >
+                  <option value="Todos los equipos">Todos los equipos</option>
+                  {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                </select>
+
+                {/* ✅ Toggle licencias por vencer */}
+                <button
+                  onClick={() => setOnlyExpiringLicenses(v => !v)}
+                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition flex items-center gap-1.5 ${
+                    onlyExpiringLicenses
+                      ? 'bg-amber-600 border-amber-400 text-white'
+                      : 'bg-[#02180d] border-emerald-900 text-emerald-300 hover:bg-emerald-950'
+                  }`}
+                  title="Mostrar solo operadores con licencia vencida o por vencer (≤30 días)"
+                >
+                  <AlertCircle className="w-3 h-3" />
+                  Licencias críticas
+                </button>
+
+                {/* ✅ Limpiar filtros */}
+                {activeFiltersCount > 0 && (
+                  <button
+                    onClick={clearAllFilters}
+                    className="px-2.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1.5"
+                    title="Limpiar todos los filtros"
+                  >
+                    <FilterX className="w-3 h-3" />
+                    Limpiar ({activeFiltersCount})
+                  </button>
+                )}
 
                 <div className="relative" ref={exportMenuRef}>
                   <button
@@ -1345,6 +1515,17 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* ✅ Indicador de filtros activos */}
+            {activeFiltersCount > 0 && (
+              <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-3 py-1.5 flex items-center gap-2 text-[10px] text-cyan-200">
+                <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
+                <span>
+                  Mostrando <span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span> operadores
+                  {activeFiltersCount > 1 && ` · ${activeFiltersCount} filtros activos`}
+                </span>
+              </div>
+            )}
 
             <div
               ref={scheduleRef}
@@ -1448,11 +1629,28 @@ export default function App() {
                     {filteredOperators.length === 0 && (
                       <tr>
                         <td colSpan={8} className="py-12 text-center">
-                          <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
-                          <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
-                          <p className="text-emerald-500 text-xs mt-1">
-                            {canManageOperators ? 'Ve a la pestaña "Personal" para agregar el primero.' : 'Pídele a un administrador que registre personal.'}
-                          </p>
+                          {operators.length === 0 ? (
+                            <>
+                              <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                              <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
+                              <p className="text-emerald-500 text-xs mt-1">
+                                {canManageOperators ? 'Ve a la pestaña "Personal" para agregar el primero.' : 'Pídele a un administrador que registre personal.'}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
+                              <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide con los filtros</p>
+                              <p className="text-cyan-500 text-xs mt-1">Prueba con otros criterios o límpialos.</p>
+                              <button
+                                onClick={clearAllFilters}
+                                className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
+                              >
+                                <FilterX className="w-3.5 h-3.5" />
+                                Limpiar filtros
+                              </button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -1504,13 +1702,6 @@ export default function App() {
                 accent="cyan"
                 subtitle={`${shiftStats.active} act.`}
               />
-            </div>
-
-            {/* Ayuda de atajos */}
-            <div className="flex items-center justify-center gap-4 text-[10px] text-emerald-600/70">
-              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">←</kbd> <kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">→</kbd> Cambiar semana</span>
-              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">1-6</kbd> Asignar turno</span>
-              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">Esc</kbd> Cerrar</span>
             </div>
           </div>
         )}
@@ -1738,13 +1929,12 @@ export default function App() {
             </p>
 
             <div className="grid grid-cols-2 gap-2">
-              {Object.entries(SHIFT_TYPES).map(([code, config], idx) => (
+              {Object.entries(SHIFT_TYPES).map(([code, config]) => (
                 <button
                   key={code}
                   onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
-                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color} relative`}
+                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
                 >
-                  <span className="absolute top-1.5 right-1.5 text-[9px] font-mono opacity-60">{idx + 1}</span>
                   {code}: {config.label}
                 </button>
               ))}

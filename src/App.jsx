@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { redis } from './db';
 import { 
   Calendar as CalendarIcon, 
@@ -39,7 +39,9 @@ import {
   CloudOff,
   RefreshCw,
   History,
-  Activity
+  Activity,
+  Undo2,
+  Info
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -100,6 +102,7 @@ const generateId = () => {
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MS = 30000;
+const UNDO_WINDOW_MS = 5000;
 
 const formatDateLocal = (date) => {
   const y = date.getFullYear();
@@ -165,6 +168,37 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
   );
 }
 
+// ✅ Sistema de Toasts
+const TOAST_STYLES = {
+  success: { bg: 'bg-emerald-900 border-emerald-500/60', text: 'text-emerald-100', icon: CheckCircle2, iconColor: 'text-emerald-400' },
+  error:   { bg: 'bg-red-900 border-red-500/60',         text: 'text-red-100',     icon: AlertCircle,   iconColor: 'text-red-400' },
+  info:    { bg: 'bg-slate-800 border-slate-500/60',     text: 'text-slate-100',   icon: Info,          iconColor: 'text-slate-400' },
+  warning: { bg: 'bg-amber-900 border-amber-500/60',     text: 'text-amber-100',   icon: AlertTriangle, iconColor: 'text-amber-400' }
+};
+
+function Toast({ toast, onDismiss, onUndo }) {
+  const s = TOAST_STYLES[toast.type] || TOAST_STYLES.info;
+  const Icon = s.icon;
+  return (
+    <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl ${s.bg} ${s.text} min-w-[280px] max-w-md animate-in`}>
+      <Icon className={`w-4 h-4 ${s.iconColor} shrink-0`} />
+      <span className="text-xs font-semibold flex-1">{toast.message}</span>
+      {toast.undoAction && (
+        <button
+          onClick={onUndo}
+          className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition flex items-center gap-1"
+        >
+          <Undo2 className="w-3 h-3" />
+          Deshacer
+        </button>
+      )}
+      <button onClick={onDismiss} className="text-white/60 hover:text-white shrink-0">
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
@@ -177,6 +211,34 @@ export default function App() {
 
   const [syncStatus, setSyncStatus] = useState('idle');
   const syncStatusTimeoutRef = useRef(null);
+
+  // ✅ Toasts
+  const [toasts, setToasts] = useState([]);
+  const toastIdRef = useRef(0);
+
+  const pushToast = useCallback((type, message, options = {}) => {
+    const id = ++toastIdRef.current;
+    const duration = options.duration ?? (options.undoAction ? UNDO_WINDOW_MS : 3000);
+    const toast = { id, type, message, undoAction: options.undoAction || null };
+    setToasts(prev => [...prev, toast]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, duration);
+    return id;
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  // ✅ Celdas que acaban de cambiar (para animación flash)
+  const [flashCells, setFlashCells] = useState(new Set());
+  const flashCellsTimeoutRef = useRef(null);
+  const triggerFlash = useCallback((keys) => {
+    setFlashCells(new Set(keys));
+    if (flashCellsTimeoutRef.current) clearTimeout(flashCellsTimeoutRef.current);
+    flashCellsTimeoutRef.current = setTimeout(() => setFlashCells(new Set()), 900);
+  }, []);
 
   const reportSyncResult = (ok) => {
     setSyncStatus(ok ? 'saved' : 'error');
@@ -336,9 +398,10 @@ export default function App() {
 
         pdf.save(`${fileName}.pdf`);
       }
+      pushToast('success', `Horario exportado como ${format.toUpperCase()}`);
     } catch (error) {
       console.error('Error al exportar horario:', error);
-      alert('No se pudo generar la descarga. Intente nuevamente.');
+      pushToast('error', 'No se pudo generar la descarga.');
     } finally {
       setIsExporting(false);
     }
@@ -523,6 +586,23 @@ export default function App() {
     return true;
   };
 
+  // ✅ Detección de conflictos antes de guardar
+  const detectConflicts = (operatorId, dateStr, newShiftCode) => {
+    const conflicts = [];
+    const currentCode = scheduleData[`${operatorId}_${dateStr}`];
+
+    // No hay cambio real
+    if (currentCode === newShiftCode) return conflicts;
+
+    // Conflicto con ausencia aprobada
+    if (lockedCells.has(`${operatorId}_${dateStr}`)) {
+      const op = operators.find(o => o.id === operatorId);
+      conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
+    }
+
+    return conflicts;
+  };
+
   useEffect(() => {
     if (!isLoaded || isUpdatingRef.current) return;
     if (operators.length === 0) return;
@@ -567,6 +647,7 @@ export default function App() {
       setLoginAttempts(0);
       setLoginPass('');
       try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* no-op */ }
+      pushToast('success', `Bienvenido, ${user.name}`);
     } else {
       const attempts = loginAttempts + 1;
       setLoginAttempts(attempts);
@@ -599,6 +680,55 @@ export default function App() {
   const canManageOperators = currentUser && currentUser.role === 'Admin';
   const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
 
+  // ✅ Atajos de teclado
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handler = (e) => {
+      // Ignorar si está escribiendo en un input/select/textarea
+      const tag = document.activeElement?.tagName;
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
+
+      // Esc cierra modales
+      if (e.key === 'Escape') {
+        if (selectedCell) { setSelectedCell(null); setApplyToFullWeek(false); return; }
+        if (isAddOperatorOpen) { setIsAddOperatorOpen(false); return; }
+        if (isRequestVacationOpen) { setIsRequestVacationOpen(false); return; }
+        if (showExportMenu) { setShowExportMenu(false); return; }
+      }
+
+      // ← → navegar semanas
+      if (activeTab === 'scheduler' && !selectedCell) {
+        if (e.key === 'ArrowLeft') {
+          const [y, m, d] = currentWeekStart.split('-').map(Number);
+          const prevWeek = new Date(y, m - 1, d - 7);
+          setCurrentWeekStart(formatDateLocal(prevWeek));
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          const [y, m, d] = currentWeekStart.split('-').map(Number);
+          const nextWeek = new Date(y, m - 1, d + 7);
+          setCurrentWeekStart(formatDateLocal(nextWeek));
+          return;
+        }
+      }
+
+      // 1-6 dentro del modal de turnos
+      if (selectedCell && canEditShifts && !isHistoricalWeek) {
+        const codes = Object.keys(SHIFT_TYPES);
+        const num = parseInt(e.key, 10);
+        if (num >= 1 && num <= codes.length) {
+          const code = codes[num - 1];
+          handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, currentWeekStart, selectedCell, canEditShifts, isHistoricalWeek, applyToFullWeek, isAddOperatorOpen, isRequestVacationOpen, showExportMenu]);
+
   const licenseAlerts = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -623,6 +753,7 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone]);
 
+  // ✅ handleSetShift con optimistic + rollback + undo + flash
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     if (isHistoricalWeek) return;
@@ -630,32 +761,71 @@ export default function App() {
     const clickedKey = `${operatorId}_${dateStr}`;
     if (lockedCells.has(clickedKey)) return;
 
+    // Detección de conflictos
+    const conflicts = detectConflicts(operatorId, dateStr, shiftCode);
+    if (conflicts.length > 0) {
+      pushToast('warning', conflicts[0]);
+      return;
+    }
+
+    // Guardar snapshot para rollback/undo
+    const previousSchedule = { ...scheduleData };
+    const previousValue = scheduleData[clickedKey];
+    const newValue = shiftCode;
+
+    if (previousValue === newValue && !isFullWeek) {
+      setSelectedCell(null);
+      setApplyToFullWeek(false);
+      return;
+    }
+
     isUpdatingRef.current = true;
     setSyncStatus('saving');
 
+    // Optimistic update: aplicamos ya, revertimos si falla
     const updatedSchedule = { ...scheduleData };
+    const affectedKeys = [];
 
     if (isFullWeek) {
       weekDays.forEach(day => {
         const key = `${operatorId}_${day.dateStr}`;
         if (!lockedCells.has(key)) {
           updatedSchedule[key] = shiftCode;
+          affectedKeys.push(key);
         }
       });
     } else {
       updatedSchedule[clickedKey] = shiftCode;
+      affectedKeys.push(clickedKey);
     }
 
     setScheduleData(updatedSchedule);
     setSelectedCell(null);
     setApplyToFullWeek(false);
+    triggerFlash(affectedKeys);
 
     try {
       await redis.set('sf_scheduleData', updatedSchedule);
       reportSyncResult(true);
+
+      const op = operators.find(o => o.id === operatorId);
+      const dayLabel = isFullWeek ? 'toda la semana' : dateStr;
+      pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label} (${dayLabel})`, {
+        undoAction: () => {
+          setScheduleData(previousSchedule);
+          redis.set('sf_scheduleData', previousSchedule).then(() => {
+            pushToast('info', 'Cambio deshecho');
+          }).catch(() => {
+            pushToast('error', 'No se pudo deshacer');
+          });
+        }
+      });
     } catch (error) {
       console.error('Error al guardar turno:', error);
+      // Rollback
+      setScheduleData(previousSchedule);
       reportSyncResult(false);
+      pushToast('error', 'Error al guardar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -666,6 +836,7 @@ export default function App() {
     if (!newOp.name || !canManageOperators) return;
 
     isUpdatingRef.current = true;
+    const previousOps = operators;
     let updatedOps;
 
     if (editingOperator) {
@@ -687,9 +858,12 @@ export default function App() {
     try {
       await redis.set('sf_operators', updatedOps);
       reportSyncResult(true);
+      pushToast('success', editingOperator ? 'Operador actualizado' : 'Operador registrado');
     } catch (error) {
       console.error('Error al guardar operador:', error);
+      setOperators(previousOps); // rollback
       reportSyncResult(false);
+      pushToast('error', 'Error al guardar operador. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -702,15 +876,19 @@ export default function App() {
       isUpdatingRef.current = true;
       setSyncStatus('saving');
 
+      const previousOps = operators;
       const updatedOps = operators.filter(op => op.id !== operatorId);
       setOperators(updatedOps);
 
       try {
         await redis.set('sf_operators', updatedOps);
         reportSyncResult(true);
+        pushToast('success', 'Operador eliminado');
       } catch (error) {
         console.error('Error al eliminar en la base de datos:', error);
+        setOperators(previousOps); // rollback
         reportSyncResult(false);
+        pushToast('error', 'Error al eliminar. Cambio revertido.');
       } finally {
         setTimeout(() => { isUpdatingRef.current = false; }, 2500);
       }
@@ -748,6 +926,7 @@ export default function App() {
       reason: newVac.reason || 'Sin motivo especificado'
     };
 
+    const previousVac = vacationRequests;
     const updatedVac = [newReq, ...vacationRequests];
     setVacationRequests(updatedVac);
     setIsRequestVacationOpen(false);
@@ -755,9 +934,12 @@ export default function App() {
     try {
       await redis.set('sf_vacations', updatedVac);
       reportSyncResult(true);
+      pushToast('success', 'Solicitud registrada');
     } catch (error) {
       console.error('Error al guardar permiso:', error);
+      setVacationRequests(previousVac); // rollback
       reportSyncResult(false);
+      pushToast('error', 'Error al registrar solicitud. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -769,15 +951,19 @@ export default function App() {
 
     isUpdatingRef.current = true;
     setSyncStatus('saving');
+    const previousVac = vacationRequests;
     const updatedVac = vacationRequests.filter(r => r.id !== id);
     setVacationRequests(updatedVac);
 
     try {
       await redis.set('sf_vacations', updatedVac);
       reportSyncResult(true);
+      pushToast('success', 'Solicitud cancelada');
     } catch (error) {
       console.error('Error al cancelar permiso:', error);
+      setVacationRequests(previousVac); // rollback
       reportSyncResult(false);
+      pushToast('error', 'Error al cancelar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -789,6 +975,8 @@ export default function App() {
     setSyncStatus('saving');
 
     const req = vacationRequests.find(r => r.id === id);
+    const previousVac = vacationRequests;
+    const previousSchedule = scheduleData;
     const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
     setVacationRequests(updatedVac);
 
@@ -821,9 +1009,13 @@ export default function App() {
         await redis.set('sf_scheduleData', updatedSchedule);
       }
       reportSyncResult(true);
+      pushToast('success', `Solicitud marcada como ${newStatus}`);
     } catch (error) {
       console.error('Error al actualizar estado del permiso:', error);
+      setVacationRequests(previousVac); // rollback
+      setScheduleData(previousSchedule); // rollback
       reportSyncResult(false);
+      pushToast('error', 'Error al actualizar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -942,6 +1134,23 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#021f12] text-emerald-50 font-sans pb-12">
+      {/* ✅ Contenedor de toasts */}
+      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+        <div className="pointer-events-auto flex flex-col gap-2">
+          {toasts.map(t => (
+            <Toast
+              key={t.id}
+              toast={t}
+              onDismiss={() => dismissToast(t.id)}
+              onUndo={() => {
+                if (t.undoAction) t.undoAction();
+                dismissToast(t.id);
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
       <header className="border-b border-emerald-800/60 bg-[#00471f]/90 backdrop-blur sticky top-0 z-30 shadow-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -1003,7 +1212,6 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {activeTab === 'scheduler' && (
           <div className="space-y-4">
-            {/* Banner de semana histórica */}
             {isHistoricalWeek && (
               <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
@@ -1019,7 +1227,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Banner de celdas bloqueadas */}
             {!isHistoricalWeek && lockedCellsInView > 0 && (
               <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2 flex items-center justify-center gap-2">
                 <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
@@ -1035,7 +1242,7 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const prevWeek = new Date(y, m - 1, d - 7);
                   setCurrentWeekStart(formatDateLocal(prevWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana anterior (←)"><ChevronLeft className="w-4 h-4"/></button>
 
                 <div className="text-xs font-bold text-white bg-[#02180d] px-3 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-2">
                   {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
@@ -1047,7 +1254,7 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const nextWeek = new Date(y, m - 1, d + 7);
                   setCurrentWeekStart(formatDateLocal(nextWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana siguiente (→)"><ChevronRight className="w-4 h-4"/></button>
 
                 {!isCurrentWeek && (
                   <button
@@ -1187,6 +1394,7 @@ export default function App() {
                           const editable = canEditCell(op.id, day.dateStr);
                           const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                           const isCurrentShiftForMe = isToday && shiftCode === activeShiftCode;
+                          const isFlashing = flashCells.has(cellKey);
 
                           let tooltip = '';
                           if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
@@ -1217,6 +1425,10 @@ export default function App() {
                                 } ${
                                   isCurrentShiftForMe
                                     ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg'
+                                    : ''
+                                } ${
+                                  isFlashing
+                                    ? 'ring-2 ring-white/80 shadow-white/40 shadow-lg animate-pulse'
                                     : ''
                                 }`}
                               >
@@ -1249,7 +1461,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ INDICADORES COMPACTOS — CENTRADOS */}
             <div className="flex items-center justify-center gap-2 flex-wrap">
               {isCurrentWeek ? (
                 <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
@@ -1293,6 +1504,13 @@ export default function App() {
                 accent="cyan"
                 subtitle={`${shiftStats.active} act.`}
               />
+            </div>
+
+            {/* Ayuda de atajos */}
+            <div className="flex items-center justify-center gap-4 text-[10px] text-emerald-600/70">
+              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">←</kbd> <kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">→</kbd> Cambiar semana</span>
+              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">1-6</kbd> Asignar turno</span>
+              <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 rounded bg-[#02180d] border border-emerald-900/60 text-emerald-400 font-mono">Esc</kbd> Cerrar</span>
             </div>
           </div>
         )}
@@ -1520,12 +1738,13 @@ export default function App() {
             </p>
 
             <div className="grid grid-cols-2 gap-2">
-              {Object.entries(SHIFT_TYPES).map(([code, config]) => (
+              {Object.entries(SHIFT_TYPES).map(([code, config], idx) => (
                 <button
                   key={code}
                   onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
-                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
+                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color} relative`}
                 >
+                  <span className="absolute top-1.5 right-1.5 text-[9px] font-mono opacity-60">{idx + 1}</span>
                   {code}: {config.label}
                 </button>
               ))}

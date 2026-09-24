@@ -194,41 +194,68 @@ function Toast({ toast, onDismiss, onUndo }) {
   );
 }
 
-// ✅ Helper universal: en móvil usa Share API, en desktop descarga directa
-const downloadOrShareFile = async (blob, filename, mimeType) => {
-  if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
-    try {
-      const file = new File([blob], filename, { type: mimeType });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: filename,
-        });
-        return { method: 'share' };
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        return { method: 'cancelled' };
-      }
-      console.warn('Share API falló, usando download clásico:', err);
-    }
+// ✅ Detecta dispositivo móvil REAL por userAgent (no por tamaño de pantalla)
+const isMobileDevice = () => {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+};
+
+// ✅ Descarga robusta que funciona en desktop y móvil
+const forceDownload = (blob, filename) => {
+  if (typeof navigator !== 'undefined' && navigator.msSaveBlob) {
+    navigator.msSaveBlob(blob, filename);
+    return;
   }
 
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
-  link.style.display = 'none';
+  link.rel = 'noopener';
+  link.style.position = 'fixed';
+  link.style.left = '-9999px';
+  link.style.top = '-9999px';
   document.body.appendChild(link);
-  link.click();
+
   setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, 150);
+    try {
+      link.click();
+    } catch (e) {
+      console.warn('link.click falló, intentando window.open:', e);
+      window.open(url, '_blank');
+    }
+    setTimeout(() => {
+      try {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err) { /* no-op */ }
+    }, 1500);
+  }, 50);
+};
+
+// ✅ Helper: en móvil → Share, en desktop → Download
+const downloadOrShareFile = async (blob, filename, mimeType, { allowShare = true } = {}) => {
+  if (allowShare && isMobileDevice() && navigator.share && navigator.canShare) {
+    try {
+      const file = new File([blob], filename, { type: mimeType });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        return { method: 'share' };
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return { method: 'cancelled' };
+      }
+      console.warn('Share API falló, usando descarga:', err);
+    }
+  }
+
+  forceDownload(blob, filename);
   return { method: 'download' };
 };
 
-// ✅ Convierte un dataURL a Blob (necesario para share)
+// ✅ dataURL → Blob
 const dataURLtoBlob = (dataURL) => {
   const arr = dataURL.split(',');
   const mime = arr[0].match(/:(.*?);/)[1];
@@ -446,7 +473,7 @@ export default function App() {
       await loadExportLibraries();
       const element = scheduleRef.current;
       const canvas = await window.html2canvas(element, {
-        scale: 2,
+        scale: isMobileDevice() ? 1.5 : 2,
         backgroundColor: '#002812',
         useCORS: true,
         logging: false,

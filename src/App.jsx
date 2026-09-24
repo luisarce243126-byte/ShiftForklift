@@ -194,6 +194,53 @@ function Toast({ toast, onDismiss, onUndo }) {
   );
 }
 
+// ✅ Helper universal: en móvil usa Share API, en desktop descarga directa
+const downloadOrShareFile = async (blob, filename, mimeType) => {
+  if (typeof navigator !== 'undefined' && navigator.share && navigator.canShare) {
+    try {
+      const file = new File([blob], filename, { type: mimeType });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: filename,
+        });
+        return { method: 'share' };
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return { method: 'cancelled' };
+      }
+      console.warn('Share API falló, usando download clásico:', err);
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, 150);
+  return { method: 'download' };
+};
+
+// ✅ Convierte un dataURL a Blob (necesario para share)
+const dataURLtoBlob = (dataURL) => {
+  const arr = dataURL.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+};
+
 const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators, scheduleData, lockedCells) => {
   const target = operators.find(o => o.id === targetOperatorId);
   if (!target) return [];
@@ -342,8 +389,6 @@ export default function App() {
 
   const [reassignModal, setReassignModal] = useState(null);
   const [reassignShift, setReassignShift] = useState('M');
-
-  // ✅ MÓVIL: día seleccionado en vista móvil
   const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
 
   useEffect(() => {
@@ -410,17 +455,17 @@ export default function App() {
       const fileName = `Horario_Semanal_${currentWeekStart}`;
 
       if (format === 'png') {
-        const image = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.href = image;
-        link.download = `${fileName}.png`;
-        link.click();
+        const dataUrl = canvas.toDataURL('image/png');
+        const blob = dataURLtoBlob(dataUrl);
+        const result = await downloadOrShareFile(blob, `${fileName}.png`, 'image/png');
+        if (result.method === 'share') pushToast('success', 'Horario compartido');
+        else if (result.method === 'download') pushToast('success', 'Horario descargado');
       } else if (format === 'jpg') {
-        const image = canvas.toDataURL('image/jpeg', 0.95);
-        const link = document.createElement('a');
-        link.href = image;
-        link.download = `${fileName}.jpg`;
-        link.click();
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        const blob = dataURLtoBlob(dataUrl);
+        const result = await downloadOrShareFile(blob, `${fileName}.jpg`, 'image/jpeg');
+        if (result.method === 'share') pushToast('success', 'Horario compartido');
+        else if (result.method === 'download') pushToast('success', 'Horario descargado');
       } else if (format === 'pdf') {
         const imgData = canvas.toDataURL('image/png');
         const { jsPDF } = window.jspdf;
@@ -452,9 +497,12 @@ export default function App() {
         pdf.setFontSize(8);
         pdf.setTextColor(100, 116, 139);
         pdf.text(`Exportado el: ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 12, pdfHeight - 5);
-        pdf.save(`${fileName}.pdf`);
+
+        const pdfBlob = pdf.output('blob');
+        const result = await downloadOrShareFile(pdfBlob, `${fileName}.pdf`, 'application/pdf');
+        if (result.method === 'share') pushToast('success', 'PDF compartido');
+        else if (result.method === 'download') pushToast('success', 'PDF descargado');
       }
-      pushToast('success', `Horario exportado como ${format.toUpperCase()}`);
     } catch (error) {
       console.error('Error al exportar horario:', error);
       pushToast('error', 'No se pudo generar la descarga.');
@@ -567,7 +615,6 @@ export default function App() {
     return days;
   }, [currentWeekStart]);
 
-  // ✅ MÓVIL: Ajustar el día móvil cuando cambia la semana
   useEffect(() => {
     const isInCurrentView = weekDays.some(d => d.dateStr === selectedMobileDay);
     if (!isInCurrentView) {
@@ -1255,8 +1302,10 @@ export default function App() {
       pdf.setTextColor(100, 116, 139);
       pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
 
-      pdf.save(`Reporte_Ejecutivo_${currentWeekStart}.pdf`);
-      pushToast('success', 'Reporte ejecutivo generado');
+      const pdfBlob = pdf.output('blob');
+      const result = await downloadOrShareFile(pdfBlob, `Reporte_Ejecutivo_${currentWeekStart}.pdf`, 'application/pdf');
+      if (result.method === 'share') pushToast('success', 'Reporte compartido');
+      else if (result.method === 'download') pushToast('success', 'Reporte descargado');
     } catch (error) {
       console.error('Error al generar reporte:', error);
       pushToast('error', 'No se pudo generar el reporte');
@@ -1405,7 +1454,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* ✅ Nav desktop (md+) */}
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
             <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
@@ -1455,7 +1503,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* ✅ MÓVIL: Nav horizontal scrollable (solo < md) */}
       <nav className="md:hidden sticky top-16 z-20 bg-[#021f12]/95 backdrop-blur border-b border-emerald-900/60">
         <div className="flex gap-1.5 overflow-x-auto px-3 py-2 scrollbar-hide">
           <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
@@ -1553,7 +1600,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Filtros */}
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative flex-1 min-w-[140px]">
                   <Search className="w-3 h-3 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1609,7 +1655,6 @@ export default function App() {
               )}
             </div>
 
-            {/* ✅ MÓVIL: Vista día por día (solo < md) */}
             <div className="md:hidden space-y-3">
               <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-hide">
                 {weekDays.map(day => {
@@ -1701,7 +1746,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ DESKTOP: Tabla completa (solo ≥ md) */}
             <div className="hidden md:block">
               <div
                 ref={scheduleRef}
@@ -1808,7 +1852,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Indicadores */}
             <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap">
               {isCurrentWeek ? (
                 <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
@@ -1940,7 +1983,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Móvil: cards */}
             <div className="md:hidden space-y-2">
               {vacationRequests.map(req => (
                 <div key={req.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3.5">
@@ -1979,7 +2021,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Desktop: tabla */}
             <div className="hidden md:block bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>

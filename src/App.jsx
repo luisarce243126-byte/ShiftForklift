@@ -152,7 +152,6 @@ const INDICATOR_ACCENTS = {
   cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-300',    value: 'text-cyan-100' }
 };
 
-// ✅ MiniIndicator tamaño intermedio
 function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle = null }) {
   const c = INDICATOR_ACCENTS[accent] || INDICATOR_ACCENTS.emerald;
   return (
@@ -1461,8 +1460,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* ✅ Header tamaño intermedio */}
-      <header className="border-b border-emerald-800/60 bg-[#00471f]/90 backdrop-blur sticky top-0 z-30 shadow-xl">
+      <header className="border-b border-emerald-800/60 bg-[#00471f] sticky top-0 z-30 shadow-xl">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center space-x-2 sm:space-x-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
@@ -1524,9 +1522,9 @@ export default function App() {
         </div>
       </header>
 
-      {/* ✅ Nav móvil tamaño intermedio */}
-      <nav className="md:hidden sticky top-14 z-20 bg-[#021f12]/95 backdrop-blur border-b border-emerald-900/60">
-        <div className="flex gap-1.5 overflow-x-auto px-2.5 py-2 scrollbar-hide">
+      {/* Nav móvil sin backdrop-blur (evita el bug de renderizado) */}
+      <nav className="md:hidden sticky top-14 z-20 bg-[#021f12] border-b border-emerald-900/60">
+        <div className="flex gap-1.5 overflow-x-auto px-2.5 py-2">
           <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
           <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
           <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
@@ -1563,7 +1561,7 @@ export default function App() {
               </div>
             )}
 
-            {/* ✅ Barra de semana tamaño intermedio */}
+            {/* Barra de navegación de semana */}
             <div className="bg-[#003818] border border-emerald-800/70 rounded-xl p-2.5 flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
@@ -1623,24 +1621,37 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Filtros: en desktop search compacto + más filtros | en móvil search full + filtros básicos */}
               <div className="flex items-center gap-2">
-                <div className="relative flex-1 min-w-0">
+                <div className="relative flex-1 sm:flex-none sm:w-56 lg:w-72">
                   <Search className="w-3.5 h-3.5 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Buscar..."
+                    placeholder="Buscar operador..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
                   />
                 </div>
+
                 <select
                   value={selectedZone}
                   onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[110px]"
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[110px] sm:max-w-none"
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
+
+                {/* Filtro de equipo - visible en desktop siempre, en móvil solo si hay espacio */}
+                <select
+                  value={selectedEquipment}
+                  onChange={(e) => setSelectedEquipment(e.target.value)}
+                  className="hidden sm:block bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[160px]"
+                >
+                  <option value="Todos los equipos">Todos los equipos</option>
+                  {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                </select>
+
                 <button
                   onClick={() => setOnlyExpiringLicenses(v => !v)}
                   className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 shrink-0 ${
@@ -1648,9 +1659,11 @@ export default function App() {
                       ? 'bg-amber-600 border-amber-400 text-white'
                       : 'bg-[#02180d] border-emerald-900 text-emerald-300'
                   }`}
+                  title="Solo licencias críticas (≤30 días)"
                 >
                   <AlertCircle className="w-3.5 h-3.5" />
                 </button>
+
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={clearAllFilters}
@@ -1664,14 +1677,15 @@ export default function App() {
               {activeFiltersCount > 0 && (
                 <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-cyan-200">
                   <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
-                  <span><span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span></span>
+                  <span><span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span> operadores</span>
                 </div>
               )}
             </div>
 
-            {/* ✅ Vista móvil tamaño intermedio */}
+            {/* Vista móvil: día por día */}
             <div className="md:hidden space-y-2">
-              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-2.5 px-2.5 scrollbar-hide">
+              {/* Selector de días - sin truco de negative margin */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {weekDays.map(day => {
                   const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                   const isSelected = day.dateStr === selectedMobileDay;
@@ -1695,6 +1709,7 @@ export default function App() {
                 })}
               </div>
 
+              {/* Lista de operadores */}
               <div className="space-y-1.5">
                 {filteredOperators.map(op => {
                   const cellKey = `${op.id}_${selectedMobileDay}`;
@@ -1761,6 +1776,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* Vista desktop: tabla completa */}
             <div className="hidden md:block">
               <div
                 ref={scheduleRef}
@@ -1867,7 +1883,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ Indicadores tamaño intermedio */}
+            {/* Indicadores */}
             <div className="flex items-center justify-center gap-1.5 flex-wrap">
               {isCurrentWeek ? (
                 <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">

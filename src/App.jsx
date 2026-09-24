@@ -343,6 +343,9 @@ export default function App() {
   const [reassignModal, setReassignModal] = useState(null);
   const [reassignShift, setReassignShift] = useState('M');
 
+  // ✅ MÓVIL: día seleccionado en vista móvil
+  const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
+
   useEffect(() => {
     if (!lockoutUntil) return;
     const tick = () => {
@@ -563,6 +566,14 @@ export default function App() {
     }
     return days;
   }, [currentWeekStart]);
+
+  // ✅ MÓVIL: Ajustar el día móvil cuando cambia la semana
+  useEffect(() => {
+    const isInCurrentView = weekDays.some(d => d.dateStr === selectedMobileDay);
+    if (!isInCurrentView) {
+      setSelectedMobileDay(weekDays[0].dateStr);
+    }
+  }, [currentWeekStart, weekDays, selectedMobileDay]);
 
   const isHistoricalWeek = useMemo(() => {
     const currentMonday = getMondayOfCurrentWeek();
@@ -1383,17 +1394,18 @@ export default function App() {
 
       <header className="border-b border-emerald-800/60 bg-[#00471f]/90 backdrop-blur sticky top-0 z-30 shadow-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
-              <Truck className="w-5 h-5 text-emerald-200" />
-              <Star className="w-4 h-4 text-red-600 fill-red-600 absolute -top-1 -right-1" />
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
+              <Truck className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-200" />
+              <Star className="w-3 h-3 sm:w-4 sm:h-4 text-red-600 fill-red-600 absolute -top-1 -right-1" />
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-white flex items-center gap-2">ShiftForklift</h1>
-              <p className="text-xs text-emerald-300/80">Gestión de Turnos y Personal</p>
+            <div className="hidden xs:block sm:block">
+              <h1 className="text-base sm:text-lg font-bold text-white">ShiftForklift</h1>
+              <p className="text-[10px] sm:text-xs text-emerald-300/80 hidden sm:block">Gestión de Turnos y Personal</p>
             </div>
           </div>
 
+          {/* ✅ Nav desktop (md+) */}
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
             <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
@@ -1405,7 +1417,7 @@ export default function App() {
             )}
           </nav>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             {syncStatus !== 'idle' && (
               <div className={`hidden sm:flex items-center space-x-1.5 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${
                 syncStatus === 'saving' ? 'bg-amber-950 text-amber-300 border-amber-700/60' :
@@ -1414,7 +1426,7 @@ export default function App() {
               }`}>
                 {syncStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin" /><span>Guardando...</span></>}
                 {syncStatus === 'saved' && <><CheckCircle2 className="w-3 h-3" /><span>Guardado</span></>}
-                {syncStatus === 'error' && <><CloudOff className="w-3 h-3" /><span>Error al guardar</span></>}
+                {syncStatus === 'error' && <><CloudOff className="w-3 h-3" /><span>Error</span></>}
               </div>
             )}
 
@@ -1422,7 +1434,6 @@ export default function App() {
               <button
                 onClick={() => { setActiveTab('operators'); setShowLicenseAlerts(true); }}
                 className="relative p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-xl transition"
-                title="Licencias por vencer"
               >
                 <Bell className="w-4 h-4" />
                 <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
@@ -1432,7 +1443,7 @@ export default function App() {
             )}
 
             <div className="text-right hidden sm:block">
-              <div className="text-xs font-bold text-white">{currentUser.name}</div>
+              <div className="text-xs font-bold text-white truncate max-w-[100px]">{currentUser.name}</div>
               <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${currentUser.role === 'Admin' ? 'bg-red-900 text-red-200' : currentUser.role === 'Supervisor' ? 'bg-emerald-900 text-emerald-200' : 'bg-amber-950 text-amber-200'}`}>
                 {currentUser.role}
               </span>
@@ -1444,246 +1455,361 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+      {/* ✅ MÓVIL: Nav horizontal scrollable (solo < md) */}
+      <nav className="md:hidden sticky top-16 z-20 bg-[#021f12]/95 backdrop-blur border-b border-emerald-900/60">
+        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 scrollbar-hide">
+          <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
+          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
+          <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
+          {canViewReports && (
+            <button onClick={() => setActiveTab('reports')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap flex items-center gap-1.5 transition ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
+              <BarChart3 className="w-3 h-3" /> Reportes
+            </button>
+          )}
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mt-4 sm:mt-6">
         {activeTab === 'scheduler' && (
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             {isHistoricalWeek && (
-              <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
-                  <History className="w-5 h-5 text-slate-300" />
+              <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-3 sm:p-4 flex items-center gap-3">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
+                  <History className="w-4 h-4 sm:w-5 sm:h-5 text-slate-300" />
                 </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-bold text-slate-100">Semana histórica — Solo lectura</h3>
-                  <p className="text-xs text-slate-300 mt-0.5">
-                    Esta semana ya pasó. Los turnos están bloqueados y no se pueden modificar. Solo puedes consultarlos o exportarlos.
-                  </p>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-100">Semana histórica — Solo lectura</h3>
+                  <p className="text-[10px] sm:text-xs text-slate-300 mt-0.5">Esta semana ya pasó. Los turnos están bloqueados.</p>
                 </div>
-                <Lock className="w-5 h-5 text-slate-400 shrink-0" />
+                <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 shrink-0" />
               </div>
             )}
 
             {!isHistoricalWeek && lockedCellsInView > 0 && (
-              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2 flex items-center justify-center gap-2">
+              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-3 py-2 flex items-center justify-center gap-2">
                 <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
-                <p className="text-[10px] text-purple-200">
-                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s). <span className="text-purple-300">Haz clic en uno para buscar reemplazo.</span>
+                <p className="text-[10px] text-purple-200 text-center">
+                  {lockedCellsInView} turno(s) bloqueado(s). <span className="text-purple-300">Toca uno para buscar reemplazo.</span>
                 </p>
               </div>
             )}
 
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 flex flex-col lg:flex-row items-center justify-between gap-3">
-              <div className="flex items-center space-x-2">
-                <button onClick={() => {
-                  const [y, m, d] = currentWeekStart.split('-').map(Number);
-                  const prevWeek = new Date(y, m - 1, d - 7);
-                  setCurrentWeekStart(formatDateLocal(prevWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <button onClick={() => {
+                    const [y, m, d] = currentWeekStart.split('-').map(Number);
+                    const prevWeek = new Date(y, m - 1, d - 7);
+                    setCurrentWeekStart(formatDateLocal(prevWeek));
+                  }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
 
-                <div className="text-xs font-bold text-white bg-[#02180d] px-3 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-2">
-                  {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
-                  {isCurrentWeek && <Activity className="w-3 h-3 text-emerald-400" />}
-                  Plan Semanal: {weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}
+                  <div className="text-[10px] sm:text-xs font-bold text-white bg-[#02180d] px-2.5 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-1.5">
+                    {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
+                    {isCurrentWeek && <Activity className="w-3 h-3 text-emerald-400" />}
+                    <span className="whitespace-nowrap">{weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}</span>
+                  </div>
+
+                  <button onClick={() => {
+                    const [y, m, d] = currentWeekStart.split('-').map(Number);
+                    const nextWeek = new Date(y, m - 1, d + 7);
+                    setCurrentWeekStart(formatDateLocal(nextWeek));
+                  }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
                 </div>
 
-                <button onClick={() => {
-                  const [y, m, d] = currentWeekStart.split('-').map(Number);
-                  const nextWeek = new Date(y, m - 1, d + 7);
-                  setCurrentWeekStart(formatDateLocal(nextWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
+                <div className="flex items-center gap-1.5">
+                  {!isCurrentWeek && (
+                    <button
+                      onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())}
+                      className="px-2 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                    >
+                      <Activity className="w-3 h-3" /> Hoy
+                    </button>
+                  )}
 
-                {!isCurrentWeek && (
-                  <button
-                    onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())}
-                    className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition border border-emerald-500/50 flex items-center gap-1"
-                  >
-                    <Activity className="w-3 h-3" /> Hoy
-                  </button>
-                )}
+                  <div className="relative" ref={exportMenuRef}>
+                    <button
+                      disabled={isExporting}
+                      onClick={() => setShowExportMenu(!showExportMenu)}
+                      className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 transition border border-emerald-500/50 shadow"
+                    >
+                      {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                      <span className="hidden sm:inline">Exportar</span>
+                    </button>
+                    {showExportMenu && (
+                      <div className="absolute right-0 mt-2 w-52 bg-[#002e14] border border-emerald-700 rounded-xl shadow-2xl z-50 overflow-hidden text-xs">
+                        <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Formato</div>
+                        <button onClick={() => handleExport('png')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition">
+                          <ImageIcon className="w-4 h-4 text-emerald-400" /><div className="font-bold">PNG</div>
+                        </button>
+                        <button onClick={() => handleExport('jpg')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
+                          <FileImage className="w-4 h-4 text-amber-400" /><div className="font-bold">JPG</div>
+                        </button>
+                        <button onClick={() => handleExport('pdf')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
+                          <FileText className="w-4 h-4 text-red-400" /><div className="font-bold">PDF</div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
-                <div className="relative">
+              {/* Filtros */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative flex-1 min-w-[140px]">
                   <Search className="w-3 h-3 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Buscar operador..."
+                    placeholder="Buscar..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700 w-40"
+                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
                   />
                 </div>
                 <select
                   value={selectedZone}
                   onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none"
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[10px] sm:text-xs text-emerald-200 focus:outline-none max-w-[130px]"
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
                 <select
                   value={selectedEquipment}
                   onChange={(e) => setSelectedEquipment(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none"
+                  className="hidden sm:block bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-xs text-emerald-200 focus:outline-none max-w-[140px]"
                 >
-                  <option value="Todos los equipos">Todos los equipos</option>
+                  <option value="Todos los equipos">Equipos</option>
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                 </select>
                 <button
                   onClick={() => setOnlyExpiringLicenses(v => !v)}
-                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition flex items-center gap-1.5 ${
+                  className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition flex items-center gap-1 ${
                     onlyExpiringLicenses
                       ? 'bg-amber-600 border-amber-400 text-white'
-                      : 'bg-[#02180d] border-emerald-900 text-emerald-300 hover:bg-emerald-950'
+                      : 'bg-[#02180d] border-emerald-900 text-emerald-300'
                   }`}
                 >
-                  <AlertCircle className="w-3 h-3" /> Licencias críticas
+                  <AlertCircle className="w-3 h-3" />
+                  <span className="hidden sm:inline">Críticas</span>
                 </button>
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={clearAllFilters}
-                    className="px-2.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1.5"
+                    className="px-2 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
                   >
-                    <FilterX className="w-3 h-3" /> Limpiar ({activeFiltersCount})
+                    <FilterX className="w-3 h-3" /> {activeFiltersCount}
                   </button>
                 )}
+              </div>
 
-                <div className="relative" ref={exportMenuRef}>
-                  <button
-                    disabled={isExporting}
-                    onClick={() => setShowExportMenu(!showExportMenu)}
-                    className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 transition border border-emerald-500/50 shadow"
-                  >
-                    {isExporting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Generando...</span></> : <><Download className="w-3.5 h-3.5" /><span>Exportar</span></>}
-                  </button>
-                  {showExportMenu && (
-                    <div className="absolute right-0 mt-2 w-52 bg-[#002e14] border border-emerald-700 rounded-xl shadow-2xl z-50 overflow-hidden text-xs">
-                      <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Selecciona el formato</div>
-                      <button onClick={() => handleExport('png')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition">
-                        <ImageIcon className="w-4 h-4 text-emerald-400" /><div className="font-bold">Imagen PNG</div>
-                      </button>
-                      <button onClick={() => handleExport('jpg')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
-                        <FileImage className="w-4 h-4 text-amber-400" /><div className="font-bold">Imagen JPG</div>
-                      </button>
-                      <button onClick={() => handleExport('pdf')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
-                        <FileText className="w-4 h-4 text-red-400" /><div className="font-bold">Documento PDF</div>
-                      </button>
-                    </div>
-                  )}
+              {activeFiltersCount > 0 && (
+                <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-2.5 py-1 flex items-center gap-2 text-[10px] text-cyan-200">
+                  <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
+                  <span>Mostrando <span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span></span>
+                </div>
+              )}
+            </div>
+
+            {/* ✅ MÓVIL: Vista día por día (solo < md) */}
+            <div className="md:hidden space-y-3">
+              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-hide">
+                {weekDays.map(day => {
+                  const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
+                  const isSelected = day.dateStr === selectedMobileDay;
+                  return (
+                    <button
+                      key={day.dateStr}
+                      onClick={() => setSelectedMobileDay(day.dateStr)}
+                      className={`shrink-0 flex flex-col items-center justify-center px-3 py-2 rounded-xl border transition min-w-[58px] ${
+                        isSelected
+                          ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg'
+                          : isToday
+                          ? 'bg-emerald-950/60 border-emerald-700 text-emerald-200'
+                          : 'bg-[#02180d] border-emerald-900 text-emerald-300'
+                      }`}
+                    >
+                      <span className="text-[10px] font-bold uppercase">{day.dayName}</span>
+                      <span className={`text-base font-extrabold ${day.isWeekend && !isSelected ? 'text-red-400' : ''}`}>{day.dayNumber}</span>
+                      {isToday && <span className="text-[8px] font-bold uppercase tracking-wider">Hoy</span>}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2">
+                {filteredOperators.map(op => {
+                  const cellKey = `${op.id}_${selectedMobileDay}`;
+                  const shiftCode = scheduleData[cellKey] || 'DES';
+                  const shift = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
+                  const IconComp = shift.icon;
+                  const isLockedByAbsence = lockedCells.has(cellKey);
+                  const editable = canEditCell(op.id, selectedMobileDay);
+
+                  return (
+                    <button
+                      key={op.id}
+                      disabled={!editable && !isLockedByAbsence}
+                      onClick={() => {
+                        if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) {
+                          setReassignModal({ operatorId: op.id, dateStr: selectedMobileDay });
+                          setReassignShift('M');
+                        } else if (editable) {
+                          setSelectedCell({ operatorId: op.id, dateStr: selectedMobileDay, currentShift: shiftCode });
+                        }
+                      }}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition ${shift.color} ${
+                        isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60' : ''
+                      } ${!editable && !isLockedByAbsence ? 'opacity-60' : 'active:scale-[0.98]'}`}
+                    >
+                      <div className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border ${shift.color}`}>
+                        <IconComp className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-sm truncate">{op.name}</div>
+                        <div className="text-[10px] opacity-80 truncate">{op.id} · {op.zone}</div>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        <span className="font-extrabold text-sm">{shift.code}</span>
+                        {(isLockedByAbsence || isHistoricalWeek) && (
+                          <Lock className={`w-3.5 h-3.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {filteredOperators.length === 0 && (
+                  <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
+                    {operators.length === 0 ? (
+                      <>
+                        <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                        <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
+                      </>
+                    ) : (
+                      <>
+                        <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
+                        <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide</p>
+                        <button
+                          onClick={clearAllFilters}
+                          className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
+                        >
+                          <FilterX className="w-3.5 h-3.5" /> Limpiar
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ✅ DESKTOP: Tabla completa (solo ≥ md) */}
+            <div className="hidden md:block">
+              <div
+                ref={scheduleRef}
+                className={`bg-[#002812] border rounded-2xl overflow-hidden shadow-2xl p-1 ${isHistoricalWeek ? 'border-slate-700/70 opacity-[0.97]' : 'border-emerald-800/80'}`}
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse min-w-[900px]">
+                    <thead>
+                      <tr className={`border-b ${isHistoricalWeek ? 'bg-slate-950/80 border-slate-700/70' : 'bg-[#001f0d] border-emerald-800/80'}`}>
+                        <th className={`py-3 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>Montacargista / Área</th>
+                        {weekDays.map(day => {
+                          const isToday = day.dateStr === formatDateLocal(now);
+                          return (
+                            <th key={day.dateStr} className={`py-3 px-2 text-center border-l ${isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'} ${isToday && isCurrentWeek ? 'bg-emerald-900/40' : ''}`}>
+                              <div className={`text-xs font-bold uppercase ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-200'}`}>{day.dayName}</div>
+                              <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>{day.dayNumber}</div>
+                              {isToday && isCurrentWeek && <div className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">Hoy</div>}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-emerald-900/50">
+                      {filteredOperators.map(op => (
+                        <tr key={op.id} className="hover:bg-[#003517]/50">
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-sm text-white">{op.name}</div>
+                            <div className="text-xs text-emerald-400/80">{op.id} • {op.zone}</div>
+                          </td>
+                          {weekDays.map(day => {
+                            const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+                            const shift = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
+                            const IconComp = shift.icon;
+                            const cellKey = `${op.id}_${day.dateStr}`;
+                            const isLockedByAbsence = lockedCells.has(cellKey);
+                            const editable = canEditCell(op.id, day.dateStr);
+                            const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
+                            const isCurrentShiftForMe = isToday && shiftCode === activeShiftCode;
+                            const isFlashing = flashCells.has(cellKey);
+
+                            let tooltip = '';
+                            if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
+                            else if (isLockedByAbsence) tooltip = 'Bloqueado por ausencia. Clic para buscar reemplazo.';
+                            else if (!canEditShifts) tooltip = 'No tienes permisos para editar turnos';
+
+                            return (
+                              <td key={day.dateStr} className={`p-1.5 text-center border-l border-emerald-900/40 ${isToday ? 'bg-emerald-950/30' : ''}`}>
+                                <button
+                                  disabled={!editable && !isLockedByAbsence}
+                                  onClick={() => {
+                                    if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) {
+                                      setReassignModal({ operatorId: op.id, dateStr: day.dateStr });
+                                      setReassignShift('M');
+                                    } else if (editable) {
+                                      setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode });
+                                    }
+                                  }}
+                                  title={tooltip}
+                                  className={`relative w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${
+                                    !editable && !isLockedByAbsence ? 'cursor-not-allowed' : 'hover:scale-105 transition-transform'
+                                  } ${isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60 shadow-purple-900/40 cursor-pointer' : ''} ${
+                                    isHistoricalWeek ? 'grayscale-[0.35] opacity-90' : ''
+                                  } ${isCurrentShiftForMe ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg' : ''} ${
+                                    isFlashing ? 'ring-2 ring-white/80 shadow-white/40 shadow-lg animate-pulse' : ''
+                                  }`}
+                                >
+                                  <IconComp className="w-3.5 h-3.5" />
+                                  <span>{shift.code}</span>
+                                  {(isLockedByAbsence || isHistoricalWeek) && (
+                                    <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
+                                  )}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                      {filteredOperators.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center">
+                            {operators.length === 0 ? (
+                              <>
+                                <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                                <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
+                              </>
+                            ) : (
+                              <>
+                                <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
+                                <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide con los filtros</p>
+                                <button
+                                  onClick={clearAllFilters}
+                                  className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
+                                >
+                                  <FilterX className="w-3.5 h-3.5" /> Limpiar filtros
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
 
-            {activeFiltersCount > 0 && (
-              <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-3 py-1.5 flex items-center gap-2 text-[10px] text-cyan-200">
-                <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
-                <span>Mostrando <span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span> operadores{activeFiltersCount > 1 && ` · ${activeFiltersCount} filtros activos`}</span>
-              </div>
-            )}
-
-            <div
-              ref={scheduleRef}
-              className={`bg-[#002812] border rounded-2xl overflow-hidden shadow-2xl p-1 ${isHistoricalWeek ? 'border-slate-700/70 opacity-[0.97]' : 'border-emerald-800/80'}`}
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse min-w-[900px]">
-                  <thead>
-                    <tr className={`border-b ${isHistoricalWeek ? 'bg-slate-950/80 border-slate-700/70' : 'bg-[#001f0d] border-emerald-800/80'}`}>
-                      <th className={`py-3 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>Montacargista / Área</th>
-                      {weekDays.map(day => {
-                        const isToday = day.dateStr === formatDateLocal(now);
-                        return (
-                          <th key={day.dateStr} className={`py-3 px-2 text-center border-l ${isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'} ${isToday && isCurrentWeek ? 'bg-emerald-900/40' : ''}`}>
-                            <div className={`text-xs font-bold uppercase ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-200'}`}>{day.dayName}</div>
-                            <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>{day.dayNumber}</div>
-                            {isToday && isCurrentWeek && <div className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">Hoy</div>}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-emerald-900/50">
-                    {filteredOperators.map(op => (
-                      <tr key={op.id} className="hover:bg-[#003517]/50">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-sm text-white">{op.name}</div>
-                          <div className="text-xs text-emerald-400/80">{op.id} • {op.zone}</div>
-                        </td>
-                        {weekDays.map(day => {
-                          const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
-                          const shift = SHIFT_TYPES[shiftCode] || SHIFT_TYPES.DES;
-                          const IconComp = shift.icon;
-                          const cellKey = `${op.id}_${day.dateStr}`;
-                          const isLockedByAbsence = lockedCells.has(cellKey);
-                          const editable = canEditCell(op.id, day.dateStr);
-                          const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
-                          const isCurrentShiftForMe = isToday && shiftCode === activeShiftCode;
-                          const isFlashing = flashCells.has(cellKey);
-
-                          let tooltip = '';
-                          if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
-                          else if (isLockedByAbsence) tooltip = 'Bloqueado por ausencia. Clic para buscar reemplazo.';
-                          else if (!canEditShifts) tooltip = 'No tienes permisos para editar turnos';
-
-                          return (
-                            <td key={day.dateStr} className={`p-1.5 text-center border-l border-emerald-900/40 ${isToday ? 'bg-emerald-950/30' : ''}`}>
-                              <button
-                                disabled={!editable && !isLockedByAbsence}
-                                onClick={() => {
-                                  if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) {
-                                    setReassignModal({ operatorId: op.id, dateStr: day.dateStr });
-                                    setReassignShift('M');
-                                  } else if (editable) {
-                                    setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode });
-                                  }
-                                }}
-                                title={tooltip}
-                                className={`relative w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${
-                                  !editable && !isLockedByAbsence ? 'cursor-not-allowed' : 'hover:scale-105 transition-transform'
-                                } ${isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60 shadow-purple-900/40 cursor-pointer' : ''} ${
-                                  isHistoricalWeek ? 'grayscale-[0.35] opacity-90' : ''
-                                } ${isCurrentShiftForMe ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg' : ''} ${
-                                  isFlashing ? 'ring-2 ring-white/80 shadow-white/40 shadow-lg animate-pulse' : ''
-                                }`}
-                              >
-                                <IconComp className="w-3.5 h-3.5" />
-                                <span>{shift.code}</span>
-                                {(isLockedByAbsence || isHistoricalWeek) && (
-                                  <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
-                                )}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                    {filteredOperators.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="py-12 text-center">
-                          {operators.length === 0 ? (
-                            <>
-                              <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
-                              <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
-                            </>
-                          ) : (
-                            <>
-                              <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
-                              <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide con los filtros</p>
-                              <button
-                                onClick={clearAllFilters}
-                                className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
-                              >
-                                <FilterX className="w-3.5 h-3.5" /> Limpiar filtros
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-2 flex-wrap">
+            {/* Indicadores */}
+            <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap">
               {isCurrentWeek ? (
                 <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
                   <span className="relative flex h-2 w-2 shrink-0">
@@ -1694,8 +1820,8 @@ export default function App() {
                   <div className="min-w-0">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-300 leading-none">En vivo</div>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-base font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
-                      <span className="text-[9px] text-emerald-400 font-mono leading-none">{formatTimeLocal(now)}</span>
+                      <span className="text-sm sm:text-base font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
+                      <span className="text-[9px] text-emerald-400 font-mono leading-none hidden sm:inline">{formatTimeLocal(now)}</span>
                     </div>
                   </div>
                 </div>
@@ -1704,7 +1830,7 @@ export default function App() {
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <div>
                     <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none">Resumen</div>
-                    <div className="text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
+                    <div className="text-[10px] sm:text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
                   </div>
                 </div>
               )}
@@ -1741,9 +1867,9 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 gap-3">
               <div>
-                <h2 className="text-lg font-bold text-white">Plantilla de Montacargistas</h2>
+                <h2 className="text-base sm:text-lg font-bold text-white">Plantilla de Montacargistas</h2>
                 <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
               </div>
               {canManageOperators && (
@@ -1751,7 +1877,7 @@ export default function App() {
                   setEditingOperator(null);
                   setNewOp({ name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], shiftPattern: 'Mañana', licenseExpiry: formatDateLocal(new Date()) });
                   setIsAddOperatorOpen(true);
-                }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
+                }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
                 </button>
               )}
@@ -1764,27 +1890,27 @@ export default function App() {
                 <p className="text-xs text-emerald-400/80 mb-4">Agrega el primer montacargista para comenzar.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {operators.map(op => (
                   <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
                     <div>
                       <div className="flex justify-between items-start mb-2">
-                        <div>
+                        <div className="min-w-0">
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
                           <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
                         </div>
                         {canManageOperators && (
-                          <div className="flex space-x-1">
+                          <div className="flex space-x-1 shrink-0">
                             <button onClick={() => { setEditingOperator(op); setNewOp(op); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
                             <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
                           </div>
                         )}
                       </div>
                       <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
-                        <div className="flex justify-between"><span>Zona:</span><span className="font-semibold text-white">{op.zone}</span></div>
-                        <div className="flex justify-between"><span>Equipo:</span><span className="font-semibold text-white">{op.equipment}</span></div>
-                        <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
-                        <div className="flex justify-between items-center pt-1">
+                        <div className="flex justify-between gap-2"><span>Zona:</span><span className="font-semibold text-white text-right">{op.zone}</span></div>
+                        <div className="flex justify-between gap-2"><span>Equipo:</span><span className="font-semibold text-white text-right">{op.equipment}</span></div>
+                        <div className="flex justify-between gap-2"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
+                        <div className="flex justify-between items-center pt-1 gap-2">
                           <span>Licencia DC3:</span>
                           <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
                         </div>
@@ -1799,8 +1925,8 @@ export default function App() {
 
         {activeTab === 'vacations' && (
           <div className="space-y-5">
-            <div className="flex justify-between items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
-              <h2 className="text-lg font-bold text-white">Solicitudes de Ausencia</h2>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 gap-3">
+              <h2 className="text-base sm:text-lg font-bold text-white">Solicitudes de Ausencia</h2>
               <button
                 disabled={operators.length === 0}
                 onClick={() => {
@@ -1808,13 +1934,53 @@ export default function App() {
                   setNewVac(prev => ({ ...prev, operatorId: operators[0]?.id || '' }));
                   setIsRequestVacationOpen(true);
                 }}
-                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition"
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition"
               >
                 <Plus className="w-4 h-4"/><span>Registrar Solicitud</span>
               </button>
             </div>
 
-            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
+            {/* Móvil: cards */}
+            <div className="md:hidden space-y-2">
+              {vacationRequests.map(req => (
+                <div key={req.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3.5">
+                  <div className="flex justify-between items-start gap-2 mb-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-white text-sm">{req.operatorName}</div>
+                      <div className="text-[10px] text-emerald-400">{req.operatorId}</div>
+                    </div>
+                    <span className={`shrink-0 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 ${
+                      req.status === 'Aprobado' ? 'bg-emerald-950 text-emerald-300' : 
+                      req.status === 'Rechazado' ? 'bg-red-950 text-red-300' : 
+                      'bg-amber-950 text-amber-300'
+                    }`}>
+                      {req.status === 'Aprobado' && <Lock className="w-2.5 h-2.5" />}
+                      {req.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-emerald-200 space-y-1">
+                    <div><span className="text-emerald-400">Tipo:</span> {req.type}</div>
+                    <div><span className="text-emerald-400">Periodo:</span> {req.startDate} al {req.endDate}</div>
+                    <div className="text-white/80 text-[11px]"><span className="text-emerald-400">Motivo:</span> {req.reason}</div>
+                  </div>
+                  {req.status === 'Pendiente' && canApproveVacations && (
+                    <div className="flex justify-end space-x-1 mt-3 pt-3 border-t border-emerald-900/60">
+                      <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition"><Check className="w-3.5 h-3.5"/> Aprobar</button>
+                      <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="px-3 py-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition"><X className="w-3.5 h-3.5"/> Rechazar</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {vacationRequests.length === 0 && (
+                <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
+                  <CalendarIcon className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                  <p className="text-emerald-300 font-bold text-sm">Sin solicitudes</p>
+                </div>
+              )}
+            </div>
+
+            {/* Desktop: tabla */}
+            <div className="hidden md:block bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-[#001f0d] text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
@@ -1876,23 +2042,23 @@ export default function App() {
 
         {activeTab === 'reports' && canViewReports && (
           <div className="space-y-5">
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center shrink-0">
                   <BarChart3 className="w-5 h-5 text-emerald-300" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Reportes Ejecutivos</h2>
-                  <p className="text-xs text-emerald-300">KPIs de la semana actual y análisis de cobertura</p>
+                  <h2 className="text-base sm:text-lg font-bold text-white">Reportes Ejecutivos</h2>
+                  <p className="text-xs text-emerald-300">KPIs de la semana actual</p>
                 </div>
               </div>
               <button
                 onClick={handleExportExecutivePDF}
                 disabled={isExporting}
-                className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition border border-emerald-500/50"
+                className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition border border-emerald-500/50"
               >
                 {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                Exportar Reporte PDF
+                Exportar PDF
               </button>
             </div>
 
@@ -1919,36 +2085,36 @@ export default function App() {
 
                 return (
                   <>
-                    <div className="rounded-2xl border border-emerald-700/60 bg-emerald-950/70 p-4">
+                    <div className="rounded-2xl border border-emerald-700/60 bg-emerald-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
                         <TrendingUp className="w-3.5 h-3.5 text-emerald-300" />
                         <span className="text-[10px] font-bold uppercase text-emerald-300">Cobertura</span>
                       </div>
-                      <div className="text-2xl font-extrabold text-emerald-100">{coverage}%</div>
-                      <div className="text-[10px] text-emerald-400/70 mt-0.5">{totalWorked} de {totalSlots} slots</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-emerald-100">{coverage}%</div>
+                      <div className="text-[10px] text-emerald-400/70 mt-0.5">{totalWorked}/{totalSlots}</div>
                     </div>
-                    <div className="rounded-2xl border border-red-700/60 bg-red-950/70 p-4">
+                    <div className="rounded-2xl border border-red-700/60 bg-red-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
                         <AlertTriangle className="w-3.5 h-3.5 text-red-300" />
                         <span className="text-[10px] font-bold uppercase text-red-300">Ausentismo</span>
                       </div>
-                      <div className="text-2xl font-extrabold text-red-100">{absentPct}%</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-red-100">{absentPct}%</div>
                       <div className="text-[10px] text-red-400/70 mt-0.5">{totalAbsent} ausencias</div>
                     </div>
-                    <div className="rounded-2xl border border-cyan-700/60 bg-cyan-950/70 p-4">
+                    <div className="rounded-2xl border border-cyan-700/60 bg-cyan-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
                         <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
-                        <span className="text-[10px] font-bold uppercase text-cyan-300">Licencias OK</span>
+                        <span className="text-[10px] font-bold uppercase text-cyan-300">Licencias</span>
                       </div>
-                      <div className="text-2xl font-extrabold text-cyan-100">{licenseOk}/{operators.length}</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-cyan-100">{licenseOk}/{operators.length}</div>
                       <div className="text-[10px] text-cyan-400/70 mt-0.5">{operators.length - licenseOk} críticas</div>
                     </div>
-                    <div className="rounded-2xl border border-purple-700/60 bg-purple-950/70 p-4">
+                    <div className="rounded-2xl border border-purple-700/60 bg-purple-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
                         <Users2 className="w-3.5 h-3.5 text-purple-300" />
                         <span className="text-[10px] font-bold uppercase text-purple-300">Plantilla</span>
                       </div>
-                      <div className="text-2xl font-extrabold text-purple-100">{operators.length}</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{operators.length}</div>
                       <div className="text-[10px] text-purple-400/70 mt-0.5">operadores</div>
                     </div>
                   </>
@@ -1956,13 +2122,13 @@ export default function App() {
               })()}
             </div>
 
-            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
+              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-emerald-400" />
-                Cobertura por día (semana actual)
+                Cobertura por día
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+                <table className="w-full text-left border-collapse text-xs min-w-[500px]">
                   <thead>
                     <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                       <th className="p-2">Día</th>
@@ -1972,7 +2138,7 @@ export default function App() {
                       <th className="p-2 text-center">DES</th>
                       <th className="p-2 text-center">VAC</th>
                       <th className="p-2 text-center">INC</th>
-                      <th className="p-2 text-center">Cobertura</th>
+                      <th className="p-2 text-center">%</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-900/50">
@@ -1988,7 +2154,7 @@ export default function App() {
                       const color = pct >= 80 ? 'text-emerald-300' : pct >= 60 ? 'text-amber-300' : 'text-red-300';
                       return (
                         <tr key={day.dateStr} className="hover:bg-[#003517]/50">
-                          <td className="p-2 font-bold text-white">{day.dayName} {day.dayNumber}</td>
+                          <td className="p-2 font-bold text-white whitespace-nowrap">{day.dayName} {day.dayNumber}</td>
                           <td className="p-2 text-center text-emerald-300 font-bold">{counts.M}</td>
                           <td className="p-2 text-center text-amber-300 font-bold">{counts.T}</td>
                           <td className="p-2 text-center text-indigo-300 font-bold">{counts.N}</td>
@@ -2004,13 +2170,13 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5">
-              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
+              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-emerald-400" />
-                Horas por operador (semana actual)
+                Horas por operador
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+                <table className="w-full text-left border-collapse text-xs min-w-[450px]">
                   <thead>
                     <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                       <th className="p-2">Operador</th>
@@ -2036,7 +2202,7 @@ export default function App() {
                       const isHigh = totalH > 48;
                       return (
                         <tr key={op.id} className="hover:bg-[#003517]/50">
-                          <td className="p-2 font-bold text-white">{op.name}</td>
+                          <td className="p-2 font-bold text-white whitespace-nowrap">{op.name}</td>
                           <td className="p-2 text-emerald-200 text-[11px]">{op.zone}</td>
                           <td className="p-2 text-center text-emerald-300">{c.M}</td>
                           <td className="p-2 text-center text-amber-300">{c.T}</td>
@@ -2059,21 +2225,21 @@ export default function App() {
       </main>
 
       {selectedCell && canEditShifts && !isHistoricalWeek && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-t-2xl sm:rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl">
             <div className="flex justify-between items-start mb-3">
               <div>
                 <h3 className="text-sm font-bold text-white">Cambiar Turno</h3>
                 <p className="text-xs text-emerald-300 font-semibold">{selectedOperator?.name || ''}</p>
-                <p className="text-[11px] text-emerald-400/80">Día seleccionado: {selectedCell.dateStr}</p>
+                <p className="text-[11px] text-emerald-400/80">Día: {selectedCell.dateStr}</p>
               </div>
-              <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
+              <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white p-1"><X className="w-5 h-5"/></button>
             </div>
 
             <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Dom)</span>
+                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana</span>
               </div>
               <input
                 type="checkbox"
@@ -2100,8 +2266,8 @@ export default function App() {
       )}
 
       {reassignModal && reassignTarget && canEditShifts && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-purple-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#002e14] border border-purple-700 rounded-t-2xl sm:rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] sm:max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2109,9 +2275,8 @@ export default function App() {
                   Reasignación Inteligente
                 </h3>
                 <p className="text-xs text-purple-300 font-semibold mt-1">{reassignTarget.name} — {reassignModal.dateStr}</p>
-                <p className="text-[11px] text-purple-400/80">Ausencia aprobada. Selecciona un reemplazo y el turno a cubrir.</p>
               </div>
-              <button onClick={() => setReassignModal(null)} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
+              <button onClick={() => setReassignModal(null)} className="text-emerald-400 hover:text-white p-1"><X className="w-5 h-5"/></button>
             </div>
 
             <div className="mb-3">
@@ -2136,14 +2301,12 @@ export default function App() {
             <div className="flex-1 overflow-y-auto border-t border-emerald-900/60 pt-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold uppercase text-emerald-400">Candidatos ({reassignCandidates.length})</span>
-                <span className="text-[10px] text-emerald-500">Ordenados por afinidad</span>
               </div>
 
               {reassignCandidates.length === 0 ? (
                 <div className="text-center py-8">
                   <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-2" />
                   <p className="text-amber-300 font-bold text-xs">No hay candidatos disponibles</p>
-                  <p className="text-emerald-500 text-[10px] mt-1">Todos tienen turno asignado o están ausentes ese día.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -2157,15 +2320,15 @@ export default function App() {
                       <button
                         key={c.id}
                         onClick={() => handleReassign(c.id)}
-                        className={`w-full text-left p-3 rounded-xl border ${borderColor} ${bgColor} hover:scale-[1.01] transition-all`}
+                        className={`w-full text-left p-3 rounded-xl border ${borderColor} ${bgColor} hover:scale-[1.01] active:scale-[0.99] transition-all`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-white text-sm truncate">{c.name}</span>
                               {best && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-700 text-white">ÓPTIMO</span>}
                               {ok && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-700 text-white">ACEPTABLE</span>}
-                              {bad && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-700 text-white">NO RECOMENDADO</span>}
+                              {bad && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-700 text-white">NO REC.</span>}
                             </div>
                             <div className="text-[10px] text-emerald-300/80 mt-0.5">{c.id} · {c.zone}</div>
                             <div className="flex flex-wrap gap-1 mt-1.5">
@@ -2176,7 +2339,6 @@ export default function App() {
                           </div>
                           <div className="text-right shrink-0">
                             <div className={`text-lg font-extrabold ${best ? 'text-emerald-300' : ok ? 'text-amber-300' : 'text-red-300'}`}>{c.score}</div>
-                            <div className="text-[9px] text-emerald-500">score</div>
                           </div>
                         </div>
                       </button>
@@ -2194,29 +2356,29 @@ export default function App() {
       )}
 
       {isAddOperatorOpen && canManageOperators && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-t-2xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
             <h3 className="text-base font-bold text-white mb-4">{editingOperator ? 'Editar Operador' : 'Registrar Operador'}</h3>
             <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
-                <input type="text" required placeholder="Ej. Juan Pérez" value={newOp.name} onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+                <input type="text" required placeholder="Ej. Juan Pérez" value={newOp.name} onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Zona de Trabajo</label>
-                <select value={newOp.zone} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                <select value={newOp.zone} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
                   {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
-                <select value={newOp.equipment} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                <select value={newOp.equipment} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
-                <select value={newOp.shiftPattern} onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                <select value={newOp.shiftPattern} onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
                   <option value="Mañana">Mañana</option>
                   <option value="Tarde">Tarde</option>
                   <option value="Noche">Noche</option>
@@ -2224,7 +2386,7 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
-                <input type="date" required value={newOp.licenseExpiry} onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                <input type="date" required value={newOp.licenseExpiry} onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
               </div>
               <div className="flex justify-end space-x-2 pt-3">
                 <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
@@ -2236,8 +2398,8 @@ export default function App() {
       )}
 
       {isRequestVacationOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-t-2xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
             <h3 className="text-base font-bold text-white mb-4">Registrar Solicitud de Permiso</h3>
             <form onSubmit={handleCreateVacationRequest} className="space-y-3 text-xs">
               {vacDateError && (
@@ -2248,29 +2410,29 @@ export default function App() {
               )}
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Operador</label>
-                <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
                   {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
-                <select value={newVac.type} onChange={(e) => setNewVac({ ...newVac, type: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                <select value={newVac.type} onChange={(e) => setNewVac({ ...newVac, type: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
                   {ABSENCE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
-                  <input type="date" value={newVac.startDate} onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                  <input type="date" value={newVac.startDate} onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
                 </div>
                 <div>
                   <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
-                  <input type="date" min={newVac.startDate} value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                  <input type="date" min={newVac.startDate} value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
                 </div>
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Motivo / Razón</label>
-                <textarea rows={3} placeholder="Escribe la razón detallada..." value={newVac.reason} onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                <textarea rows={3} placeholder="Escribe la razón..." value={newVac.reason} onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
               </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button type="button" onClick={() => { setIsRequestVacationOpen(false); setVacDateError(''); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>

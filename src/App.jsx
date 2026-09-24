@@ -46,7 +46,8 @@ import {
   TrendingUp,
   CalendarDays,
   Users2,
-  ShieldCheck
+  ShieldCheck,
+  Share2
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -154,12 +155,12 @@ const INDICATOR_ACCENTS = {
 function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle = null }) {
   const c = INDICATOR_ACCENTS[accent] || INDICATOR_ACCENTS.emerald;
   return (
-    <div className={`flex items-center gap-2 rounded-lg border ${c.bg} ${c.border} px-2.5 py-1.5`}>
+    <div className={`flex items-center gap-2 rounded-lg border ${c.bg} ${c.border} px-2 py-1.5`}>
       <Icon className={`w-3.5 h-3.5 ${c.text} shrink-0`} />
       <div className="min-w-0 flex-1">
         <div className={`text-[9px] font-bold uppercase tracking-wider ${c.text} leading-none`}>{label}</div>
-        <div className="flex items-baseline gap-1.5">
-          <span className={`text-base font-extrabold ${c.value} leading-none`}>{value}</span>
+        <div className="flex items-baseline gap-1">
+          <span className={`text-sm font-extrabold ${c.value} leading-none`}>{value}</span>
           {subtitle && <span className={`text-[9px] ${c.text} opacity-70 leading-none`}>{subtitle}</span>}
         </div>
       </div>
@@ -194,14 +195,12 @@ function Toast({ toast, onDismiss, onUndo }) {
   );
 }
 
-// ✅ Detecta dispositivo móvil REAL por userAgent (no por tamaño de pantalla)
 const isMobileDevice = () => {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
 };
 
-// ✅ Descarga robusta que funciona en desktop y móvil
 const forceDownload = (blob, filename) => {
   if (typeof navigator !== 'undefined' && navigator.msSaveBlob) {
     navigator.msSaveBlob(blob, filename);
@@ -234,28 +233,6 @@ const forceDownload = (blob, filename) => {
   }, 50);
 };
 
-// ✅ Helper: en móvil → Share, en desktop → Download
-const downloadOrShareFile = async (blob, filename, mimeType, { allowShare = true } = {}) => {
-  if (allowShare && isMobileDevice() && navigator.share && navigator.canShare) {
-    try {
-      const file = new File([blob], filename, { type: mimeType });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: filename });
-        return { method: 'share' };
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        return { method: 'cancelled' };
-      }
-      console.warn('Share API falló, usando descarga:', err);
-    }
-  }
-
-  forceDownload(blob, filename);
-  return { method: 'download' };
-};
-
-// ✅ dataURL → Blob
 const dataURLtoBlob = (dataURL) => {
   const arr = dataURL.split(',');
   const mime = arr[0].match(/:(.*?);/)[1];
@@ -408,6 +385,8 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const exportMenuRef = useRef(null);
 
+  const [exportPreview, setExportPreview] = useState(null);
+
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 30000);
@@ -473,26 +452,29 @@ export default function App() {
       await loadExportLibraries();
       const element = scheduleRef.current;
       const canvas = await window.html2canvas(element, {
-        scale: isMobileDevice() ? 1.5 : 2,
+        scale: 2,
         backgroundColor: '#002812',
         useCORS: true,
         logging: false,
         windowWidth: element.scrollWidth + 80
       });
-      const fileName = `Horario_Semanal_${currentWeekStart}`;
+      const baseName = `Horario_Semanal_${currentWeekStart}`;
+      const mobile = isMobileDevice();
 
-      if (format === 'png') {
-        const dataUrl = canvas.toDataURL('image/png');
+      if (format === 'png' || format === 'jpg') {
+        const dataUrl = format === 'png'
+          ? canvas.toDataURL('image/png')
+          : canvas.toDataURL('image/jpeg', 0.95);
         const blob = dataURLtoBlob(dataUrl);
-        const result = await downloadOrShareFile(blob, `${fileName}.png`, 'image/png');
-        if (result.method === 'share') pushToast('success', 'Horario compartido');
-        else if (result.method === 'download') pushToast('success', 'Horario descargado');
-      } else if (format === 'jpg') {
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        const blob = dataURLtoBlob(dataUrl);
-        const result = await downloadOrShareFile(blob, `${fileName}.jpg`, 'image/jpeg');
-        if (result.method === 'share') pushToast('success', 'Horario compartido');
-        else if (result.method === 'download') pushToast('success', 'Horario descargado');
+        const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
+        const filename = `${baseName}.${format}`;
+
+        if (mobile) {
+          setExportPreview({ format, blob, dataUrl, filename, mimeType, isPdf: false });
+        } else {
+          forceDownload(blob, filename);
+          pushToast('success', `Horario ${format.toUpperCase()} descargado`);
+        }
       } else if (format === 'pdf') {
         const imgData = canvas.toDataURL('image/png');
         const { jsPDF } = window.jspdf;
@@ -526,13 +508,18 @@ export default function App() {
         pdf.text(`Exportado el: ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 12, pdfHeight - 5);
 
         const pdfBlob = pdf.output('blob');
-        const result = await downloadOrShareFile(pdfBlob, `${fileName}.pdf`, 'application/pdf');
-        if (result.method === 'share') pushToast('success', 'PDF compartido');
-        else if (result.method === 'download') pushToast('success', 'PDF descargado');
+        const filename = `${baseName}.pdf`;
+
+        if (mobile) {
+          setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
+        } else {
+          forceDownload(pdfBlob, filename);
+          pushToast('success', 'PDF descargado');
+        }
       }
     } catch (error) {
       console.error('Error al exportar horario:', error);
-      pushToast('error', 'No se pudo generar la descarga.');
+      pushToast('error', 'No se pudo generar el archivo.');
     } finally {
       setIsExporting(false);
     }
@@ -1330,9 +1317,14 @@ export default function App() {
       pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
 
       const pdfBlob = pdf.output('blob');
-      const result = await downloadOrShareFile(pdfBlob, `Reporte_Ejecutivo_${currentWeekStart}.pdf`, 'application/pdf');
-      if (result.method === 'share') pushToast('success', 'Reporte compartido');
-      else if (result.method === 'download') pushToast('success', 'Reporte descargado');
+      const filename = `Reporte_Ejecutivo_${currentWeekStart}.pdf`;
+
+      if (isMobileDevice()) {
+        setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
+      } else {
+        forceDownload(pdfBlob, filename);
+        pushToast('success', 'Reporte descargado');
+      }
     } catch (error) {
       console.error('Error al generar reporte:', error);
       pushToast('error', 'No se pudo generar el reporte');
@@ -1468,16 +1460,16 @@ export default function App() {
         </div>
       </div>
 
-      <header className="border-b border-emerald-800/60 bg-[#00471f]/90 backdrop-blur sticky top-0 z-30 shadow-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <header className="border-b border-emerald-800/60 bg-[#00471f] sticky top-0 z-30 shadow-xl">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center space-x-2 sm:space-x-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
               <Truck className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-200" />
-              <Star className="w-3 h-3 sm:w-4 sm:h-4 text-red-600 fill-red-600 absolute -top-1 -right-1" />
+              <Star className="w-3 h-3 sm:w-4 sm:h-4 text-red-600 fill-red-600 absolute -top-0.5 -right-0.5 sm:-top-1 sm:-right-1" />
             </div>
-            <div className="hidden xs:block sm:block">
+            <div className="hidden sm:block">
               <h1 className="text-base sm:text-lg font-bold text-white">ShiftForklift</h1>
-              <p className="text-[10px] sm:text-xs text-emerald-300/80 hidden sm:block">Gestión de Turnos y Personal</p>
+              <p className="text-[10px] sm:text-xs text-emerald-300/80">Gestión de Turnos y Personal</p>
             </div>
           </div>
 
@@ -1508,10 +1500,10 @@ export default function App() {
             {licenseAlerts.length > 0 && (
               <button
                 onClick={() => { setActiveTab('operators'); setShowLicenseAlerts(true); }}
-                className="relative p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-xl transition"
+                className="relative p-1.5 sm:p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-lg sm:rounded-xl transition"
               >
                 <Bell className="w-4 h-4" />
-                <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
                   {licenseAlerts.length}
                 </span>
               </button>
@@ -1523,32 +1515,32 @@ export default function App() {
                 {currentUser.role}
               </span>
             </div>
-            <button onClick={handleLogout} className="p-2 bg-red-950/80 hover:bg-red-800 border border-red-800 text-red-200 rounded-xl transition" title="Cerrar Sesión">
+            <button onClick={handleLogout} className="p-1.5 sm:p-2 bg-red-950/80 hover:bg-red-800 border border-red-800 text-red-200 rounded-lg sm:rounded-xl transition" title="Cerrar Sesión">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
 
-      <nav className="md:hidden sticky top-16 z-20 bg-[#021f12]/95 backdrop-blur border-b border-emerald-900/60">
-        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 scrollbar-hide">
-          <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
-          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
-          <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
+      <nav className="md:hidden sticky top-14 z-20 bg-[#021f12] border-b border-emerald-900/60">
+        <div className="flex gap-1.5 overflow-x-auto px-2.5 py-2">
+          <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
+          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
+          <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
           {canViewReports && (
-            <button onClick={() => setActiveTab('reports')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap flex items-center gap-1.5 transition ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
+            <button onClick={() => setActiveTab('reports')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap flex items-center gap-1.5 transition ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
               <BarChart3 className="w-3 h-3" /> Reportes
             </button>
           )}
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mt-4 sm:mt-6">
+      <main className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mt-3 sm:mt-6">
         {activeTab === 'scheduler' && (
-          <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-2.5 sm:space-y-4">
             {isHistoricalWeek && (
-              <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-3 sm:p-4 flex items-center gap-3">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
+              <div className="bg-slate-900/70 border border-slate-600/60 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
                   <History className="w-4 h-4 sm:w-5 sm:h-5 text-slate-300" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1560,24 +1552,24 @@ export default function App() {
             )}
 
             {!isHistoricalWeek && lockedCellsInView > 0 && (
-              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-3 py-2 flex items-center justify-center gap-2">
+              <div className="bg-purple-950/40 border border-purple-700/40 rounded-lg px-3 py-1.5 flex items-center justify-center gap-2">
                 <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
-                <p className="text-[10px] text-purple-200 text-center">
-                  {lockedCellsInView} turno(s) bloqueado(s). <span className="text-purple-300">Toca uno para buscar reemplazo.</span>
+                <p className="text-[11px] text-purple-200 text-center leading-tight">
+                  {lockedCellsInView} turno(s) bloqueado(s). <span className="text-purple-300">Toca para reasignar.</span>
                 </p>
               </div>
             )}
 
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 flex flex-col gap-3">
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-xl p-2.5 flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-1.5">
                   <button onClick={() => {
                     const [y, m, d] = currentWeekStart.split('-').map(Number);
                     const prevWeek = new Date(y, m - 1, d - 7);
                     setCurrentWeekStart(formatDateLocal(prevWeek));
                   }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
 
-                  <div className="text-[10px] sm:text-xs font-bold text-white bg-[#02180d] px-2.5 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-1.5">
+                  <div className="text-[11px] sm:text-xs font-bold text-white bg-[#02180d] px-2.5 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-1.5">
                     {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
                     {isCurrentWeek && <Activity className="w-3 h-3 text-emerald-400" />}
                     <span className="whitespace-nowrap">{weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}</span>
@@ -1604,21 +1596,21 @@ export default function App() {
                     <button
                       disabled={isExporting}
                       onClick={() => setShowExportMenu(!showExportMenu)}
-                      className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 transition border border-emerald-500/50 shadow"
+                      className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition border border-emerald-500/50 shadow"
                     >
                       {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                       <span className="hidden sm:inline">Exportar</span>
                     </button>
                     {showExportMenu && (
-                      <div className="absolute right-0 mt-2 w-52 bg-[#002e14] border border-emerald-700 rounded-xl shadow-2xl z-50 overflow-hidden text-xs">
+                      <div className="absolute right-0 mt-2 w-48 bg-[#002e14] border border-emerald-700 rounded-xl shadow-2xl z-50 overflow-hidden text-xs">
                         <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Formato</div>
-                        <button onClick={() => handleExport('png')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition">
+                        <button onClick={() => handleExport('png')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center gap-2 transition">
                           <ImageIcon className="w-4 h-4 text-emerald-400" /><div className="font-bold">PNG</div>
                         </button>
-                        <button onClick={() => handleExport('jpg')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
+                        <button onClick={() => handleExport('jpg')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center gap-2 transition border-t border-emerald-900/60">
                           <FileImage className="w-4 h-4 text-amber-400" /><div className="font-bold">JPG</div>
                         </button>
-                        <button onClick={() => handleExport('pdf')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
+                        <button onClick={() => handleExport('pdf')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center gap-2 transition border-t border-emerald-900/60">
                           <FileText className="w-4 h-4 text-red-400" /><div className="font-bold">PDF</div>
                         </button>
                       </div>
@@ -1627,63 +1619,68 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative flex-1 min-w-[140px]">
-                  <Search className="w-3 h-3 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 sm:flex-none sm:w-56 lg:w-72">
+                  <Search className="w-3.5 h-3.5 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Buscar..."
+                    placeholder="Buscar operador..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
                   />
                 </div>
+
                 <select
                   value={selectedZone}
                   onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[10px] sm:text-xs text-emerald-200 focus:outline-none max-w-[130px]"
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[110px] sm:max-w-none"
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
+
                 <select
                   value={selectedEquipment}
                   onChange={(e) => setSelectedEquipment(e.target.value)}
-                  className="hidden sm:block bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-xs text-emerald-200 focus:outline-none max-w-[140px]"
+                  className="hidden sm:block bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[160px]"
                 >
-                  <option value="Todos los equipos">Equipos</option>
+                  <option value="Todos los equipos">Todos los equipos</option>
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                 </select>
+
                 <button
                   onClick={() => setOnlyExpiringLicenses(v => !v)}
-                  className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition flex items-center gap-1 ${
+                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 shrink-0 ${
                     onlyExpiringLicenses
                       ? 'bg-amber-600 border-amber-400 text-white'
                       : 'bg-[#02180d] border-emerald-900 text-emerald-300'
                   }`}
+                  title="Solo licencias críticas (≤30 días)"
                 >
-                  <AlertCircle className="w-3 h-3" />
-                  <span className="hidden sm:inline">Críticas</span>
+                  <AlertCircle className="w-3.5 h-3.5" />
                 </button>
+
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={clearAllFilters}
-                    className="px-2 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                    className="px-2 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shrink-0"
                   >
-                    <FilterX className="w-3 h-3" /> {activeFiltersCount}
+                    <FilterX className="w-3.5 h-3.5" /> {activeFiltersCount}
                   </button>
                 )}
               </div>
 
               {activeFiltersCount > 0 && (
-                <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-2.5 py-1 flex items-center gap-2 text-[10px] text-cyan-200">
+                <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-cyan-200">
                   <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
-                  <span>Mostrando <span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span></span>
+                  <span><span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span> operadores</span>
                 </div>
               )}
             </div>
 
-            <div className="md:hidden space-y-3">
-              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-hide">
+            {/* ✅ VISTA MÓVIL — SIN truncate ni text-ellipsis para evitar el bug de GPU en Android */}
+            <div className="md:hidden flex flex-col gap-2">
+              <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {weekDays.map(day => {
                   const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                   const isSelected = day.dateStr === selectedMobileDay;
@@ -1691,9 +1688,9 @@ export default function App() {
                     <button
                       key={day.dateStr}
                       onClick={() => setSelectedMobileDay(day.dateStr)}
-                      className={`shrink-0 flex flex-col items-center justify-center px-3 py-2 rounded-xl border transition min-w-[58px] ${
+                      className={`shrink-0 flex flex-col items-center justify-center px-2.5 py-1.5 rounded-lg border transition min-w-[50px] ${
                         isSelected
-                          ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg'
+                          ? 'bg-emerald-600 border-emerald-400 text-white shadow-md'
                           : isToday
                           ? 'bg-emerald-950/60 border-emerald-700 text-emerald-200'
                           : 'bg-[#02180d] border-emerald-900 text-emerald-300'
@@ -1707,7 +1704,7 @@ export default function App() {
                 })}
               </div>
 
-              <div className="space-y-2">
+              <div className="flex flex-col gap-1.5">
                 {filteredOperators.map(op => {
                   const cellKey = `${op.id}_${selectedMobileDay}`;
                   const shiftCode = scheduleData[cellKey] || 'DES';
@@ -1728,18 +1725,26 @@ export default function App() {
                           setSelectedCell({ operatorId: op.id, dateStr: selectedMobileDay, currentShift: shiftCode });
                         }
                       }}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition ${shift.color} ${
+                      className={`w-full flex items-center gap-2.5 p-2 rounded-lg border text-left ${shift.color} ${
                         isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60' : ''
-                      } ${!editable && !isLockedByAbsence ? 'opacity-60' : 'active:scale-[0.98]'}`}
+                      } ${!editable && !isLockedByAbsence ? 'opacity-60' : ''}`}
+                      style={{
+                        transform: 'translateZ(0)',
+                        WebkitBackfaceVisibility: 'hidden',
+                        backfaceVisibility: 'hidden'
+                      }}
                     >
-                      <div className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border ${shift.color}`}>
-                        <IconComp className="w-5 h-5" />
+                      <div
+                        className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center border ${shift.color}`}
+                        style={{ transform: 'translateZ(0)' }}
+                      >
+                        <IconComp className="w-4 h-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-bold text-sm truncate">{op.name}</div>
-                        <div className="text-[10px] opacity-80 truncate">{op.id} · {op.zone}</div>
+                        <div className="font-bold text-[13px] break-words leading-tight">{op.name}</div>
+                        <div className="text-[10px] opacity-80 break-words leading-tight">{op.id} · {op.zone}</div>
                       </div>
-                      <div className="shrink-0 flex items-center gap-1.5">
+                      <div className="shrink-0 flex items-center gap-1">
                         <span className="font-extrabold text-sm">{shift.code}</span>
                         {(isLockedByAbsence || isHistoricalWeek) && (
                           <Lock className={`w-3.5 h-3.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
@@ -1750,7 +1755,7 @@ export default function App() {
                 })}
 
                 {filteredOperators.length === 0 && (
-                  <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
+                  <div className="bg-[#002812] border border-emerald-800/80 rounded-xl p-8 text-center">
                     {operators.length === 0 ? (
                       <>
                         <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
@@ -1879,7 +1884,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap">
+            <div className="flex items-center justify-center gap-1.5 flex-wrap">
               {isCurrentWeek ? (
                 <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
                   <span className="relative flex h-2 w-2 shrink-0">
@@ -1890,7 +1895,7 @@ export default function App() {
                   <div className="min-w-0">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-300 leading-none">En vivo</div>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-sm sm:text-base font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
+                      <span className="text-sm font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
                       <span className="text-[9px] text-emerald-400 font-mono leading-none hidden sm:inline">{formatTimeLocal(now)}</span>
                     </div>
                   </div>
@@ -1900,7 +1905,7 @@ export default function App() {
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <div>
                     <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none">Resumen</div>
-                    <div className="text-[10px] sm:text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
+                    <div className="text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
                   </div>
                 </div>
               )}
@@ -2388,12 +2393,12 @@ export default function App() {
                       <button
                         key={c.id}
                         onClick={() => handleReassign(c.id)}
-                        className={`w-full text-left p-3 rounded-xl border ${borderColor} ${bgColor} hover:scale-[1.01] active:scale-[0.99] transition-all`}
+                        className={`w-full text-left p-3 rounded-xl border ${borderColor} ${bgColor}`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-white text-sm truncate">{c.name}</span>
+                              <span className="font-bold text-white text-sm">{c.name}</span>
                               {best && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-700 text-white">ÓPTIMO</span>}
                               {ok && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-700 text-white">ACEPTABLE</span>}
                               {bad && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-700 text-white">NO REC.</span>}
@@ -2507,6 +2512,97 @@ export default function App() {
                 <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Enviar</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {exportPreview && (
+        <div className="fixed inset-0 bg-black z-[200] flex flex-col">
+          <div className="p-3 bg-[#003818] border-b border-emerald-700 flex justify-between items-center shrink-0">
+            <div className="min-w-0">
+              <h3 className="text-white font-bold text-sm truncate">
+                {exportPreview.isPdf ? 'Guardar PDF' : 'Guardar imagen'}
+              </h3>
+              <p className="text-[10px] text-emerald-300 truncate">{exportPreview.filename}</p>
+            </div>
+            <button
+              onClick={() => setExportPreview(null)}
+              className="p-1.5 text-emerald-400 hover:text-white shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-auto flex items-center justify-center p-3 bg-[#021f12]">
+            {exportPreview.isPdf ? (
+              <div className="text-center px-4">
+                <div className="w-20 h-20 rounded-2xl bg-red-950 border border-red-700/60 flex items-center justify-center mx-auto mb-4">
+                  <FileText className="w-10 h-10 text-red-300" />
+                </div>
+                <p className="text-white font-bold text-base mb-1">PDF generado</p>
+                <p className="text-emerald-300 text-xs break-all">{exportPreview.filename}</p>
+                <p className="text-emerald-500 text-[11px] mt-4 max-w-xs mx-auto">
+                  Toca <span className="font-bold text-emerald-300">"Compartir"</span> abajo para guardarlo en Archivos, o compartirlo por WhatsApp/correo.
+                </p>
+              </div>
+            ) : (
+              <img
+                src={exportPreview.dataUrl}
+                alt="Preview"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              />
+            )}
+          </div>
+
+          <div className="p-3 bg-[#003818] border-t border-emerald-700 space-y-2 shrink-0">
+            {!exportPreview.isPdf && (
+              <div className="bg-emerald-950/60 border border-emerald-700/60 rounded-lg px-3 py-2 text-center">
+                <p className="text-[11px] text-emerald-200 leading-snug">
+                  💡 <span className="font-bold">Mantén presionada la imagen</span> para guardarla en tu galería
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={async () => {
+                  if (navigator.share && navigator.canShare) {
+                    try {
+                      const file = new File([exportPreview.blob], exportPreview.filename, { type: exportPreview.mimeType });
+                      if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: exportPreview.filename });
+                        setExportPreview(null);
+                        pushToast('success', 'Compartido');
+                      } else {
+                        pushToast('warning', 'Tu navegador no permite compartir este archivo');
+                      }
+                    } catch (err) {
+                      if (err.name !== 'AbortError') {
+                        pushToast('error', 'No se pudo compartir');
+                      }
+                    }
+                  } else {
+                    pushToast('warning', 'Compartir no está disponible en este navegador');
+                  }
+                }}
+                className="py-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+              >
+                <Share2 className="w-4 h-4" />
+                Compartir
+              </button>
+
+              <button
+                onClick={() => {
+                  forceDownload(exportPreview.blob, exportPreview.filename);
+                  pushToast('info', 'Si no se descarga, mantén presionada la imagen');
+                  setExportPreview(null);
+                }}
+                className="py-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+              >
+                <Download className="w-4 h-4" />
+                Descargar
+              </button>
+            </div>
           </div>
         </div>
       )}

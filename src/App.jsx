@@ -46,7 +46,8 @@ import {
   TrendingUp,
   CalendarDays,
   Users2,
-  ShieldCheck
+  ShieldCheck,
+  Share2
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -194,14 +195,14 @@ function Toast({ toast, onDismiss, onUndo }) {
   );
 }
 
-// ✅ Detecta dispositivo móvil REAL por userAgent (no por tamaño de pantalla)
+// ✅ Detectar móvil por userAgent
 const isMobileDevice = () => {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
 };
 
-// ✅ Descarga robusta que funciona en desktop y móvil
+// ✅ Descarga robusta (usada en desktop y como fallback)
 const forceDownload = (blob, filename) => {
   if (typeof navigator !== 'undefined' && navigator.msSaveBlob) {
     navigator.msSaveBlob(blob, filename);
@@ -232,27 +233,6 @@ const forceDownload = (blob, filename) => {
       } catch (err) { /* no-op */ }
     }, 1500);
   }, 50);
-};
-
-// ✅ Helper: en móvil → Share, en desktop → Download
-const downloadOrShareFile = async (blob, filename, mimeType, { allowShare = true } = {}) => {
-  if (allowShare && isMobileDevice() && navigator.share && navigator.canShare) {
-    try {
-      const file = new File([blob], filename, { type: mimeType });
-      if (navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: filename });
-        return { method: 'share' };
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        return { method: 'cancelled' };
-      }
-      console.warn('Share API falló, usando descarga:', err);
-    }
-  }
-
-  forceDownload(blob, filename);
-  return { method: 'download' };
 };
 
 // ✅ dataURL → Blob
@@ -408,6 +388,10 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const exportMenuRef = useRef(null);
 
+  // ✅ Preview modal (para móvil)
+  const [exportPreview, setExportPreview] = useState(null);
+  // { format, blob, dataUrl, filename, mimeType, isPdf }
+
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 30000);
@@ -464,6 +448,7 @@ export default function App() {
     }
   };
 
+  // ✅ Móvil: muestra preview | Desktop: descarga directa
   const handleExport = async (format) => {
     if (!scheduleRef.current) return;
     setIsExporting(true);
@@ -473,26 +458,36 @@ export default function App() {
       await loadExportLibraries();
       const element = scheduleRef.current;
       const canvas = await window.html2canvas(element, {
-        scale: isMobileDevice() ? 1.5 : 2,
+        scale: 2,
         backgroundColor: '#002812',
         useCORS: true,
         logging: false,
         windowWidth: element.scrollWidth + 80
       });
-      const fileName = `Horario_Semanal_${currentWeekStart}`;
+      const baseName = `Horario_Semanal_${currentWeekStart}`;
+      const mobile = isMobileDevice();
 
-      if (format === 'png') {
-        const dataUrl = canvas.toDataURL('image/png');
+      if (format === 'png' || format === 'jpg') {
+        const dataUrl = format === 'png'
+          ? canvas.toDataURL('image/png')
+          : canvas.toDataURL('image/jpeg', 0.95);
         const blob = dataURLtoBlob(dataUrl);
-        const result = await downloadOrShareFile(blob, `${fileName}.png`, 'image/png');
-        if (result.method === 'share') pushToast('success', 'Horario compartido');
-        else if (result.method === 'download') pushToast('success', 'Horario descargado');
-      } else if (format === 'jpg') {
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        const blob = dataURLtoBlob(dataUrl);
-        const result = await downloadOrShareFile(blob, `${fileName}.jpg`, 'image/jpeg');
-        if (result.method === 'share') pushToast('success', 'Horario compartido');
-        else if (result.method === 'download') pushToast('success', 'Horario descargado');
+        const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
+        const filename = `${baseName}.${format}`;
+
+        if (mobile) {
+          setExportPreview({
+            format,
+            blob,
+            dataUrl,
+            filename,
+            mimeType,
+            isPdf: false
+          });
+        } else {
+          forceDownload(blob, filename);
+          pushToast('success', `Horario ${format.toUpperCase()} descargado`);
+        }
       } else if (format === 'pdf') {
         const imgData = canvas.toDataURL('image/png');
         const { jsPDF } = window.jspdf;
@@ -526,13 +521,25 @@ export default function App() {
         pdf.text(`Exportado el: ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 12, pdfHeight - 5);
 
         const pdfBlob = pdf.output('blob');
-        const result = await downloadOrShareFile(pdfBlob, `${fileName}.pdf`, 'application/pdf');
-        if (result.method === 'share') pushToast('success', 'PDF compartido');
-        else if (result.method === 'download') pushToast('success', 'PDF descargado');
+        const filename = `${baseName}.pdf`;
+
+        if (mobile) {
+          setExportPreview({
+            format: 'pdf',
+            blob: pdfBlob,
+            dataUrl: null,
+            filename,
+            mimeType: 'application/pdf',
+            isPdf: true
+          });
+        } else {
+          forceDownload(pdfBlob, filename);
+          pushToast('success', 'PDF descargado');
+        }
       }
     } catch (error) {
       console.error('Error al exportar horario:', error);
-      pushToast('error', 'No se pudo generar la descarga.');
+      pushToast('error', 'No se pudo generar el archivo.');
     } finally {
       setIsExporting(false);
     }
@@ -1330,9 +1337,21 @@ export default function App() {
       pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
 
       const pdfBlob = pdf.output('blob');
-      const result = await downloadOrShareFile(pdfBlob, `Reporte_Ejecutivo_${currentWeekStart}.pdf`, 'application/pdf');
-      if (result.method === 'share') pushToast('success', 'Reporte compartido');
-      else if (result.method === 'download') pushToast('success', 'Reporte descargado');
+      const filename = `Reporte_Ejecutivo_${currentWeekStart}.pdf`;
+
+      if (isMobileDevice()) {
+        setExportPreview({
+          format: 'pdf',
+          blob: pdfBlob,
+          dataUrl: null,
+          filename,
+          mimeType: 'application/pdf',
+          isPdf: true
+        });
+      } else {
+        forceDownload(pdfBlob, filename);
+        pushToast('success', 'Reporte descargado');
+      }
     } catch (error) {
       console.error('Error al generar reporte:', error);
       pushToast('error', 'No se pudo generar el reporte');
@@ -2507,6 +2526,99 @@ export default function App() {
                 <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Enviar</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL DE PREVIEW — solo en móvil */}
+      {exportPreview && (
+        <div className="fixed inset-0 bg-black z-[200] flex flex-col">
+          <div className="p-3 bg-[#003818] border-b border-emerald-700 flex justify-between items-center shrink-0">
+            <div className="min-w-0">
+              <h3 className="text-white font-bold text-sm truncate">
+                {exportPreview.isPdf ? 'Guardar PDF' : 'Guardar imagen'}
+              </h3>
+              <p className="text-[10px] text-emerald-300 truncate">{exportPreview.filename}</p>
+            </div>
+            <button
+              onClick={() => setExportPreview(null)}
+              className="p-1.5 text-emerald-400 hover:text-white shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-auto flex items-center justify-center p-3 bg-[#021f12]">
+            {exportPreview.isPdf ? (
+              <div className="text-center px-4">
+                <div className="w-20 h-20 rounded-2xl bg-red-950 border border-red-700/60 flex items-center justify-center mx-auto mb-4">
+                  <FileText className="w-10 h-10 text-red-300" />
+                </div>
+                <p className="text-white font-bold text-base mb-1">PDF generado</p>
+                <p className="text-emerald-300 text-xs break-all">{exportPreview.filename}</p>
+                <p className="text-emerald-500 text-[11px] mt-4 max-w-xs mx-auto">
+                  Toca <span className="font-bold text-emerald-300">"Compartir"</span> abajo para guardarlo en Archivos, o compartirlo por WhatsApp/correo.
+                </p>
+              </div>
+            ) : (
+              <img
+                src={exportPreview.dataUrl}
+                alt="Preview"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl select-auto"
+                style={{ WebkitTouchCallout: 'default', WebkitUserSelect: 'auto' }}
+              />
+            )}
+          </div>
+
+          <div className="p-3 bg-[#003818] border-t border-emerald-700 space-y-2 shrink-0">
+            {!exportPreview.isPdf && (
+              <div className="bg-emerald-950/60 border border-emerald-700/60 rounded-lg px-3 py-2 text-center">
+                <p className="text-[11px] text-emerald-200 leading-snug">
+                  💡 <span className="font-bold">Mantén presionada la imagen</span> para guardarla en tu galería
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={async () => {
+                  if (navigator.share && navigator.canShare) {
+                    try {
+                      const file = new File([exportPreview.blob], exportPreview.filename, { type: exportPreview.mimeType });
+                      if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: exportPreview.filename });
+                        setExportPreview(null);
+                        pushToast('success', 'Compartido');
+                      } else {
+                        pushToast('warning', 'Tu navegador no permite compartir este archivo');
+                      }
+                    } catch (err) {
+                      if (err.name !== 'AbortError') {
+                        pushToast('error', 'No se pudo compartir');
+                      }
+                    }
+                  } else {
+                    pushToast('warning', 'Compartir no está disponible en este navegador');
+                  }
+                }}
+                className="py-3 bg-emerald-700 hover:bg-emerald-600 active:scale-[0.98] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+              >
+                <Share2 className="w-4 h-4" />
+                Compartir
+              </button>
+
+              <button
+                onClick={() => {
+                  forceDownload(exportPreview.blob, exportPreview.filename);
+                  pushToast('info', 'Si no se descarga, mantén presionada la imagen');
+                  setExportPreview(null);
+                }}
+                className="py-3 bg-emerald-700 hover:bg-emerald-600 active:scale-[0.98] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+              >
+                <Download className="w-4 h-4" />
+                Descargar
+              </button>
+            </div>
           </div>
         </div>
       )}

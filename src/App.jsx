@@ -27,8 +27,6 @@ import {
   Trash2,
   Lock,
   LogOut,
-  UserCheck,
-  ShieldCheck,
   Layers,
   Loader2,
   Bell,
@@ -43,13 +41,15 @@ import {
   Undo2,
   Info,
   FilterX,
-  UserPlus,
   ArrowRightLeft,
   BarChart3,
   FileSpreadsheet,
   TrendingUp,
   CalendarDays,
-  Users2
+  Users2,
+  DollarSign,
+  ShieldCheck,
+  UserPlus
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -96,7 +96,6 @@ const SHIFT_WINDOWS = {
   N: { start: 22 * 60 + 30,  end: 24 * 60 + 7 * 60,  label: '22:30 - 07:00' }
 };
 
-// ✅ Horas por turno (para el módulo de nómina)
 const SHIFT_HOURS = { M: 8, T: 8, N: 8.5, DES: 0, VAC: 0, INC: 0 };
 
 const getShiftCodeForDate = (date) => {
@@ -136,21 +135,14 @@ const getMondayOfCurrentWeek = (refDate = new Date()) => {
 
 const getLicenseStatusStyle = (expiryDateStr) => {
   if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   const expiryDate = new Date(expiryDateStr + 'T00:00:00');
   const diffTime = expiryDate.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-  if (diffDays < 0) {
-    return 'bg-red-950 text-red-300 border-red-700/80 font-bold';
-  } else if (diffDays <= 30) {
-    return 'bg-amber-950 text-amber-300 border-amber-600/80 font-bold';
-  } else {
-    return 'bg-emerald-950 text-emerald-300 border-emerald-800';
-  }
+  if (diffDays < 0) return 'bg-red-950 text-red-300 border-red-700/80 font-bold';
+  if (diffDays <= 30) return 'bg-amber-950 text-amber-300 border-amber-600/80 font-bold';
+  return 'bg-emerald-950 text-emerald-300 border-emerald-800';
 };
 
 const INDICATOR_ACCENTS = {
@@ -158,7 +150,6 @@ const INDICATOR_ACCENTS = {
   amber:   { bg: 'bg-amber-950/70',   border: 'border-amber-700/60',   text: 'text-amber-300',   value: 'text-amber-100' },
   indigo:  { bg: 'bg-indigo-950/70',  border: 'border-indigo-700/60',  text: 'text-indigo-300',  value: 'text-indigo-100' },
   slate:   { bg: 'bg-slate-900/70',   border: 'border-slate-700/60',   text: 'text-slate-300',   value: 'text-slate-100' },
-  purple:  { bg: 'bg-purple-950/70',  border: 'border-purple-700/60',  text: 'text-purple-300',  value: 'text-purple-100' },
   red:     { bg: 'bg-red-950/70',     border: 'border-red-700/60',     text: 'text-red-300',     value: 'text-red-100' },
   cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-300',    value: 'text-cyan-100' }
 };
@@ -194,10 +185,7 @@ function Toast({ toast, onDismiss, onUndo }) {
       <Icon className={`w-4 h-4 ${s.iconColor} shrink-0`} />
       <span className="text-xs font-semibold flex-1">{toast.message}</span>
       {toast.undoAction && (
-        <button
-          onClick={onUndo}
-          className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition flex items-center gap-1"
-        >
+        <button onClick={onUndo} className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition flex items-center gap-1">
           <Undo2 className="w-3 h-3" />
           Deshacer
         </button>
@@ -209,7 +197,6 @@ function Toast({ toast, onDismiss, onUndo }) {
   );
 }
 
-// ✅ Calcula horas y conteo de días en un rango para un operador
 const calcHoursInRange = (operatorId, fromDate, toDate, scheduleData) => {
   const days = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
   let total = 0;
@@ -229,12 +216,10 @@ const calcHoursInRange = (operatorId, fromDate, toDate, scheduleData) => {
   return { total, days };
 };
 
-// ✅ Encuentra candidatos para cubrir un turno
 const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators, scheduleData, lockedCells) => {
   const target = operators.find(o => o.id === targetOperatorId);
   if (!target) return [];
 
-  // Fecha objetivo y día de la semana (para horas semanales)
   const [y, m, d] = dateStr.split('-').map(Number);
   const targetDate = new Date(y, m - 1, d);
   const dayOfWeek = targetDate.getDay();
@@ -254,7 +239,6 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
     .filter(op => {
       const key = `${op.id}_${dateStr}`;
       const code = scheduleData[key];
-      // Solo operadores libres ese día
       if (lockedCells.has(key)) return false;
       if (code && code !== 'DES') return false;
       return true;
@@ -266,7 +250,6 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
       if (op.zone === target.zone) { score += 50; reasons.push('Misma zona'); }
       if (op.equipment === target.equipment) { score += 30; reasons.push('Mismo equipo'); }
 
-      // Horas de la semana con el nuevo turno
       let weekHours = 0;
       weekDates.forEach(date => {
         const key = `${op.id}_${date}`;
@@ -278,7 +261,6 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
         }
       });
 
-      // Penalizar si excede 48h
       if (weekHours > 48) {
         score -= 40;
         reasons.push(`${weekHours.toFixed(1)}h excede 48h`);
@@ -289,7 +271,6 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
         reasons.push(`${weekHours.toFixed(1)}h esta semana`);
       }
 
-      // Licencia vigente
       if (op.licenseExpiry) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -381,11 +362,9 @@ export default function App() {
     return () => clearInterval(tick);
   }, []);
 
-  // ✅ Estado para reasignación
-  const [reassignModal, setReassignModal] = useState(null); // { operatorId, dateStr }
+  const [reassignModal, setReassignModal] = useState(null);
   const [reassignShift, setReassignShift] = useState('M');
 
-  // ✅ Estado para módulo de horas
   const [hoursStart, setHoursStart] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
@@ -587,11 +566,8 @@ export default function App() {
   const [selectedCell, setSelectedCell] = useState(null);
 
   const [newOp, setNewOp] = useState({
-    name: '',
-    zone: WAREHOUSE_ZONES[1],
-    equipment: FORKLIFT_TYPES[0],
-    shiftPattern: 'Mañana',
-    licenseExpiry: '2027-12-31'
+    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
+    shiftPattern: 'Mañana', licenseExpiry: '2027-12-31'
   });
 
   const [newVac, setNewVac] = useState({
@@ -691,52 +667,42 @@ export default function App() {
     const conflicts = [];
     const currentCode = scheduleData[`${operatorId}_${dateStr}`];
     const op = operators.find(o => o.id === operatorId);
-
     if (currentCode === newShiftCode && !isFullWeek) return conflicts;
-
     if (lockedCells.has(`${operatorId}_${dateStr}`)) {
       conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
       return conflicts;
     }
-
     if (['M', 'T', 'N'].includes(newShiftCode)) {
       const weekDates = weekDays.map(d => d.dateStr);
       let weeklyHours = 0;
-      let newShiftHours = 8;
-      if (newShiftCode === 'N') newShiftHours = 8.5;
-
+      let newShiftHours = newShiftCode === 'N' ? 8.5 : 8;
       weekDates.forEach(date => {
         const key = `${operatorId}_${date}`;
         const code = date === dateStr ? newShiftCode : scheduleData[key];
         if (code === 'M' || code === 'T') weeklyHours += 8;
         else if (code === 'N') weeklyHours += 8.5;
       });
-
       if (weeklyHours + newShiftHours > 48) {
         conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
       }
     }
-
     if (newShiftCode === 'N' && !isFullWeek) {
       const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
       if (currentIdx >= 0) {
         let consecutiveN = 1;
         for (let i = currentIdx - 1; i >= 0; i--) {
           const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
-          if (code === 'N') consecutiveN++;
-          else break;
+          if (code === 'N') consecutiveN++; else break;
         }
         for (let i = currentIdx + 1; i < 7; i++) {
           const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
-          if (code === 'N') consecutiveN++;
-          else break;
+          if (code === 'N') consecutiveN++; else break;
         }
         if (consecutiveN > 5) {
           conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
         }
       }
     }
-
     return conflicts;
   };
 
@@ -774,10 +740,8 @@ export default function App() {
   const handleLogin = (e) => {
     e.preventDefault();
     if (lockoutUntil && Date.now() < lockoutUntil) return;
-
     const email = loginEmail.trim().toLowerCase();
     const user = MOCK_USERS.find(u => u.email.toLowerCase() === email && u.pass === loginPass);
-
     if (user) {
       setCurrentUser(user);
       setLoginError('');
@@ -942,14 +906,12 @@ export default function App() {
     }
   };
 
-  // ✅ Asignación desde reasignación inteligente
   const handleReassign = async (targetOperatorId) => {
     if (!reassignModal) return;
     const shiftCode = reassignShift;
     const newKey = `${targetOperatorId}_${reassignModal.dateStr}`;
     const previousSchedule = { ...scheduleData };
 
-    // Validar de nuevo antes de aplicar
     const conflicts = detectConflicts(targetOperatorId, reassignModal.dateStr, shiftCode, false);
     if (conflicts.length > 0) {
       pushToast('warning', conflicts[0], { duration: 5000 });
@@ -1053,14 +1015,8 @@ export default function App() {
   const handleCreateVacationRequest = async (e) => {
     e.preventDefault();
     const op = operators.find(o => o.id === newVac.operatorId);
-    if (!op) {
-      setVacDateError('Selecciona un operador válido.');
-      return;
-    }
-    if (!newVac.startDate || !newVac.endDate) {
-      setVacDateError('Selecciona ambas fechas.');
-      return;
-    }
+    if (!op) { setVacDateError('Selecciona un operador válido.'); return; }
+    if (!newVac.startDate || !newVac.endDate) { setVacDateError('Selecciona ambas fechas.'); return; }
     if (newVac.endDate < newVac.startDate) {
       setVacDateError('La fecha de fin no puede ser anterior a la fecha de inicio.');
       return;
@@ -1168,7 +1124,6 @@ export default function App() {
     }
   };
 
-  // ✅ Exportar CSV de horas
   const exportHoursCSV = () => {
     const rows = [
       ['Operador', 'ID', 'Zona', 'Equipo', 'Turnos M', 'Turnos T', 'Turnos N', 'Días DES', 'Días VAC', 'Días INC', 'Horas Totales']
@@ -1196,7 +1151,6 @@ export default function App() {
     pushToast('success', `CSV exportado con ${targetOps.length} operadores`);
   };
 
-  // ✅ Generar PDF ejecutivo
   const handleExportExecutivePDF = async () => {
     setIsExporting(true);
     try {
@@ -1206,11 +1160,9 @@ export default function App() {
       const W = pdf.internal.pageSize.getWidth();
       const H = pdf.internal.pageSize.getHeight();
 
-      // Fondo
       pdf.setFillColor(2, 31, 18);
       pdf.rect(0, 0, W, H, 'F');
 
-      // Header
       pdf.setFillColor(0, 71, 31);
       pdf.rect(0, 0, W, 25, 'F');
       pdf.setTextColor(255, 255, 255);
@@ -1220,7 +1172,6 @@ export default function App() {
       pdf.setTextColor(167, 243, 208);
       pdf.text(`Semana del ${weekDays[0].dayNumber} ${weekDays[0].monthName} al ${weekDays[6].dayNumber} ${weekDays[6].monthName}`, 14, 19);
 
-      // KPIs
       const totalOps = operators.length;
       const licenseOk = operators.filter(op => {
         if (!op.licenseExpiry) return false;
@@ -1230,10 +1181,7 @@ export default function App() {
         return exp >= today;
       }).length;
 
-      // Cobertura y ausentismo promedio de la semana
-      let totalWorked = 0;
-      let totalAbsent = 0;
-      let totalSlots = 0;
+      let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
       weekDays.forEach(day => {
         operators.forEach(op => {
           const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
@@ -1248,7 +1196,7 @@ export default function App() {
       const kpis = [
         { label: 'Cobertura', value: `${coveragePct}%`, color: [16, 185, 129] },
         { label: 'Ausentismo', value: `${absentPct}%`, color: [239, 68, 68] },
-        { label: 'Licencias vigentes', value: `${licenseOk}/${totalOps}`, color: [59, 130, 246] },
+        { label: 'Licencias OK', value: `${licenseOk}/${totalOps}`, color: [59, 130, 246] },
         { label: 'Operadores', value: `${totalOps}`, color: [168, 85, 247] }
       ];
 
@@ -1259,10 +1207,10 @@ export default function App() {
         const x = 14 + i * (kpiW + 3);
         pdf.setFillColor(2, 40, 18);
         pdf.roundedRect(x, kpiY, kpiW, kpiH, 2, 2, 'F');
-        pdf.setDrawColor(...kpi.color);
+        pdf.setDrawColor(kpi.color[0], kpi.color[1], kpi.color[2]);
         pdf.setLineWidth(0.5);
         pdf.roundedRect(x, kpiY, kpiW, kpiH, 2, 2, 'S');
-        pdf.setTextColor(...kpi.color);
+        pdf.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
         pdf.setFontSize(7);
         pdf.text(kpi.label.toUpperCase(), x + 3, kpiY + 5);
         pdf.setTextColor(255, 255, 255);
@@ -1270,7 +1218,6 @@ export default function App() {
         pdf.text(kpi.value, x + 3, kpiY + 15);
       });
 
-      // Tabla: cobertura por día
       let y = kpiY + kpiH + 10;
       pdf.setTextColor(167, 243, 208);
       pdf.setFontSize(11);
@@ -1280,11 +1227,11 @@ export default function App() {
       pdf.setFontSize(8);
       pdf.setTextColor(148, 163, 184);
       pdf.text('Día', 16, y);
-      pdf.text('Mañana', 50, y);
-      pdf.text('Tarde', 80, y);
-      pdf.text('Noche', 110, y);
-      pdf.text('Descanso', 140, y);
-      pdf.text('Ausencias', 172, y);
+      pdf.text('M', 60, y);
+      pdf.text('T', 85, y);
+      pdf.text('N', 110, y);
+      pdf.text('DES', 135, y);
+      pdf.text('Ausencias', 165, y);
       y += 4;
       pdf.setDrawColor(30, 100, 60);
       pdf.line(14, y, W - 14, y);
@@ -1298,16 +1245,15 @@ export default function App() {
         });
         pdf.setTextColor(255, 255, 255);
         pdf.text(`${day.dayName} ${day.dayNumber}`, 16, y);
-        pdf.text(String(counts.M), 50, y);
-        pdf.text(String(counts.T), 80, y);
+        pdf.text(String(counts.M), 60, y);
+        pdf.text(String(counts.T), 85, y);
         pdf.text(String(counts.N), 110, y);
-        pdf.text(String(counts.DES), 140, y);
+        pdf.text(String(counts.DES), 135, y);
         pdf.setTextColor(239, 68, 68);
-        pdf.text(String(counts.VAC + counts.INC), 172, y);
+        pdf.text(String(counts.VAC + counts.INC), 165, y);
         y += 6;
       });
 
-      // Tabla: horas por operador (esta semana)
       y += 6;
       pdf.setTextColor(167, 243, 208);
       pdf.setFontSize(11);
@@ -1321,7 +1267,7 @@ export default function App() {
       pdf.text('M', 138, y);
       pdf.text('T', 148, y);
       pdf.text('N', 158, y);
-      pdf.text('Total h', 175, y);
+      pdf.text('Total', 175, y);
       y += 4;
       pdf.line(14, y, W - 14, y);
       y += 5;
@@ -1341,7 +1287,7 @@ export default function App() {
       }).sort((a, b) => b.totalH - a.totalH);
 
       sortedByHours.forEach(op => {
-        if (y > H - 25) return; // no desbordar
+        if (y > H - 25) return;
         pdf.setTextColor(255, 255, 255);
         pdf.text(op.name.substring(0, 30), 16, y);
         pdf.setTextColor(148, 163, 184);
@@ -1355,7 +1301,6 @@ export default function App() {
         y += 5.5;
       });
 
-      // Footer
       pdf.setFontSize(7);
       pdf.setTextColor(100, 116, 139);
       pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
@@ -1370,9 +1315,6 @@ export default function App() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // PANTALLA DE LOGIN
-  // ─────────────────────────────────────────────────────────────
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
@@ -1392,7 +1334,6 @@ export default function App() {
                 {loginError}
               </div>
             )}
-
             <div>
               <label className="block text-emerald-300 font-bold mb-1">Correo Electrónico</label>
               <input
@@ -1403,7 +1344,6 @@ export default function App() {
                 className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm"
               />
             </div>
-
             <div>
               <label className="block text-emerald-300 font-bold mb-1">Contraseña</label>
               <div className="relative">
@@ -1425,7 +1365,6 @@ export default function App() {
                 </button>
               </div>
             </div>
-
             <button
               type="submit"
               disabled={!!lockoutUntil}
@@ -1464,8 +1403,7 @@ export default function App() {
             onClick={loadCloudData}
             className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-2"
           >
-            <RefreshCw className="w-4 h-4" />
-            Reintentar
+            <RefreshCw className="w-4 h-4" /> Reintentar
           </button>
           <button
             onClick={handleLogout}
@@ -1481,7 +1419,6 @@ export default function App() {
   const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
   const ActiveShiftIcon = SHIFT_TYPES[activeShiftCode].icon;
 
-  // ✅ Candidatos para reasignación
   const reassignTarget = reassignModal ? operators.find(o => o.id === reassignModal.operatorId) : null;
   const reassignCandidates = reassignModal
     ? getSuitableReplacements(reassignModal.operatorId, reassignModal.dateStr, reassignShift, operators, scheduleData, lockedCells)
@@ -1595,7 +1532,7 @@ export default function App() {
               <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2 flex items-center justify-center gap-2">
                 <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
                 <p className="text-[10px] text-purple-200">
-                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s) por ausencias aprobadas en esta semana. <span className="text-purple-300">Haz clic en uno para buscar reemplazo.</span>
+                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s). <span className="text-purple-300">Haz clic en uno para buscar reemplazo.</span>
                 </p>
               </div>
             )}
@@ -1606,7 +1543,7 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const prevWeek = new Date(y, m - 1, d - 7);
                   setCurrentWeekStart(formatDateLocal(prevWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana anterior"><ChevronLeft className="w-4 h-4"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
 
                 <div className="text-xs font-bold text-white bg-[#02180d] px-3 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-2">
                   {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
@@ -1618,16 +1555,14 @@ export default function App() {
                   const [y, m, d] = currentWeekStart.split('-').map(Number);
                   const nextWeek = new Date(y, m - 1, d + 7);
                   setCurrentWeekStart(formatDateLocal(nextWeek));
-                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition" title="Semana siguiente"><ChevronRight className="w-4 h-4"/></button>
+                }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
 
                 {!isCurrentWeek && (
                   <button
                     onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())}
                     className="px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition border border-emerald-500/50 flex items-center gap-1"
-                    title="Volver a la semana actual"
                   >
-                    <Activity className="w-3 h-3" />
-                    Hoy
+                    <Activity className="w-3 h-3" /> Hoy
                   </button>
                 )}
               </div>
@@ -1665,18 +1600,15 @@ export default function App() {
                       ? 'bg-amber-600 border-amber-400 text-white'
                       : 'bg-[#02180d] border-emerald-900 text-emerald-300 hover:bg-emerald-950'
                   }`}
-                  title="Mostrar solo operadores con licencia vencida o por vencer (≤30 días)"
                 >
-                  <AlertCircle className="w-3 h-3" />
-                  Licencias críticas
+                  <AlertCircle className="w-3 h-3" /> Licencias críticas
                 </button>
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={clearAllFilters}
                     className="px-2.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1.5"
                   >
-                    <FilterX className="w-3 h-3" />
-                    Limpiar ({activeFiltersCount})
+                    <FilterX className="w-3 h-3" /> Limpiar ({activeFiltersCount})
                   </button>
                 )}
 
@@ -1686,35 +1618,19 @@ export default function App() {
                     onClick={() => setShowExportMenu(!showExportMenu)}
                     className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 transition border border-emerald-500/50 shadow"
                   >
-                    {isExporting ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Generando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Exportar</span>
-                      </>
-                    )}
+                    {isExporting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /><span>Generando...</span></> : <><Download className="w-3.5 h-3.5" /><span>Exportar</span></>}
                   </button>
-
                   {showExportMenu && (
                     <div className="absolute right-0 mt-2 w-52 bg-[#002e14] border border-emerald-700 rounded-xl shadow-2xl z-50 overflow-hidden text-xs">
-                      <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
-                        Selecciona el formato
-                      </div>
+                      <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Selecciona el formato</div>
                       <button onClick={() => handleExport('png')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition">
-                        <ImageIcon className="w-4 h-4 text-emerald-400" />
-                        <div><div className="font-bold">Imagen PNG</div></div>
+                        <ImageIcon className="w-4 h-4 text-emerald-400" /><div className="font-bold">Imagen PNG</div>
                       </button>
                       <button onClick={() => handleExport('jpg')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
-                        <FileImage className="w-4 h-4 text-amber-400" />
-                        <div><div className="font-bold">Imagen JPG</div></div>
+                        <FileImage className="w-4 h-4 text-amber-400" /><div className="font-bold">Imagen JPG</div>
                       </button>
                       <button onClick={() => handleExport('pdf')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
-                        <FileText className="w-4 h-4 text-red-400" />
-                        <div><div className="font-bold">Documento PDF</div></div>
+                        <FileText className="w-4 h-4 text-red-400" /><div className="font-bold">Documento PDF</div>
                       </button>
                     </div>
                   )}
@@ -1725,40 +1641,26 @@ export default function App() {
             {activeFiltersCount > 0 && (
               <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-3 py-1.5 flex items-center gap-2 text-[10px] text-cyan-200">
                 <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
-                <span>
-                  Mostrando <span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span> operadores
-                  {activeFiltersCount > 1 && ` · ${activeFiltersCount} filtros activos`}
-                </span>
+                <span>Mostrando <span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span> operadores{activeFiltersCount > 1 && ` · ${activeFiltersCount} filtros activos`}</span>
               </div>
             )}
 
             <div
               ref={scheduleRef}
-              className={`bg-[#002812] border rounded-2xl overflow-hidden shadow-2xl p-1 ${
-                isHistoricalWeek ? 'border-slate-700/70 opacity-[0.97]' : 'border-emerald-800/80'
-              }`}
+              className={`bg-[#002812] border rounded-2xl overflow-hidden shadow-2xl p-1 ${isHistoricalWeek ? 'border-slate-700/70 opacity-[0.97]' : 'border-emerald-800/80'}`}
             >
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
                     <tr className={`border-b ${isHistoricalWeek ? 'bg-slate-950/80 border-slate-700/70' : 'bg-[#001f0d] border-emerald-800/80'}`}>
-                      <th className={`py-3 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>
-                        Montacargista / Área
-                      </th>
+                      <th className={`py-3 px-4 text-left text-xs font-bold uppercase w-64 ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-300'}`}>Montacargista / Área</th>
                       {weekDays.map(day => {
                         const isToday = day.dateStr === formatDateLocal(now);
                         return (
-                          <th
-                            key={day.dateStr}
-                            className={`py-3 px-2 text-center border-l ${
-                              isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'
-                            } ${isToday && isCurrentWeek ? 'bg-emerald-900/40' : ''}`}
-                          >
+                          <th key={day.dateStr} className={`py-3 px-2 text-center border-l ${isHistoricalWeek ? 'border-slate-800/60' : 'border-emerald-900/60'} ${isToday && isCurrentWeek ? 'bg-emerald-900/40' : ''}`}>
                             <div className={`text-xs font-bold uppercase ${isHistoricalWeek ? 'text-slate-300' : 'text-emerald-200'}`}>{day.dayName}</div>
                             <div className={`text-base font-extrabold ${day.isWeekend ? 'text-red-400' : 'text-white'}`}>{day.dayNumber}</div>
-                            {isToday && isCurrentWeek && (
-                              <div className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">Hoy</div>
-                            )}
+                            {isToday && isCurrentWeek && <div className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">Hoy</div>}
                           </th>
                         );
                       })}
@@ -1788,14 +1690,11 @@ export default function App() {
                           else if (!canEditShifts) tooltip = 'No tienes permisos para editar turnos';
 
                           return (
-                            <td
-                              key={day.dateStr}
-                              className={`p-1.5 text-center border-l border-emerald-900/40 ${isToday ? 'bg-emerald-950/30' : ''}`}
-                            >
+                            <td key={day.dateStr} className={`p-1.5 text-center border-l border-emerald-900/40 ${isToday ? 'bg-emerald-950/30' : ''}`}>
                               <button
                                 disabled={!editable && !isLockedByAbsence}
                                 onClick={() => {
-                                  if (isLockedByAbsence && !isHistoricalWeek) {
+                                  if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) {
                                     setReassignModal({ operatorId: op.id, dateStr: day.dateStr });
                                     setReassignShift('M');
                                   } else if (editable) {
@@ -1804,31 +1703,17 @@ export default function App() {
                                 }}
                                 title={tooltip}
                                 className={`relative w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${
-                                  !editable && !isLockedByAbsence
-                                    ? 'cursor-not-allowed'
-                                    : 'hover:scale-105 transition-transform'
-                                } ${
-                                  isLockedByAbsence && !isHistoricalWeek
-                                    ? 'ring-2 ring-purple-400/60 shadow-purple-900/40 cursor-pointer'
-                                    : ''
-                                } ${
+                                  !editable && !isLockedByAbsence ? 'cursor-not-allowed' : 'hover:scale-105 transition-transform'
+                                } ${isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60 shadow-purple-900/40 cursor-pointer' : ''} ${
                                   isHistoricalWeek ? 'grayscale-[0.35] opacity-90' : ''
-                                } ${
-                                  isCurrentShiftForMe
-                                    ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg'
-                                    : ''
-                                } ${
-                                  isFlashing
-                                    ? 'ring-2 ring-white/80 shadow-white/40 shadow-lg animate-pulse'
-                                    : ''
+                                } ${isCurrentShiftForMe ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg' : ''} ${
+                                  isFlashing ? 'ring-2 ring-white/80 shadow-white/40 shadow-lg animate-pulse' : ''
                                 }`}
                               >
                                 <IconComp className="w-3.5 h-3.5" />
                                 <span>{shift.code}</span>
                                 {(isLockedByAbsence || isHistoricalWeek) && (
-                                  <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${
-                                    isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'
-                                  }`} />
+                                  <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
                                 )}
                               </button>
                             </td>
@@ -1852,8 +1737,7 @@ export default function App() {
                                 onClick={clearAllFilters}
                                 className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
                               >
-                                <FilterX className="w-3.5 h-3.5" />
-                                Limpiar filtros
+                                <FilterX className="w-3.5 h-3.5" /> Limpiar filtros
                               </button>
                             </>
                           )}
@@ -1890,7 +1774,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-
               <MiniIndicator icon={Sunrise} label="Mañana" value={shiftStats.M} accent="emerald" />
               <MiniIndicator icon={Sun} label="Tarde" value={shiftStats.T} accent="amber" />
               <MiniIndicator icon={Moon} label="Noche" value={shiftStats.N} accent="indigo" />
@@ -1914,9 +1797,7 @@ export default function App() {
                       </h3>
                       <ul className="mt-2 space-y-1 text-xs text-amber-100/90">
                         {licenseAlerts.map(a => (
-                          <li key={a.id}>
-                            <span className="font-bold">{a.name}</span> ({a.id}) — {a.expired ? `vencida hace ${Math.abs(a.diffDays)} día(s)` : `vence en ${a.diffDays} día(s)`} ({a.licenseExpiry})
-                          </li>
+                          <li key={a.id}><span className="font-bold">{a.name}</span> ({a.id}) — {a.expired ? `vencida hace ${Math.abs(a.diffDays)} día(s)` : `vence en ${a.diffDays} día(s)`} ({a.licenseExpiry})</li>
                         ))}
                       </ul>
                     </div>
@@ -1934,10 +1815,7 @@ export default function App() {
               {canManageOperators && (
                 <button onClick={() => {
                   setEditingOperator(null);
-                  setNewOp({
-                    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
-                    shiftPattern: 'Mañana', licenseExpiry: formatDateLocal(new Date())
-                  });
+                  setNewOp({ name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], shiftPattern: 'Mañana', licenseExpiry: formatDateLocal(new Date()) });
                   setIsAddOperatorOpen(true);
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
@@ -1974,9 +1852,7 @@ export default function App() {
                         <div className="flex justify-between"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
                         <div className="flex justify-between items-center pt-1">
                           <span>Licencia DC3:</span>
-                          <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>
-                            {op.licenseExpiry || 'N/A'}
-                          </span>
+                          <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
                         </div>
                       </div>
                     </div>
@@ -2036,9 +1912,9 @@ export default function App() {
                       <td className="p-3.5 text-center">
                         {req.status === 'Pendiente' && canApproveVacations ? (
                           <div className="flex justify-center space-x-1">
-                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar"><Check className="w-4 h-4"/></button>
-                            <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition" title="Rechazar"><X className="w-4 h-4"/></button>
-                            <button onClick={() => handleCancelVacationRequest(req.id)} className="p-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition" title="Cancelar"><Trash2 className="w-4 h-4"/></button>
+                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition"><Check className="w-4 h-4"/></button>
+                            <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition"><X className="w-4 h-4"/></button>
+                            <button onClick={() => handleCancelVacationRequest(req.id)} className="p-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition"><Trash2 className="w-4 h-4"/></button>
                           </div>
                         ) : req.status === 'Aprobado' && canApproveVacations ? (
                           <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="px-2 py-1 bg-red-900 hover:bg-red-800 text-red-100 rounded-lg transition text-[10px] font-bold flex items-center gap-1 mx-auto">
@@ -2064,7 +1940,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ✅ NUEVO: Módulo de Horas / Nómina */}
         {activeTab === 'hours' && canViewHours && (
           <div className="space-y-5">
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
@@ -2083,38 +1958,22 @@ export default function App() {
                   disabled={operators.length === 0}
                   className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition border border-emerald-500/50"
                 >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  Exportar CSV
+                  <FileSpreadsheet className="w-4 h-4" /> Exportar CSV
                 </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Desde</label>
-                  <input
-                    type="date"
-                    value={hoursStart}
-                    onChange={(e) => setHoursStart(e.target.value)}
-                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
-                  />
+                  <input type="date" value={hoursStart} onChange={(e) => setHoursStart(e.target.value)} className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Hasta</label>
-                  <input
-                    type="date"
-                    value={hoursEnd}
-                    min={hoursStart}
-                    onChange={(e) => setHoursEnd(e.target.value)}
-                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
-                  />
+                  <input type="date" value={hoursEnd} min={hoursStart} onChange={(e) => setHoursEnd(e.target.value)} className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Zona</label>
-                  <select
-                    value={hoursZoneFilter}
-                    onChange={(e) => setHoursZoneFilter(e.target.value)}
-                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none"
-                  >
+                  <select value={hoursZoneFilter} onChange={(e) => setHoursZoneFilter(e.target.value)} className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none">
                     {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                   </select>
                 </div>
@@ -2143,9 +2002,9 @@ export default function App() {
                     <tr className="bg-[#001f0d] text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                       <th className="p-3">Operador</th>
                       <th className="p-3">Zona</th>
-                      <th className="p-3 text-center">Días M</th>
-                      <th className="p-3 text-center">Días T</th>
-                      <th className="p-3 text-center">Días N</th>
+                      <th className="p-3 text-center">M</th>
+                      <th className="p-3 text-center">T</th>
+                      <th className="p-3 text-center">N</th>
                       <th className="p-3 text-center">DES</th>
                       <th className="p-3 text-center">VAC</th>
                       <th className="p-3 text-center">INC</th>
@@ -2169,9 +2028,7 @@ export default function App() {
                           <td className="p-3 text-center text-slate-400">{stats.days.DES}</td>
                           <td className="p-3 text-center text-purple-300">{stats.days.VAC}</td>
                           <td className="p-3 text-center text-red-300">{stats.days.INC}</td>
-                          <td className={`p-3 text-right font-extrabold text-sm ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>
-                            {stats.total.toFixed(1)}h
-                          </td>
+                          <td className={`p-3 text-right font-extrabold text-sm ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{stats.total.toFixed(1)}h</td>
                         </tr>
                       );
                     })}
@@ -2189,13 +2046,12 @@ export default function App() {
             </div>
 
             <div className="text-[10px] text-emerald-500/70 text-center">
-              <p>Reglas de cálculo: Mañana = 8h · Tarde = 8h · Noche = 8.5h · Descanso/Ausencia = 0h</p>
+              <p>Reglas: Mañana = 8h · Tarde = 8h · Noche = 8.5h · Descanso/Ausencia = 0h</p>
               <p>Un total semanal por encima de 48h se marca en rojo como advertencia.</p>
             </div>
           </div>
         )}
 
-        {/* ✅ NUEVO: Módulo de Reportes */}
         {activeTab === 'reports' && canViewReports && (
           <div className="space-y-5">
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
@@ -2218,7 +2074,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* KPI Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {(() => {
                 let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
@@ -2272,14 +2127,13 @@ export default function App() {
                         <span className="text-[10px] font-bold uppercase text-purple-300">Plantilla</span>
                       </div>
                       <div className="text-2xl font-extrabold text-purple-100">{operators.length}</div>
-                      <div className="text-[10px] text-purple-400/70 mt-0.5">operadores registrados</div>
+                      <div className="text-[10px] text-purple-400/70 mt-0.5">operadores</div>
                     </div>
                   </>
                 );
               })()}
             </div>
 
-            {/* Cobertura por día */}
             <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5">
               <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-emerald-400" />
@@ -2318,4 +2172,293 @@ export default function App() {
                           <td className="p-2 text-center text-indigo-300 font-bold">{counts.N}</td>
                           <td className="p-2 text-center text-slate-400">{counts.DES}</td>
                           <td className="p-2 text-center text-purple-300">{counts.VAC}</td>
-                          <td className="p-2 text-center text-red-300">{counts.INC}</
+                          <td className="p-2 text-center text-red-300">{counts.INC}</td>
+                          <td className={`p-2 text-center font-extrabold ${color}`}>{pct}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                Horas por operador (semana actual)
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                      <th className="p-2">Operador</th>
+                      <th className="p-2">Zona</th>
+                      <th className="p-2 text-center">M</th>
+                      <th className="p-2 text-center">T</th>
+                      <th className="p-2 text-center">N</th>
+                      <th className="p-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-900/50">
+                    {operators.map(op => {
+                      const weekDates = weekDays.map(d => d.dateStr);
+                      let totalH = 0;
+                      const c = { M: 0, T: 0, N: 0 };
+                      weekDates.forEach(date => {
+                        const code = scheduleData[`${op.id}_${date}`];
+                        if (code && SHIFT_HOURS[code] !== undefined) {
+                          totalH += SHIFT_HOURS[code];
+                          if (['M', 'T', 'N'].includes(code)) c[code]++;
+                        }
+                      });
+                      const isHigh = totalH > 48;
+                      return (
+                        <tr key={op.id} className="hover:bg-[#003517]/50">
+                          <td className="p-2 font-bold text-white">{op.name}</td>
+                          <td className="p-2 text-emerald-200 text-[11px]">{op.zone}</td>
+                          <td className="p-2 text-center text-emerald-300">{c.M}</td>
+                          <td className="p-2 text-center text-amber-300">{c.T}</td>
+                          <td className="p-2 text-center text-indigo-300">{c.N}</td>
+                          <td className={`p-2 text-right font-extrabold ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{totalH.toFixed(1)}h</td>
+                        </tr>
+                      );
+                    })}
+                    {operators.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {selectedCell && canEditShifts && !isHistoricalWeek && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white">Cambiar Turno</h3>
+                <p className="text-xs text-emerald-300 font-semibold">{selectedOperator?.name || ''}</p>
+                <p className="text-[11px] text-emerald-400/80">Día seleccionado: {selectedCell.dateStr}</p>
+              </div>
+              <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+
+            <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Dom)</span>
+              </div>
+              <input
+                type="checkbox"
+                id="applyWeekCheckbox"
+                checked={applyToFullWeek}
+                onChange={(e) => setApplyToFullWeek(e.target.checked)}
+                className="w-4 h-4 accent-emerald-500 cursor-pointer"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(SHIFT_TYPES).map(([code, config]) => (
+                <button
+                  key={code}
+                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
+                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
+                >
+                  {code}: {config.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL DE REASIGNACIÓN INTELIGENTE */}
+      {reassignModal && reassignTarget && canEditShifts && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-purple-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ArrowRightLeft className="w-4 h-4 text-purple-400" />
+                  Reasignación Inteligente
+                </h3>
+                <p className="text-xs text-purple-300 font-semibold mt-1">{reassignTarget.name} — {reassignModal.dateStr}</p>
+                <p className="text-[11px] text-purple-400/80">Ausencia aprobada. Selecciona un reemplazo y el turno a cubrir.</p>
+              </div>
+              <button onClick={() => setReassignModal(null)} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+
+            <div className="mb-3">
+              <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1.5">Turno a cubrir</label>
+              <div className="grid grid-cols-3 gap-2">
+                {['M', 'T', 'N'].map(code => (
+                  <button
+                    key={code}
+                    onClick={() => setReassignShift(code)}
+                    className={`p-2 rounded-lg border text-xs font-bold transition ${
+                      reassignShift === code
+                        ? SHIFT_TYPES[code].color + ' ring-2 ring-white/60'
+                        : 'bg-[#011a0d] border-emerald-800 text-emerald-300 hover:bg-emerald-950'
+                    }`}
+                  >
+                    {SHIFT_TYPES[code].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto border-t border-emerald-900/60 pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold uppercase text-emerald-400">Candidatos ({reassignCandidates.length})</span>
+                <span className="text-[10px] text-emerald-500">Ordenados por afinidad</span>
+              </div>
+
+              {reassignCandidates.length === 0 ? (
+                <div className="text-center py-8">
+                  <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+                  <p className="text-amber-300 font-bold text-xs">No hay candidatos disponibles</p>
+                  <p className="text-emerald-500 text-[10px] mt-1">Todos tienen turno asignado o están ausentes ese día.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {reassignCandidates.map(c => {
+                    const best = c.score >= 60;
+                    const ok = c.score >= 0 && c.score < 60;
+                    const bad = c.score < 0;
+                    const borderColor = best ? 'border-emerald-600/60' : ok ? 'border-amber-600/60' : 'border-red-600/60';
+                    const bgColor = best ? 'bg-emerald-950/60' : ok ? 'bg-amber-950/40' : 'bg-red-950/40';
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => handleReassign(c.id)}
+                        className={`w-full text-left p-3 rounded-xl border ${borderColor} ${bgColor} hover:scale-[1.01] transition-all`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-white text-sm truncate">{c.name}</span>
+                              {best && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-700 text-white">ÓPTIMO</span>}
+                              {ok && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-700 text-white">ACEPTABLE</span>}
+                              {bad && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-700 text-white">NO RECOMENDADO</span>}
+                            </div>
+                            <div className="text-[10px] text-emerald-300/80 mt-0.5">{c.id} · {c.zone}</div>
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {c.reasons.map((r, i) => (
+                                <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">{r}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className={`text-lg font-extrabold ${best ? 'text-emerald-300' : ok ? 'text-amber-300' : 'text-red-300'}`}>{c.score}</div>
+                            <div className="text-[9px] text-emerald-500">score</div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-emerald-900/60 flex justify-end">
+              <button onClick={() => setReassignModal(null)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold text-xs hover:bg-emerald-900 transition">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAddOperatorOpen && canManageOperators && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-4">{editingOperator ? 'Editar Operador' : 'Registrar Operador'}</h3>
+            <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
+                <input type="text" required placeholder="Ej. Juan Pérez" value={newOp.name} onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Zona de Trabajo</label>
+                <select value={newOp.zone} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
+                <select value={newOp.equipment} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
+                <select value={newOp.shiftPattern} onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  <option value="Mañana">Mañana</option>
+                  <option value="Tarde">Tarde</option>
+                  <option value="Noche">Noche</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
+                <input type="date" required value={newOp.licenseExpiry} onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+              </div>
+              <div className="flex justify-end space-x-2 pt-3">
+                <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isRequestVacationOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-white mb-4">Registrar Solicitud de Permiso</h3>
+            <form onSubmit={handleCreateVacationRequest} className="space-y-3 text-xs">
+              {vacDateError && (
+                <div className="p-2.5 bg-red-950/80 border border-red-800 rounded-xl text-red-200 font-bold flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{vacDateError}</span>
+                </div>
+              )}
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Operador</label>
+                <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
+                <select value={newVac.type} onChange={(e) => setNewVac({ ...newVac, type: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
+                  {ABSENCE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
+                  <input type="date" value={newVac.startDate} onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
+                  <input type="date" min={newVac.startDate} value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Motivo / Razón</label>
+                <textarea rows={3} placeholder="Escribe la razón detallada..." value={newVac.reason} onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <button type="button" onClick={() => { setIsRequestVacationOpen(false); setVacDateError(''); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Enviar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

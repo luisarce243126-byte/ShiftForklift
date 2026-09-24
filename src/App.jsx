@@ -139,7 +139,6 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   }
 };
 
-// ✅ Colores compactos para indicadores pequeños
 const INDICATOR_ACCENTS = {
   emerald: { bg: 'bg-emerald-950/70', border: 'border-emerald-700/60', text: 'text-emerald-300', value: 'text-emerald-100' },
   amber:   { bg: 'bg-amber-950/70',   border: 'border-amber-700/60',   text: 'text-amber-300',   value: 'text-amber-100' },
@@ -150,7 +149,6 @@ const INDICATOR_ACCENTS = {
   cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-300',    value: 'text-cyan-100' }
 };
 
-// ✅ Componente de indicador COMPACTO
 function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle = null }) {
   const c = INDICATOR_ACCENTS[accent] || INDICATOR_ACCENTS.emerald;
   return (
@@ -1023,7 +1021,7 @@ export default function App() {
 
             {/* Banner de celdas bloqueadas */}
             {!isHistoricalWeek && lockedCellsInView > 0 && (
-              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2 flex items-center gap-2">
+              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2 flex items-center justify-center gap-2">
                 <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
                 <p className="text-[10px] text-purple-200">
                   Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s) por ausencias aprobadas en esta semana.
@@ -1251,9 +1249,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ INDICADORES COMPACTOS — una sola fila horizontal */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Turno en vivo */}
+            {/* ✅ INDICADORES COMPACTOS — CENTRADOS */}
+            <div className="flex items-center justify-center gap-2 flex-wrap">
               {isCurrentWeek ? (
                 <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
                   <span className="relative flex h-2 w-2 shrink-0">

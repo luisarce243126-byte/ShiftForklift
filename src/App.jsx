@@ -42,7 +42,14 @@ import {
   Activity,
   Undo2,
   Info,
-  FilterX
+  FilterX,
+  UserPlus,
+  ArrowRightLeft,
+  BarChart3,
+  FileSpreadsheet,
+  TrendingUp,
+  CalendarDays,
+  Users2
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -88,6 +95,9 @@ const SHIFT_WINDOWS = {
   T: { start: 15 * 60,       end: 22 * 60 + 30,      label: '15:00 - 22:30' },
   N: { start: 22 * 60 + 30,  end: 24 * 60 + 7 * 60,  label: '22:30 - 07:00' }
 };
+
+// ✅ Horas por turno (para el módulo de nómina)
+const SHIFT_HOURS = { M: 8, T: 8, N: 8.5, DES: 0, VAC: 0, INC: 0 };
 
 const getShiftCodeForDate = (date) => {
   const totalMinutes = date.getHours() * 60 + date.getMinutes();
@@ -199,6 +209,106 @@ function Toast({ toast, onDismiss, onUndo }) {
   );
 }
 
+// ✅ Calcula horas y conteo de días en un rango para un operador
+const calcHoursInRange = (operatorId, fromDate, toDate, scheduleData) => {
+  const days = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
+  let total = 0;
+  if (!fromDate || !toDate) return { total: 0, days };
+  const start = new Date(fromDate + 'T00:00:00');
+  const end = new Date(toDate + 'T00:00:00');
+  const curr = new Date(start);
+  while (curr <= end) {
+    const key = `${operatorId}_${formatDateLocal(curr)}`;
+    const code = scheduleData[key];
+    if (code && SHIFT_HOURS[code] !== undefined) {
+      total += SHIFT_HOURS[code];
+      days[code] = (days[code] || 0) + 1;
+    }
+    curr.setDate(curr.getDate() + 1);
+  }
+  return { total, days };
+};
+
+// ✅ Encuentra candidatos para cubrir un turno
+const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators, scheduleData, lockedCells) => {
+  const target = operators.find(o => o.id === targetOperatorId);
+  if (!target) return [];
+
+  // Fecha objetivo y día de la semana (para horas semanales)
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetDate = new Date(y, m - 1, d);
+  const dayOfWeek = targetDate.getDay();
+  const monday = new Date(targetDate);
+  const diff = monday.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+  monday.setDate(diff);
+
+  const weekDates = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(monday);
+    dd.setDate(monday.getDate() + i);
+    weekDates.push(formatDateLocal(dd));
+  }
+
+  return operators
+    .filter(op => op.id !== targetOperatorId)
+    .filter(op => {
+      const key = `${op.id}_${dateStr}`;
+      const code = scheduleData[key];
+      // Solo operadores libres ese día
+      if (lockedCells.has(key)) return false;
+      if (code && code !== 'DES') return false;
+      return true;
+    })
+    .map(op => {
+      let score = 0;
+      const reasons = [];
+
+      if (op.zone === target.zone) { score += 50; reasons.push('Misma zona'); }
+      if (op.equipment === target.equipment) { score += 30; reasons.push('Mismo equipo'); }
+
+      // Horas de la semana con el nuevo turno
+      let weekHours = 0;
+      weekDates.forEach(date => {
+        const key = `${op.id}_${date}`;
+        if (date === dateStr) {
+          weekHours += SHIFT_HOURS[shiftCode] || 0;
+        } else {
+          const c = scheduleData[key];
+          if (c && SHIFT_HOURS[c] !== undefined) weekHours += SHIFT_HOURS[c];
+        }
+      });
+
+      // Penalizar si excede 48h
+      if (weekHours > 48) {
+        score -= 40;
+        reasons.push(`${weekHours.toFixed(1)}h excede 48h`);
+      } else if (weekHours > 40) {
+        score -= 10;
+        reasons.push(`${weekHours.toFixed(1)}h esta semana`);
+      } else {
+        reasons.push(`${weekHours.toFixed(1)}h esta semana`);
+      }
+
+      // Licencia vigente
+      if (op.licenseExpiry) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const exp = new Date(op.licenseExpiry + 'T00:00:00');
+        const days = Math.ceil((exp - today) / 86400000);
+        if (days < 0) {
+          score -= 100;
+          reasons.push('Licencia vencida');
+        } else if (days <= 30) {
+          score -= 15;
+          reasons.push(`Licencia vence en ${days}d`);
+        }
+      }
+
+      return { ...op, score, reasons, weekHours };
+    })
+    .sort((a, b) => b.score - a.score);
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
@@ -271,6 +381,22 @@ export default function App() {
     return () => clearInterval(tick);
   }, []);
 
+  // ✅ Estado para reasignación
+  const [reassignModal, setReassignModal] = useState(null); // { operatorId, dateStr }
+  const [reassignShift, setReassignShift] = useState('M');
+
+  // ✅ Estado para módulo de horas
+  const [hoursStart, setHoursStart] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [hoursEnd, setHoursEnd] = useState(() => {
+    const d = new Date();
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return formatDateLocal(last);
+  });
+  const [hoursZoneFilter, setHoursZoneFilter] = useState('Todas las zonas');
+
   useEffect(() => {
     if (!lockoutUntil) return;
     const tick = () => {
@@ -324,9 +450,7 @@ export default function App() {
 
     try {
       await loadExportLibraries();
-
       const element = scheduleRef.current;
-
       const canvas = await window.html2canvas(element, {
         scale: 2,
         backgroundColor: '#002812',
@@ -334,7 +458,6 @@ export default function App() {
         logging: false,
         windowWidth: element.scrollWidth + 80
       });
-
       const fileName = `Horario_Semanal_${currentWeekStart}`;
 
       if (format === 'png') {
@@ -352,34 +475,22 @@ export default function App() {
       } else if (format === 'pdf') {
         const imgData = canvas.toDataURL('image/png');
         const { jsPDF } = window.jspdf;
-
-        const pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'mm',
-          format: 'a4'
-        });
-
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
-
         pdf.setFillColor(2, 31, 18);
         pdf.rect(0, 0, pdfWidth, pdfHeight, 'F');
-
         pdf.setTextColor(255, 255, 255);
         pdf.setFontSize(14);
         pdf.text('ShiftForklift - Reporte de Programación de Turnos', 12, 12);
-
         pdf.setFontSize(9);
         pdf.setTextColor(167, 243, 208);
         const dateRangeText = `Plan Semanal: ${weekDays[0].dayNumber} ${weekDays[0].monthName} - ${weekDays[6].dayNumber} ${weekDays[6].monthName} | Filtro: ${selectedZone}`;
         pdf.text(dateRangeText, 12, 18);
-
         const imgWidth = pdfWidth - 24;
         const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
         let positionY = 22;
         const maxHeight = pdfHeight - 32;
-
         if (imgHeight <= maxHeight) {
           pdf.addImage(imgData, 'PNG', 12, positionY, imgWidth, imgHeight);
         } else {
@@ -389,11 +500,9 @@ export default function App() {
           const xOffset = (pdfWidth - adjustedWidth) / 2;
           pdf.addImage(imgData, 'PNG', xOffset, positionY, adjustedWidth, adjustedHeight);
         }
-
         pdf.setFontSize(8);
         pdf.setTextColor(100, 116, 139);
         pdf.text(`Exportado el: ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 12, pdfHeight - 5);
-
         pdf.save(`${fileName}.pdf`);
       }
       pushToast('success', `Horario exportado como ${format.toUpperCase()}`);
@@ -412,10 +521,8 @@ export default function App() {
         setCurrentWeekStart(actualMonday);
       }
     };
-
     const interval = setInterval(checkWeekChange, 60000);
     window.addEventListener('focus', checkWeekChange);
-
     return () => {
       clearInterval(interval);
       window.removeEventListener('focus', checkWeekChange);
@@ -431,7 +538,6 @@ export default function App() {
         redis.get('sf_scheduleData'),
         redis.get('sf_vacations'),
       ]);
-
       setOperators(Array.isArray(savedOps) ? savedOps : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
       setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
@@ -450,17 +556,14 @@ export default function App() {
 
   useEffect(() => {
     if (!isLoaded || loadError) return;
-
     const interval = setInterval(async () => {
       if (isUpdatingRef.current) return;
-
       try {
         const [savedOps, savedSchedule, savedVac] = await Promise.all([
           redis.get('sf_operators'),
           redis.get('sf_scheduleData'),
           redis.get('sf_vacations'),
         ]);
-
         if (!isUpdatingRef.current) {
           if (Array.isArray(savedOps)) setOperators(savedOps);
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
@@ -470,7 +573,6 @@ export default function App() {
         console.error('Error en sincronización continua:', err);
       }
     }, 3000);
-
     return () => clearInterval(interval);
   }, [isLoaded, loadError]);
 
@@ -504,7 +606,6 @@ export default function App() {
     const days = [];
     const [year, month, day] = currentWeekStart.split('-').map(Number);
     const start = new Date(year, month - 1, day);
-
     for (let i = 0; i < 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
@@ -715,11 +816,12 @@ export default function App() {
   const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
   const canManageOperators = currentUser && currentUser.role === 'Admin';
   const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+  const canViewHours = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+  const canViewReports = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
 
   const licenseAlerts = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     return operators
       .map(op => {
         if (!op.licenseExpiry) return null;
@@ -735,12 +837,10 @@ export default function App() {
   const filteredOperators = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     return operators.filter(op => {
       const matchesSearch = op.name.toLowerCase().includes(searchQuery.toLowerCase()) || op.id.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesZone = selectedZone === 'Todas las zonas' || op.zone === selectedZone;
       const matchesEquipment = selectedEquipment === 'Todos los equipos' || op.equipment === selectedEquipment;
-
       let matchesExpiring = true;
       if (onlyExpiringLicenses) {
         if (!op.licenseExpiry) matchesExpiring = false;
@@ -750,7 +850,6 @@ export default function App() {
           matchesExpiring = diffDays <= 30;
         }
       }
-
       return matchesSearch && matchesZone && matchesEquipment && matchesExpiring;
     });
   }, [operators, searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
@@ -775,7 +874,6 @@ export default function App() {
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     if (isHistoricalWeek) return;
-
     const clickedKey = `${operatorId}_${dateStr}`;
     if (lockedCells.has(clickedKey)) return;
 
@@ -822,7 +920,6 @@ export default function App() {
     try {
       await redis.set('sf_scheduleData', updatedSchedule);
       reportSyncResult(true);
-
       const op = operators.find(o => o.id === operatorId);
       const dayLabel = isFullWeek ? 'toda la semana' : dateStr;
       pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label} (${dayLabel})`, {
@@ -840,6 +937,53 @@ export default function App() {
       setScheduleData(previousSchedule);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar. Cambio revertido.');
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  // ✅ Asignación desde reasignación inteligente
+  const handleReassign = async (targetOperatorId) => {
+    if (!reassignModal) return;
+    const shiftCode = reassignShift;
+    const newKey = `${targetOperatorId}_${reassignModal.dateStr}`;
+    const previousSchedule = { ...scheduleData };
+
+    // Validar de nuevo antes de aplicar
+    const conflicts = detectConflicts(targetOperatorId, reassignModal.dateStr, shiftCode, false);
+    if (conflicts.length > 0) {
+      pushToast('warning', conflicts[0], { duration: 5000 });
+      return;
+    }
+
+    isUpdatingRef.current = true;
+    setSyncStatus('saving');
+
+    const updatedSchedule = { ...scheduleData, [newKey]: shiftCode };
+    setScheduleData(updatedSchedule);
+    setReassignModal(null);
+    triggerFlash([newKey]);
+
+    try {
+      await redis.set('sf_scheduleData', updatedSchedule);
+      reportSyncResult(true);
+      const target = operators.find(o => o.id === targetOperatorId);
+      const absent = operators.find(o => o.id === reassignModal.operatorId);
+      pushToast('success', `${target?.name} cubrirá ${SHIFT_TYPES[shiftCode].label} de ${absent?.name} (${reassignModal.dateStr})`, {
+        undoAction: () => {
+          setScheduleData(previousSchedule);
+          redis.set('sf_scheduleData', previousSchedule).then(() => {
+            pushToast('info', 'Reasignación deshecha');
+          }).catch(() => {
+            pushToast('error', 'No se pudo deshacer');
+          });
+        }
+      });
+    } catch (error) {
+      console.error('Error al reasignar:', error);
+      setScheduleData(previousSchedule);
+      reportSyncResult(false);
+      pushToast('error', 'Error al reasignar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -885,15 +1029,12 @@ export default function App() {
 
   const handleDeleteOperator = async (operatorId) => {
     if (!canManageOperators) return;
-
     if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
       isUpdatingRef.current = true;
       setSyncStatus('saving');
-
       const previousOps = operators;
       const updatedOps = operators.filter(op => op.id !== operatorId);
       setOperators(updatedOps);
-
       try {
         await redis.set('sf_operators', updatedOps);
         reportSyncResult(true);
@@ -916,7 +1057,6 @@ export default function App() {
       setVacDateError('Selecciona un operador válido.');
       return;
     }
-
     if (!newVac.startDate || !newVac.endDate) {
       setVacDateError('Selecciona ambas fechas.');
       return;
@@ -962,13 +1102,11 @@ export default function App() {
   const handleCancelVacationRequest = async (id) => {
     if (!canApproveVacations) return;
     if (!window.confirm('¿Cancelar esta solicitud de permiso?')) return;
-
     isUpdatingRef.current = true;
     setSyncStatus('saving');
     const previousVac = vacationRequests;
     const updatedVac = vacationRequests.filter(r => r.id !== id);
     setVacationRequests(updatedVac);
-
     try {
       await redis.set('sf_vacations', updatedVac);
       reportSyncResult(true);
@@ -987,7 +1125,6 @@ export default function App() {
     if (!canApproveVacations) return;
     isUpdatingRef.current = true;
     setSyncStatus('saving');
-
     const req = vacationRequests.find(r => r.id === id);
     const previousVac = vacationRequests;
     const previousSchedule = scheduleData;
@@ -995,7 +1132,6 @@ export default function App() {
     setVacationRequests(updatedVac);
 
     let updatedSchedule = { ...scheduleData };
-
     if (newStatus === 'Aprobado' && req) {
       let shiftCode = 'DES';
       if (req.type === 'Vacaciones') shiftCode = 'VAC';
@@ -1004,16 +1140,13 @@ export default function App() {
 
       const [sY, sM, sD] = req.startDate.split('-').map(Number);
       const [eY, eM, eD] = req.endDate.split('-').map(Number);
-
       let curr = new Date(sY, sM - 1, sD);
       const end = new Date(eY, eM - 1, eD);
-
       while (curr <= end) {
         const dateStr = formatDateLocal(curr);
         updatedSchedule[`${req.operatorId}_${dateStr}`] = shiftCode;
         curr.setDate(curr.getDate() + 1);
       }
-
       setScheduleData(updatedSchedule);
     }
 
@@ -1032,6 +1165,208 @@ export default function App() {
       pushToast('error', 'Error al actualizar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  // ✅ Exportar CSV de horas
+  const exportHoursCSV = () => {
+    const rows = [
+      ['Operador', 'ID', 'Zona', 'Equipo', 'Turnos M', 'Turnos T', 'Turnos N', 'Días DES', 'Días VAC', 'Días INC', 'Horas Totales']
+    ];
+    const targetOps = hoursZoneFilter === 'Todas las zonas'
+      ? operators
+      : operators.filter(o => o.zone === hoursZoneFilter);
+
+    targetOps.forEach(op => {
+      const stats = calcHoursInRange(op.id, hoursStart, hoursEnd, scheduleData);
+      rows.push([
+        op.name, op.id, op.zone, op.equipment,
+        stats.days.M, stats.days.T, stats.days.N,
+        stats.days.DES, stats.days.VAC, stats.days.INC,
+        stats.total.toFixed(1)
+      ]);
+    });
+
+    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Horas_${hoursStart}_${hoursEnd}.csv`;
+    link.click();
+    pushToast('success', `CSV exportado con ${targetOps.length} operadores`);
+  };
+
+  // ✅ Generar PDF ejecutivo
+  const handleExportExecutivePDF = async () => {
+    setIsExporting(true);
+    try {
+      await loadExportLibraries();
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const W = pdf.internal.pageSize.getWidth();
+      const H = pdf.internal.pageSize.getHeight();
+
+      // Fondo
+      pdf.setFillColor(2, 31, 18);
+      pdf.rect(0, 0, W, H, 'F');
+
+      // Header
+      pdf.setFillColor(0, 71, 31);
+      pdf.rect(0, 0, W, 25, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(16);
+      pdf.text('ShiftForklift — Reporte Ejecutivo', 14, 12);
+      pdf.setFontSize(9);
+      pdf.setTextColor(167, 243, 208);
+      pdf.text(`Semana del ${weekDays[0].dayNumber} ${weekDays[0].monthName} al ${weekDays[6].dayNumber} ${weekDays[6].monthName}`, 14, 19);
+
+      // KPIs
+      const totalOps = operators.length;
+      const licenseOk = operators.filter(op => {
+        if (!op.licenseExpiry) return false;
+        const exp = new Date(op.licenseExpiry + 'T00:00:00');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return exp >= today;
+      }).length;
+
+      // Cobertura y ausentismo promedio de la semana
+      let totalWorked = 0;
+      let totalAbsent = 0;
+      let totalSlots = 0;
+      weekDays.forEach(day => {
+        operators.forEach(op => {
+          const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+          totalSlots++;
+          if (['M', 'T', 'N'].includes(code)) totalWorked++;
+          if (['VAC', 'INC'].includes(code)) totalAbsent++;
+        });
+      });
+      const coveragePct = totalSlots > 0 ? Math.round((totalWorked / totalSlots) * 100) : 0;
+      const absentPct = totalSlots > 0 ? Math.round((totalAbsent / totalSlots) * 100) : 0;
+
+      const kpis = [
+        { label: 'Cobertura', value: `${coveragePct}%`, color: [16, 185, 129] },
+        { label: 'Ausentismo', value: `${absentPct}%`, color: [239, 68, 68] },
+        { label: 'Licencias vigentes', value: `${licenseOk}/${totalOps}`, color: [59, 130, 246] },
+        { label: 'Operadores', value: `${totalOps}`, color: [168, 85, 247] }
+      ];
+
+      const kpiY = 32;
+      const kpiH = 20;
+      const kpiW = (W - 28 - 9) / 4;
+      kpis.forEach((kpi, i) => {
+        const x = 14 + i * (kpiW + 3);
+        pdf.setFillColor(2, 40, 18);
+        pdf.roundedRect(x, kpiY, kpiW, kpiH, 2, 2, 'F');
+        pdf.setDrawColor(...kpi.color);
+        pdf.setLineWidth(0.5);
+        pdf.roundedRect(x, kpiY, kpiW, kpiH, 2, 2, 'S');
+        pdf.setTextColor(...kpi.color);
+        pdf.setFontSize(7);
+        pdf.text(kpi.label.toUpperCase(), x + 3, kpiY + 5);
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(14);
+        pdf.text(kpi.value, x + 3, kpiY + 15);
+      });
+
+      // Tabla: cobertura por día
+      let y = kpiY + kpiH + 10;
+      pdf.setTextColor(167, 243, 208);
+      pdf.setFontSize(11);
+      pdf.text('Cobertura por día', 14, y);
+      y += 6;
+
+      pdf.setFontSize(8);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('Día', 16, y);
+      pdf.text('Mañana', 50, y);
+      pdf.text('Tarde', 80, y);
+      pdf.text('Noche', 110, y);
+      pdf.text('Descanso', 140, y);
+      pdf.text('Ausencias', 172, y);
+      y += 4;
+      pdf.setDrawColor(30, 100, 60);
+      pdf.line(14, y, W - 14, y);
+      y += 5;
+
+      weekDays.forEach(day => {
+        const counts = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
+        operators.forEach(op => {
+          const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+          if (counts[code] !== undefined) counts[code]++;
+        });
+        pdf.setTextColor(255, 255, 255);
+        pdf.text(`${day.dayName} ${day.dayNumber}`, 16, y);
+        pdf.text(String(counts.M), 50, y);
+        pdf.text(String(counts.T), 80, y);
+        pdf.text(String(counts.N), 110, y);
+        pdf.text(String(counts.DES), 140, y);
+        pdf.setTextColor(239, 68, 68);
+        pdf.text(String(counts.VAC + counts.INC), 172, y);
+        y += 6;
+      });
+
+      // Tabla: horas por operador (esta semana)
+      y += 6;
+      pdf.setTextColor(167, 243, 208);
+      pdf.setFontSize(11);
+      pdf.text('Horas por operador (semana actual)', 14, y);
+      y += 6;
+
+      pdf.setFontSize(8);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('Operador', 16, y);
+      pdf.text('Zona', 80, y);
+      pdf.text('M', 138, y);
+      pdf.text('T', 148, y);
+      pdf.text('N', 158, y);
+      pdf.text('Total h', 175, y);
+      y += 4;
+      pdf.line(14, y, W - 14, y);
+      y += 5;
+
+      const sortedByHours = [...operators].map(op => {
+        const weekDates = weekDays.map(d => d.dateStr);
+        let totalH = 0;
+        const c = { M: 0, T: 0, N: 0 };
+        weekDates.forEach(date => {
+          const code = scheduleData[`${op.id}_${date}`];
+          if (code && SHIFT_HOURS[code] !== undefined) {
+            totalH += SHIFT_HOURS[code];
+            if (['M', 'T', 'N'].includes(code)) c[code]++;
+          }
+        });
+        return { ...op, totalH, c };
+      }).sort((a, b) => b.totalH - a.totalH);
+
+      sortedByHours.forEach(op => {
+        if (y > H - 25) return; // no desbordar
+        pdf.setTextColor(255, 255, 255);
+        pdf.text(op.name.substring(0, 30), 16, y);
+        pdf.setTextColor(148, 163, 184);
+        pdf.text(op.zone.substring(0, 25), 80, y);
+        pdf.setTextColor(255, 255, 255);
+        pdf.text(String(op.c.M), 138, y);
+        pdf.text(String(op.c.T), 148, y);
+        pdf.text(String(op.c.N), 158, y);
+        pdf.setTextColor(16, 185, 129);
+        pdf.text(`${op.totalH.toFixed(1)}h`, 175, y);
+        y += 5.5;
+      });
+
+      // Footer
+      pdf.setFontSize(7);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
+
+      pdf.save(`Reporte_Ejecutivo_${currentWeekStart}.pdf`);
+      pushToast('success', 'Reporte ejecutivo generado');
+    } catch (error) {
+      console.error('Error al generar reporte:', error);
+      pushToast('error', 'No se pudo generar el reporte');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -1146,6 +1481,12 @@ export default function App() {
   const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
   const ActiveShiftIcon = SHIFT_TYPES[activeShiftCode].icon;
 
+  // ✅ Candidatos para reasignación
+  const reassignTarget = reassignModal ? operators.find(o => o.id === reassignModal.operatorId) : null;
+  const reassignCandidates = reassignModal
+    ? getSuitableReplacements(reassignModal.operatorId, reassignModal.dateStr, reassignShift, operators, scheduleData, lockedCells)
+    : [];
+
   return (
     <div className="min-h-screen bg-[#021f12] text-emerald-50 font-sans pb-12">
       <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
@@ -1178,9 +1519,19 @@ export default function App() {
           </div>
 
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
-            <button onClick={() => setActiveTab('scheduler')} className={`px-4 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
-            <button onClick={() => setActiveTab('operators')} className={`px-4 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
-            <button onClick={() => setActiveTab('vacations')} className={`px-4 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
+            <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
+            <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
+            <button onClick={() => setActiveTab('vacations')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
+            {canViewHours && (
+              <button onClick={() => setActiveTab('hours')} className={`px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 ${activeTab === 'hours' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>
+                <DollarSign className="w-3 h-3" /> Horas
+              </button>
+            )}
+            {canViewReports && (
+              <button onClick={() => setActiveTab('reports')} className={`px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>
+                <BarChart3 className="w-3 h-3" /> Reportes
+              </button>
+            )}
           </nav>
 
           <div className="flex items-center space-x-3">
@@ -1244,7 +1595,7 @@ export default function App() {
               <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-4 py-2 flex items-center justify-center gap-2">
                 <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
                 <p className="text-[10px] text-purple-200">
-                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s) por ausencias aprobadas en esta semana.
+                  Hay <span className="font-bold">{lockedCellsInView}</span> turno(s) bloqueado(s) por ausencias aprobadas en esta semana. <span className="text-purple-300">Haz clic en uno para buscar reemplazo.</span>
                 </p>
               </div>
             )}
@@ -1299,7 +1650,6 @@ export default function App() {
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
-
                 <select
                   value={selectedEquipment}
                   onChange={(e) => setSelectedEquipment(e.target.value)}
@@ -1308,7 +1658,6 @@ export default function App() {
                   <option value="Todos los equipos">Todos los equipos</option>
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                 </select>
-
                 <button
                   onClick={() => setOnlyExpiringLicenses(v => !v)}
                   className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition flex items-center gap-1.5 ${
@@ -1321,12 +1670,10 @@ export default function App() {
                   <AlertCircle className="w-3 h-3" />
                   Licencias críticas
                 </button>
-
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={clearAllFilters}
                     className="px-2.5 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1.5"
-                    title="Limpiar todos los filtros"
                   >
                     <FilterX className="w-3 h-3" />
                     Limpiar ({activeFiltersCount})
@@ -1357,37 +1704,17 @@ export default function App() {
                       <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
                         Selecciona el formato
                       </div>
-                      <button
-                        onClick={() => handleExport('png')}
-                        className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition"
-                      >
+                      <button onClick={() => handleExport('png')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition">
                         <ImageIcon className="w-4 h-4 text-emerald-400" />
-                        <div>
-                          <div className="font-bold">Imagen PNG</div>
-                          <div className="text-[10px] text-emerald-400/80">Alta calidad con transparencia</div>
-                        </div>
+                        <div><div className="font-bold">Imagen PNG</div></div>
                       </button>
-
-                      <button
-                        onClick={() => handleExport('jpg')}
-                        className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60"
-                      >
+                      <button onClick={() => handleExport('jpg')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
                         <FileImage className="w-4 h-4 text-amber-400" />
-                        <div>
-                          <div className="font-bold">Imagen JPG</div>
-                          <div className="text-[10px] text-emerald-400/80">Formato ligero ideal para compartir</div>
-                        </div>
+                        <div><div className="font-bold">Imagen JPG</div></div>
                       </button>
-
-                      <button
-                        onClick={() => handleExport('pdf')}
-                        className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60"
-                      >
+                      <button onClick={() => handleExport('pdf')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
                         <FileText className="w-4 h-4 text-red-400" />
-                        <div>
-                          <div className="font-bold">Documento PDF</div>
-                          <div className="text-[10px] text-emerald-400/80">Listo para imprimir en hoja A4</div>
-                        </div>
+                        <div><div className="font-bold">Documento PDF</div></div>
                       </button>
                     </div>
                   )}
@@ -1457,7 +1784,7 @@ export default function App() {
 
                           let tooltip = '';
                           if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
-                          else if (isLockedByAbsence) tooltip = 'Bloqueado por ausencia aprobada';
+                          else if (isLockedByAbsence) tooltip = 'Bloqueado por ausencia. Clic para buscar reemplazo.';
                           else if (!canEditShifts) tooltip = 'No tienes permisos para editar turnos';
 
                           return (
@@ -1466,21 +1793,26 @@ export default function App() {
                               className={`p-1.5 text-center border-l border-emerald-900/40 ${isToday ? 'bg-emerald-950/30' : ''}`}
                             >
                               <button
-                                disabled={!editable}
-                                onClick={() => editable && setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode })}
+                                disabled={!editable && !isLockedByAbsence}
+                                onClick={() => {
+                                  if (isLockedByAbsence && !isHistoricalWeek) {
+                                    setReassignModal({ operatorId: op.id, dateStr: day.dateStr });
+                                    setReassignShift('M');
+                                  } else if (editable) {
+                                    setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode });
+                                  }
+                                }}
                                 title={tooltip}
                                 className={`relative w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${
-                                  !editable
+                                  !editable && !isLockedByAbsence
                                     ? 'cursor-not-allowed'
                                     : 'hover:scale-105 transition-transform'
                                 } ${
                                   isLockedByAbsence && !isHistoricalWeek
-                                    ? 'ring-2 ring-purple-400/60 shadow-purple-900/40'
+                                    ? 'ring-2 ring-purple-400/60 shadow-purple-900/40 cursor-pointer'
                                     : ''
                                 } ${
-                                  isHistoricalWeek
-                                    ? 'grayscale-[0.35] opacity-90'
-                                    : ''
+                                  isHistoricalWeek ? 'grayscale-[0.35] opacity-90' : ''
                                 } ${
                                   isCurrentShiftForMe
                                     ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg'
@@ -1511,15 +1843,11 @@ export default function App() {
                             <>
                               <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
                               <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
-                              <p className="text-emerald-500 text-xs mt-1">
-                                {canManageOperators ? 'Ve a la pestaña "Personal" para agregar el primero.' : 'Pídele a un administrador que registre personal.'}
-                              </p>
                             </>
                           ) : (
                             <>
                               <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
                               <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide con los filtros</p>
-                              <p className="text-cyan-500 text-xs mt-1">Prueba con otros criterios o límpialos.</p>
                               <button
                                 onClick={clearAllFilters}
                                 className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
@@ -1567,19 +1895,8 @@ export default function App() {
               <MiniIndicator icon={Sun} label="Tarde" value={shiftStats.T} accent="amber" />
               <MiniIndicator icon={Moon} label="Noche" value={shiftStats.N} accent="indigo" />
               <MiniIndicator icon={Coffee} label="Descanso" value={shiftStats.DES} accent="slate" />
-              <MiniIndicator
-                icon={AlertTriangle}
-                label="Ausentes"
-                value={shiftStats.absent}
-                accent={shiftStats.absent > 0 ? 'red' : 'slate'}
-              />
-              <MiniIndicator
-                icon={Users}
-                label="Plantilla"
-                value={shiftStats.total}
-                accent="cyan"
-                subtitle={`${shiftStats.active} act.`}
-              />
+              <MiniIndicator icon={AlertTriangle} label="Ausentes" value={shiftStats.absent} accent={shiftStats.absent > 0 ? 'red' : 'slate'} />
+              <MiniIndicator icon={Users} label="Plantilla" value={shiftStats.total} accent="cyan" subtitle={`${shiftStats.active} act.`} />
             </div>
           </div>
         )}
@@ -1618,11 +1935,8 @@ export default function App() {
                 <button onClick={() => {
                   setEditingOperator(null);
                   setNewOp({
-                    name: '',
-                    zone: WAREHOUSE_ZONES[1],
-                    equipment: FORKLIFT_TYPES[0],
-                    shiftPattern: 'Mañana',
-                    licenseExpiry: formatDateLocal(new Date())
+                    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
+                    shiftPattern: 'Mañana', licenseExpiry: formatDateLocal(new Date())
                   });
                   setIsAddOperatorOpen(true);
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition">
@@ -1635,27 +1949,7 @@ export default function App() {
               <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
                 <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
                 <h3 className="text-base font-bold text-white mb-1">Sin personal registrado</h3>
-                <p className="text-xs text-emerald-400/80 mb-4">
-                  {canManageOperators ? 'Agrega el primer montacargista para comenzar a planear turnos.' : 'Pídele a un administrador que registre personal.'}
-                </p>
-                {canManageOperators && (
-                  <button
-                    onClick={() => {
-                      setEditingOperator(null);
-                      setNewOp({
-                        name: '',
-                        zone: WAREHOUSE_ZONES[1],
-                        equipment: FORKLIFT_TYPES[0],
-                        shiftPattern: 'Mañana',
-                        licenseExpiry: formatDateLocal(new Date())
-                      });
-                      setIsAddOperatorOpen(true);
-                    }}
-                    className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center space-x-2 transition"
-                  >
-                    <Plus className="w-4 h-4"/><span>Agregar primer operador</span>
-                  </button>
-                )}
+                <p className="text-xs text-emerald-400/80 mb-4">Agrega el primer montacargista para comenzar.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1742,17 +2036,14 @@ export default function App() {
                       <td className="p-3.5 text-center">
                         {req.status === 'Pendiente' && canApproveVacations ? (
                           <div className="flex justify-center space-x-1">
-                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar (bloqueará los turnos)"><Check className="w-4 h-4"/></button>
+                            <button onClick={() => handleVacationStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition" title="Aprobar"><Check className="w-4 h-4"/></button>
                             <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition" title="Rechazar"><X className="w-4 h-4"/></button>
-                            <button onClick={() => handleCancelVacationRequest(req.id)} className="p-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition" title="Cancelar solicitud"><Trash2 className="w-4 h-4"/></button>
+                            <button onClick={() => handleCancelVacationRequest(req.id)} className="p-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition" title="Cancelar"><Trash2 className="w-4 h-4"/></button>
                           </div>
                         ) : req.status === 'Aprobado' && canApproveVacations ? (
-                          <div className="flex justify-center">
-                            <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="px-2 py-1 bg-red-900 hover:bg-red-800 text-red-100 rounded-lg transition text-[10px] font-bold flex items-center gap-1" title="Revocar aprobación (desbloquea las celdas)">
-                              <Lock className="w-3 h-3" />
-                              Revocar
-                            </button>
-                          </div>
+                          <button onClick={() => handleVacationStatus(req.id, 'Rechazado')} className="px-2 py-1 bg-red-900 hover:bg-red-800 text-red-100 rounded-lg transition text-[10px] font-bold flex items-center gap-1 mx-auto">
+                            <Lock className="w-3 h-3" /> Revocar
+                          </button>
                         ) : (
                           <span className="text-emerald-600 text-[10px]">Sin acciones</span>
                         )}
@@ -1764,7 +2055,6 @@ export default function App() {
                       <td colSpan={6} className="p-12 text-center">
                         <CalendarIcon className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
                         <p className="text-emerald-300 font-bold text-sm">Sin solicitudes</p>
-                        <p className="text-emerald-500 text-xs mt-1">Aún no hay permisos registrados.</p>
                       </td>
                     </tr>
                   )}
@@ -1773,181 +2063,259 @@ export default function App() {
             </div>
           </div>
         )}
-      </main>
 
-      {selectedCell && canEditShifts && !isHistoricalWeek && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <h3 className="text-sm font-bold text-white">Cambiar Turno</h3>
-                <p className="text-xs text-emerald-300 font-semibold">{selectedOperator?.name || ''}</p>
-                <p className="text-[11px] text-emerald-400/80">Día seleccionado: {selectedCell.dateStr}</p>
-              </div>
-              <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white"><X className="w-5 h-5"/></button>
-            </div>
-
-            <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana (Lun - Dom)</span>
-              </div>
-              <input
-                type="checkbox"
-                id="applyWeekCheckbox"
-                checked={applyToFullWeek}
-                onChange={(e) => setApplyToFullWeek(e.target.checked)}
-                className="w-4 h-4 accent-emerald-500 cursor-pointer"
-              />
-            </div>
-
-            <p className="text-[10px] text-amber-300/90 mb-2 flex items-center gap-1">
-              <Lock className="w-3 h-3" />
-              Las celdas bloqueadas por ausencias aprobadas no se modificarán.
-            </p>
-
-            <div className="grid grid-cols-2 gap-2">
-              {Object.entries(SHIFT_TYPES).map(([code, config]) => (
+        {/* ✅ NUEVO: Módulo de Horas / Nómina */}
+        {activeTab === 'hours' && canViewHours && (
+          <div className="space-y-5">
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center">
+                    <DollarSign className="w-5 h-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Módulo de Horas y Nómina</h2>
+                    <p className="text-xs text-emerald-300">Cálculo de horas trabajadas por período</p>
+                  </div>
+                </div>
                 <button
-                  key={code}
-                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
-                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
+                  onClick={exportHoursCSV}
+                  disabled={operators.length === 0}
+                  className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition border border-emerald-500/50"
                 >
-                  {code}: {config.label}
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Exportar CSV
                 </button>
-              ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Desde</label>
+                  <input
+                    type="date"
+                    value={hoursStart}
+                    onChange={(e) => setHoursStart(e.target.value)}
+                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Hasta</label>
+                  <input
+                    type="date"
+                    value={hoursEnd}
+                    min={hoursStart}
+                    onChange={(e) => setHoursEnd(e.target.value)}
+                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Zona</label>
+                  <select
+                    value={hoursZoneFilter}
+                    onChange={(e) => setHoursZoneFilter(e.target.value)}
+                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none"
+                  >
+                    {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-emerald-900/60 text-xs">
+                <div className="text-emerald-400">
+                  Período: <span className="font-bold text-white">{hoursStart}</span> al <span className="font-bold text-white">{hoursEnd}</span>
+                </div>
+                <div className="text-emerald-400">
+                  Total: <span className="font-bold text-emerald-300">
+                    {(() => {
+                      const targetOps = hoursZoneFilter === 'Todas las zonas' ? operators : operators.filter(o => o.zone === hoursZoneFilter);
+                      const sum = targetOps.reduce((acc, op) => acc + calcHoursInRange(op.id, hoursStart, hoursEnd, scheduleData).total, 0);
+                      return sum.toFixed(1);
+                    })()}h
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#001f0d] text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                      <th className="p-3">Operador</th>
+                      <th className="p-3">Zona</th>
+                      <th className="p-3 text-center">Días M</th>
+                      <th className="p-3 text-center">Días T</th>
+                      <th className="p-3 text-center">Días N</th>
+                      <th className="p-3 text-center">DES</th>
+                      <th className="p-3 text-center">VAC</th>
+                      <th className="p-3 text-center">INC</th>
+                      <th className="p-3 text-right">Horas</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-900/50">
+                    {(hoursZoneFilter === 'Todas las zonas' ? operators : operators.filter(o => o.zone === hoursZoneFilter)).map(op => {
+                      const stats = calcHoursInRange(op.id, hoursStart, hoursEnd, scheduleData);
+                      const isHigh = stats.total > 48;
+                      return (
+                        <tr key={op.id} className="hover:bg-[#003517]/50">
+                          <td className="p-3">
+                            <div className="font-bold text-white">{op.name}</div>
+                            <div className="text-[10px] text-emerald-400/70">{op.id}</div>
+                          </td>
+                          <td className="p-3 text-emerald-200 text-[11px]">{op.zone}</td>
+                          <td className="p-3 text-center text-emerald-300 font-bold">{stats.days.M}</td>
+                          <td className="p-3 text-center text-amber-300 font-bold">{stats.days.T}</td>
+                          <td className="p-3 text-center text-indigo-300 font-bold">{stats.days.N}</td>
+                          <td className="p-3 text-center text-slate-400">{stats.days.DES}</td>
+                          <td className="p-3 text-center text-purple-300">{stats.days.VAC}</td>
+                          <td className="p-3 text-center text-red-300">{stats.days.INC}</td>
+                          <td className={`p-3 text-right font-extrabold text-sm ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>
+                            {stats.total.toFixed(1)}h
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {operators.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="p-12 text-center">
+                          <DollarSign className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                          <p className="text-emerald-300 font-bold text-sm">Sin operadores registrados</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-emerald-500/70 text-center">
+              <p>Reglas de cálculo: Mañana = 8h · Tarde = 8h · Noche = 8.5h · Descanso/Ausencia = 0h</p>
+              <p>Un total semanal por encima de 48h se marca en rojo como advertencia.</p>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {isAddOperatorOpen && canManageOperators && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-4">{editingOperator ? 'Editar Operador' : 'Registrar Operador'}</h3>
-            <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. Juan Pérez"
-                  value={newOp.name}
-                  onChange={(e) => setNewOp({ ...newOp, name: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Zona de Trabajo</label>
-                <select
-                  value={newOp.zone}
-                  onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
-                >
-                  {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => (
-                    <option key={z} value={z}>{z}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
-                <select
-                  value={newOp.equipment}
-                  onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
-                >
-                  {FORKLIFT_TYPES.map(eq => (
-                    <option key={eq} value={eq}>{eq}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
-                <select
-                  value={newOp.shiftPattern}
-                  onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
-                >
-                  <option value="Mañana">Mañana</option>
-                  <option value="Tarde">Tarde</option>
-                  <option value="Noche">Noche</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
-                <input
-                  type="date"
-                  required
-                  value={newOp.licenseExpiry}
-                  onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3">
-                <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {isRequestVacationOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#002e14] border border-emerald-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-4">Registrar Solicitud de Permiso</h3>
-            <form onSubmit={handleCreateVacationRequest} className="space-y-3 text-xs">
-              {vacDateError && (
-                <div className="p-2.5 bg-red-950/80 border border-red-800 rounded-xl text-red-200 font-bold flex items-center space-x-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{vacDateError}</span>
-                </div>
-              )}
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Operador</label>
-                <select value={newVac.operatorId} onChange={(e) => setNewVac({ ...newVac, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
-                  {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Tipo de Ausencia</label>
-                <select value={newVac.type} onChange={(e) => setNewVac({ ...newVac, type: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none">
-                  {ABSENCE_TYPES.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-emerald-300 font-bold mb-1">Fecha Inicio</label>
-                  <input type="date" value={newVac.startDate} onChange={(e) => setNewVac({ ...newVac, startDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+        {/* ✅ NUEVO: Módulo de Reportes */}
+        {activeTab === 'reports' && canViewReports && (
+          <div className="space-y-5">
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5 text-emerald-300" />
                 </div>
                 <div>
-                  <label className="block text-emerald-300 font-bold mb-1">Fecha Fin</label>
-                  <input type="date" min={newVac.startDate} value={newVac.endDate} onChange={(e) => setNewVac({ ...newVac, endDate: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
+                  <h2 className="text-lg font-bold text-white">Reportes Ejecutivos</h2>
+                  <p className="text-xs text-emerald-300">KPIs de la semana actual y análisis de cobertura</p>
                 </div>
               </div>
+              <button
+                onClick={handleExportExecutivePDF}
+                disabled={isExporting}
+                className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition border border-emerald-500/50"
+              >
+                {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                Exportar Reporte PDF
+              </button>
+            </div>
 
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Motivo / Razón</label>
-                <textarea rows={3} placeholder="Escribe la razón detallada..." value={newVac.reason} onChange={(e) => setNewVac({ ...newVac, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2 text-white focus:outline-none" />
-              </div>
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {(() => {
+                let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
+                weekDays.forEach(day => {
+                  operators.forEach(op => {
+                    const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+                    totalSlots++;
+                    if (['M', 'T', 'N'].includes(code)) totalWorked++;
+                    if (['VAC', 'INC'].includes(code)) totalAbsent++;
+                  });
+                });
+                const coverage = totalSlots > 0 ? Math.round((totalWorked / totalSlots) * 100) : 0;
+                const absentPct = totalSlots > 0 ? Math.round((totalAbsent / totalSlots) * 100) : 0;
+                const licenseOk = operators.filter(op => {
+                  if (!op.licenseExpiry) return false;
+                  const exp = new Date(op.licenseExpiry + 'T00:00:00');
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  return exp >= today;
+                }).length;
 
-              <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => { setIsRequestVacationOpen(false); setVacDateError(''); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Enviar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                return (
+                  <>
+                    <div className="rounded-2xl border border-emerald-700/60 bg-emerald-950/70 p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <TrendingUp className="w-3.5 h-3.5 text-emerald-300" />
+                        <span className="text-[10px] font-bold uppercase text-emerald-300">Cobertura</span>
+                      </div>
+                      <div className="text-2xl font-extrabold text-emerald-100">{coverage}%</div>
+                      <div className="text-[10px] text-emerald-400/70 mt-0.5">{totalWorked} de {totalSlots} slots</div>
+                    </div>
+                    <div className="rounded-2xl border border-red-700/60 bg-red-950/70 p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-300" />
+                        <span className="text-[10px] font-bold uppercase text-red-300">Ausentismo</span>
+                      </div>
+                      <div className="text-2xl font-extrabold text-red-100">{absentPct}%</div>
+                      <div className="text-[10px] text-red-400/70 mt-0.5">{totalAbsent} ausencias</div>
+                    </div>
+                    <div className="rounded-2xl border border-cyan-700/60 bg-cyan-950/70 p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
+                        <span className="text-[10px] font-bold uppercase text-cyan-300">Licencias OK</span>
+                      </div>
+                      <div className="text-2xl font-extrabold text-cyan-100">{licenseOk}/{operators.length}</div>
+                      <div className="text-[10px] text-cyan-400/70 mt-0.5">{operators.length - licenseOk} críticas</div>
+                    </div>
+                    <div className="rounded-2xl border border-purple-700/60 bg-purple-950/70 p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Users2 className="w-3.5 h-3.5 text-purple-300" />
+                        <span className="text-[10px] font-bold uppercase text-purple-300">Plantilla</span>
+                      </div>
+                      <div className="text-2xl font-extrabold text-purple-100">{operators.length}</div>
+                      <div className="text-[10px] text-purple-400/70 mt-0.5">operadores registrados</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Cobertura por día */}
+            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5">
+              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-emerald-400" />
+                Cobertura por día (semana actual)
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                      <th className="p-2">Día</th>
+                      <th className="p-2 text-center">M</th>
+                      <th className="p-2 text-center">T</th>
+                      <th className="p-2 text-center">N</th>
+                      <th className="p-2 text-center">DES</th>
+                      <th className="p-2 text-center">VAC</th>
+                      <th className="p-2 text-center">INC</th>
+                      <th className="p-2 text-center">Cobertura</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-900/50">
+                    {weekDays.map(day => {
+                      const counts = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
+                      operators.forEach(op => {
+                        const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+                        if (counts[code] !== undefined) counts[code]++;
+                      });
+                      const worked = counts.M + counts.T + counts.N;
+                      const total = operators.length || 1;
+                      const pct = Math.round((worked / total) * 100);
+                      const color = pct >= 80 ? 'text-emerald-300' : pct >= 60 ? 'text-amber-300' : 'text-red-300';
+                      return (
+                        <tr key={day.dateStr} className="hover:bg-[#003517]/50">
+                          <td className="p-2 font-bold text-white">{day.dayName} {day.dayNumber}</td>
+                          <td className="p-2 text-center text-emerald-300 font-bold">{counts.M}</td>
+                          <td className="p-2 text-center text-amber-300 font-bold">{counts.T}</td>
+                          <td className="p-2 text-center text-indigo-300 font-bold">{counts.N}</td>
+                          <td className="p-2 text-center text-slate-400">{counts.DES}</td>
+                          <td className="p-2 text-center text-purple-300">{counts.VAC}</td>
+                          <td className="p-2 text-center text-red-300">{counts.INC}</

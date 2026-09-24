@@ -152,16 +152,17 @@ const INDICATOR_ACCENTS = {
   cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-300',    value: 'text-cyan-100' }
 };
 
+// ✅ MiniIndicator compacto
 function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle = null }) {
   const c = INDICATOR_ACCENTS[accent] || INDICATOR_ACCENTS.emerald;
   return (
-    <div className={`flex items-center gap-2 rounded-lg border ${c.bg} ${c.border} px-2.5 py-1.5`}>
-      <Icon className={`w-3.5 h-3.5 ${c.text} shrink-0`} />
+    <div className={`flex items-center gap-1.5 rounded-md border ${c.bg} ${c.border} px-1.5 py-1`}>
+      <Icon className={`w-3 h-3 ${c.text} shrink-0`} />
       <div className="min-w-0 flex-1">
-        <div className={`text-[9px] font-bold uppercase tracking-wider ${c.text} leading-none`}>{label}</div>
-        <div className="flex items-baseline gap-1.5">
-          <span className={`text-base font-extrabold ${c.value} leading-none`}>{value}</span>
-          {subtitle && <span className={`text-[9px] ${c.text} opacity-70 leading-none`}>{subtitle}</span>}
+        <div className={`text-[8px] font-bold uppercase tracking-wider ${c.text} leading-none`}>{label}</div>
+        <div className="flex items-baseline gap-1">
+          <span className={`text-xs font-extrabold ${c.value} leading-none`}>{value}</span>
+          {subtitle && <span className={`text-[8px] ${c.text} opacity-70 leading-none`}>{subtitle}</span>}
         </div>
       </div>
     </div>
@@ -195,14 +196,12 @@ function Toast({ toast, onDismiss, onUndo }) {
   );
 }
 
-// ✅ Detectar móvil por userAgent
 const isMobileDevice = () => {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
 };
 
-// ✅ Descarga robusta (usada en desktop y como fallback)
 const forceDownload = (blob, filename) => {
   if (typeof navigator !== 'undefined' && navigator.msSaveBlob) {
     navigator.msSaveBlob(blob, filename);
@@ -235,7 +234,6 @@ const forceDownload = (blob, filename) => {
   }, 50);
 };
 
-// ✅ dataURL → Blob
 const dataURLtoBlob = (dataURL) => {
   const arr = dataURL.split(',');
   const mime = arr[0].match(/:(.*?);/)[1];
@@ -388,9 +386,7 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const exportMenuRef = useRef(null);
 
-  // ✅ Preview modal (para móvil)
   const [exportPreview, setExportPreview] = useState(null);
-  // { format, blob, dataUrl, filename, mimeType, isPdf }
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -448,7 +444,6 @@ export default function App() {
     }
   };
 
-  // ✅ Móvil: muestra preview | Desktop: descarga directa
   const handleExport = async (format) => {
     if (!scheduleRef.current) return;
     setIsExporting(true);
@@ -476,14 +471,7 @@ export default function App() {
         const filename = `${baseName}.${format}`;
 
         if (mobile) {
-          setExportPreview({
-            format,
-            blob,
-            dataUrl,
-            filename,
-            mimeType,
-            isPdf: false
-          });
+          setExportPreview({ format, blob, dataUrl, filename, mimeType, isPdf: false });
         } else {
           forceDownload(blob, filename);
           pushToast('success', `Horario ${format.toUpperCase()} descargado`);
@@ -524,14 +512,7 @@ export default function App() {
         const filename = `${baseName}.pdf`;
 
         if (mobile) {
-          setExportPreview({
-            format: 'pdf',
-            blob: pdfBlob,
-            dataUrl: null,
-            filename,
-            mimeType: 'application/pdf',
-            isPdf: true
-          });
+          setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
         } else {
           forceDownload(pdfBlob, filename);
           pushToast('success', 'PDF descargado');
@@ -1340,14 +1321,7 @@ export default function App() {
       const filename = `Reporte_Ejecutivo_${currentWeekStart}.pdf`;
 
       if (isMobileDevice()) {
-        setExportPreview({
-          format: 'pdf',
-          blob: pdfBlob,
-          dataUrl: null,
-          filename,
-          mimeType: 'application/pdf',
-          isPdf: true
-        });
+        setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
       } else {
         forceDownload(pdfBlob, filename);
         pushToast('success', 'Reporte descargado');
@@ -1487,16 +1461,17 @@ export default function App() {
         </div>
       </div>
 
+      {/* ✅ Header compacto */}
       <header className="border-b border-emerald-800/60 bg-[#00471f]/90 backdrop-blur sticky top-0 z-30 shadow-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-2 sm:space-x-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
-              <Truck className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-200" />
-              <Star className="w-3 h-3 sm:w-4 sm:h-4 text-red-600 fill-red-600 absolute -top-1 -right-1" />
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-12 sm:h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-[#006029] to-[#003818] border border-emerald-500/30 flex items-center justify-center relative shadow-md">
+              <Truck className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-emerald-200" />
+              <Star className="w-2.5 h-2.5 sm:w-4 sm:h-4 text-red-600 fill-red-600 absolute -top-0.5 -right-0.5 sm:-top-1 sm:-right-1" />
             </div>
-            <div className="hidden xs:block sm:block">
-              <h1 className="text-base sm:text-lg font-bold text-white">ShiftForklift</h1>
-              <p className="text-[10px] sm:text-xs text-emerald-300/80 hidden sm:block">Gestión de Turnos y Personal</p>
+            <div className="hidden sm:block">
+              <h1 className="text-lg font-bold text-white">ShiftForklift</h1>
+              <p className="text-xs text-emerald-300/80">Gestión de Turnos y Personal</p>
             </div>
           </div>
 
@@ -1511,7 +1486,7 @@ export default function App() {
             )}
           </nav>
 
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          <div className="flex items-center space-x-2">
             {syncStatus !== 'idle' && (
               <div className={`hidden sm:flex items-center space-x-1.5 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${
                 syncStatus === 'saving' ? 'bg-amber-950 text-amber-300 border-amber-700/60' :
@@ -1527,10 +1502,10 @@ export default function App() {
             {licenseAlerts.length > 0 && (
               <button
                 onClick={() => { setActiveTab('operators'); setShowLicenseAlerts(true); }}
-                className="relative p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-xl transition"
+                className="relative p-1.5 sm:p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-lg sm:rounded-xl transition"
               >
-                <Bell className="w-4 h-4" />
-                <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
+                <Bell className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] font-extrabold w-3.5 h-3.5 rounded-full flex items-center justify-center">
                   {licenseAlerts.length}
                 </span>
               </button>
@@ -1542,61 +1517,64 @@ export default function App() {
                 {currentUser.role}
               </span>
             </div>
-            <button onClick={handleLogout} className="p-2 bg-red-950/80 hover:bg-red-800 border border-red-800 text-red-200 rounded-xl transition" title="Cerrar Sesión">
-              <LogOut className="w-4 h-4" />
+            <button onClick={handleLogout} className="p-1.5 sm:p-2 bg-red-950/80 hover:bg-red-800 border border-red-800 text-red-200 rounded-lg sm:rounded-xl transition" title="Cerrar Sesión">
+              <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>
       </header>
 
-      <nav className="md:hidden sticky top-16 z-20 bg-[#021f12]/95 backdrop-blur border-b border-emerald-900/60">
-        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 scrollbar-hide">
-          <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
-          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
-          <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
+      {/* ✅ Nav móvil compacto */}
+      <nav className="md:hidden sticky top-12 z-20 bg-[#021f12]/95 backdrop-blur border-b border-emerald-900/60">
+        <div className="flex gap-1 overflow-x-auto px-2 py-1.5 scrollbar-hide">
+          <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-2.5 py-1.5 text-[11px] font-bold rounded-md whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
+          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-2.5 py-1.5 text-[11px] font-bold rounded-md whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
+          <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-2.5 py-1.5 text-[11px] font-bold rounded-md whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
           {canViewReports && (
-            <button onClick={() => setActiveTab('reports')} className={`shrink-0 px-3.5 py-2 text-xs font-bold rounded-lg whitespace-nowrap flex items-center gap-1.5 transition ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
+            <button onClick={() => setActiveTab('reports')} className={`shrink-0 px-2.5 py-1.5 text-[11px] font-bold rounded-md whitespace-nowrap flex items-center gap-1 transition ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
               <BarChart3 className="w-3 h-3" /> Reportes
             </button>
           )}
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mt-4 sm:mt-6">
+      <main className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 mt-2 sm:mt-6">
         {activeTab === 'scheduler' && (
-          <div className="space-y-3 sm:space-y-4">
+          <div className="space-y-2 sm:space-y-4">
             {isHistoricalWeek && (
-              <div className="bg-slate-900/70 border border-slate-600/60 rounded-2xl p-3 sm:p-4 flex items-center gap-3">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
-                  <History className="w-4 h-4 sm:w-5 sm:h-5 text-slate-300" />
+              <div className="bg-slate-900/70 border border-slate-600/60 rounded-lg sm:rounded-2xl p-2 sm:p-4 flex items-center gap-2 sm:gap-3">
+                <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-md sm:rounded-xl bg-slate-800 border border-slate-600/60 flex items-center justify-center shrink-0">
+                  <History className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-slate-300" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-100">Semana histórica — Solo lectura</h3>
-                  <p className="text-[10px] sm:text-xs text-slate-300 mt-0.5">Esta semana ya pasó. Los turnos están bloqueados.</p>
+                  <h3 className="text-[11px] sm:text-sm font-bold text-slate-100">Semana histórica — Solo lectura</h3>
+                  <p className="text-[9px] sm:text-xs text-slate-300 mt-0.5 hidden sm:block">Esta semana ya pasó. Los turnos están bloqueados.</p>
                 </div>
-                <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 shrink-0" />
+                <Lock className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-slate-400 shrink-0" />
               </div>
             )}
 
+            {/* ✅ Banner bloqueos compacto */}
             {!isHistoricalWeek && lockedCellsInView > 0 && (
-              <div className="bg-purple-950/40 border border-purple-700/40 rounded-2xl px-3 py-2 flex items-center justify-center gap-2">
-                <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
-                <p className="text-[10px] text-purple-200 text-center">
-                  {lockedCellsInView} turno(s) bloqueado(s). <span className="text-purple-300">Toca uno para buscar reemplazo.</span>
+              <div className="bg-purple-950/40 border border-purple-700/40 rounded-lg px-2.5 py-1 flex items-center justify-center gap-1.5">
+                <Lock className="w-3 h-3 text-purple-300 shrink-0" />
+                <p className="text-[10px] text-purple-200 text-center leading-tight">
+                  {lockedCellsInView} bloqueado(s). <span className="text-purple-300">Toca para reasignar.</span>
                 </p>
               </div>
             )}
 
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 flex flex-col gap-3">
+            {/* ✅ Barra de semana compacta */}
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-xl p-2 flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-1">
                   <button onClick={() => {
                     const [y, m, d] = currentWeekStart.split('-').map(Number);
                     const prevWeek = new Date(y, m - 1, d - 7);
                     setCurrentWeekStart(formatDateLocal(prevWeek));
-                  }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
+                  }} className="p-1 bg-[#022415] hover:bg-emerald-900 rounded text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-3.5 h-3.5"/></button>
 
-                  <div className="text-[10px] sm:text-xs font-bold text-white bg-[#02180d] px-2.5 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-1.5">
+                  <div className="text-[10px] sm:text-xs font-bold text-white bg-[#02180d] px-2 py-1 rounded border border-emerald-900 flex items-center gap-1">
                     {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
                     {isCurrentWeek && <Activity className="w-3 h-3 text-emerald-400" />}
                     <span className="whitespace-nowrap">{weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}</span>
@@ -1606,16 +1584,16 @@ export default function App() {
                     const [y, m, d] = currentWeekStart.split('-').map(Number);
                     const nextWeek = new Date(y, m - 1, d + 7);
                     setCurrentWeekStart(formatDateLocal(nextWeek));
-                  }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
+                  }} className="p-1 bg-[#022415] hover:bg-emerald-900 rounded text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-3.5 h-3.5"/></button>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   {!isCurrentWeek && (
                     <button
                       onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())}
-                      className="px-2 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                      className="px-1.5 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px] font-bold transition flex items-center gap-1"
                     >
-                      <Activity className="w-3 h-3" /> Hoy
+                      <Activity className="w-3 h-3" />
                     </button>
                   )}
 
@@ -1623,22 +1601,21 @@ export default function App() {
                     <button
                       disabled={isExporting}
                       onClick={() => setShowExportMenu(!showExportMenu)}
-                      className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 transition border border-emerald-500/50 shadow"
+                      className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-2 py-1 rounded text-xs flex items-center gap-1 transition border border-emerald-500/50 shadow"
                     >
                       {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                      <span className="hidden sm:inline">Exportar</span>
                     </button>
                     {showExportMenu && (
-                      <div className="absolute right-0 mt-2 w-52 bg-[#002e14] border border-emerald-700 rounded-xl shadow-2xl z-50 overflow-hidden text-xs">
-                        <div className="p-2 border-b border-emerald-800 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Formato</div>
-                        <button onClick={() => handleExport('png')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition">
-                          <ImageIcon className="w-4 h-4 text-emerald-400" /><div className="font-bold">PNG</div>
+                      <div className="absolute right-0 mt-2 w-44 bg-[#002e14] border border-emerald-700 rounded-lg shadow-2xl z-50 overflow-hidden text-xs">
+                        <div className="p-1.5 border-b border-emerald-800 text-[9px] font-bold text-emerald-400 uppercase tracking-wider">Formato</div>
+                        <button onClick={() => handleExport('png')} className="w-full text-left px-2.5 py-2 text-emerald-100 hover:bg-emerald-800/80 flex items-center gap-2 transition">
+                          <ImageIcon className="w-3.5 h-3.5 text-emerald-400" /><div className="font-bold text-[11px]">PNG</div>
                         </button>
-                        <button onClick={() => handleExport('jpg')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
-                          <FileImage className="w-4 h-4 text-amber-400" /><div className="font-bold">JPG</div>
+                        <button onClick={() => handleExport('jpg')} className="w-full text-left px-2.5 py-2 text-emerald-100 hover:bg-emerald-800/80 flex items-center gap-2 transition border-t border-emerald-900/60">
+                          <FileImage className="w-3.5 h-3.5 text-amber-400" /><div className="font-bold text-[11px]">JPG</div>
                         </button>
-                        <button onClick={() => handleExport('pdf')} className="w-full text-left px-3 py-2.5 text-emerald-100 hover:bg-emerald-800/80 flex items-center space-x-2 transition border-t border-emerald-900/60">
-                          <FileText className="w-4 h-4 text-red-400" /><div className="font-bold">PDF</div>
+                        <button onClick={() => handleExport('pdf')} className="w-full text-left px-2.5 py-2 text-emerald-100 hover:bg-emerald-800/80 flex items-center gap-2 transition border-t border-emerald-900/60">
+                          <FileText className="w-3.5 h-3.5 text-red-400" /><div className="font-bold text-[11px]">PDF</div>
                         </button>
                       </div>
                     )}
@@ -1646,47 +1623,38 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative flex-1 min-w-[140px]">
-                  <Search className="w-3 h-3 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="w-3 h-3 text-emerald-500 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     placeholder="Buscar..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
+                    className="w-full bg-[#02180d] border border-emerald-900 rounded pl-6 pr-2 py-1 text-[11px] text-white focus:outline-none focus:border-emerald-700"
                   />
                 </div>
                 <select
                   value={selectedZone}
                   onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[10px] sm:text-xs text-emerald-200 focus:outline-none max-w-[130px]"
+                  className="bg-[#02180d] border border-emerald-900 rounded px-1.5 py-1 text-[10px] text-emerald-200 focus:outline-none max-w-[100px]"
                 >
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
-                <select
-                  value={selectedEquipment}
-                  onChange={(e) => setSelectedEquipment(e.target.value)}
-                  className="hidden sm:block bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-xs text-emerald-200 focus:outline-none max-w-[140px]"
-                >
-                  <option value="Todos los equipos">Equipos</option>
-                  {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-                </select>
                 <button
                   onClick={() => setOnlyExpiringLicenses(v => !v)}
-                  className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition flex items-center gap-1 ${
+                  className={`px-1.5 py-1 rounded text-[10px] font-bold border transition flex items-center gap-0.5 shrink-0 ${
                     onlyExpiringLicenses
                       ? 'bg-amber-600 border-amber-400 text-white'
                       : 'bg-[#02180d] border-emerald-900 text-emerald-300'
                   }`}
                 >
                   <AlertCircle className="w-3 h-3" />
-                  <span className="hidden sm:inline">Críticas</span>
                 </button>
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={clearAllFilters}
-                    className="px-2 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                    className="px-1.5 py-1 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded text-[10px] font-bold transition flex items-center gap-0.5 shrink-0"
                   >
                     <FilterX className="w-3 h-3" /> {activeFiltersCount}
                   </button>
@@ -1694,15 +1662,16 @@ export default function App() {
               </div>
 
               {activeFiltersCount > 0 && (
-                <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-2.5 py-1 flex items-center gap-2 text-[10px] text-cyan-200">
-                  <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
-                  <span>Mostrando <span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span></span>
+                <div className="bg-cyan-950/40 border border-cyan-700/40 rounded px-2 py-0.5 flex items-center gap-1.5 text-[9px] text-cyan-200">
+                  <Filter className="w-2.5 h-2.5 text-cyan-300 shrink-0" />
+                  <span><span className="font-bold">{filteredOperators.length}</span> de <span className="font-bold">{operators.length}</span></span>
                 </div>
               )}
             </div>
 
-            <div className="md:hidden space-y-3">
-              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-hide">
+            {/* ✅ Vista móvil compacta */}
+            <div className="md:hidden space-y-2">
+              <div className="flex gap-1 overflow-x-auto pb-1 -mx-2 px-2 scrollbar-hide">
                 {weekDays.map(day => {
                   const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                   const isSelected = day.dateStr === selectedMobileDay;
@@ -1710,23 +1679,23 @@ export default function App() {
                     <button
                       key={day.dateStr}
                       onClick={() => setSelectedMobileDay(day.dateStr)}
-                      className={`shrink-0 flex flex-col items-center justify-center px-3 py-2 rounded-xl border transition min-w-[58px] ${
+                      className={`shrink-0 flex flex-col items-center justify-center px-2 py-1 rounded-lg border transition min-w-[44px] ${
                         isSelected
-                          ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg'
+                          ? 'bg-emerald-600 border-emerald-400 text-white shadow-md'
                           : isToday
                           ? 'bg-emerald-950/60 border-emerald-700 text-emerald-200'
                           : 'bg-[#02180d] border-emerald-900 text-emerald-300'
                       }`}
                     >
-                      <span className="text-[10px] font-bold uppercase">{day.dayName}</span>
-                      <span className={`text-base font-extrabold ${day.isWeekend && !isSelected ? 'text-red-400' : ''}`}>{day.dayNumber}</span>
-                      {isToday && <span className="text-[8px] font-bold uppercase tracking-wider">Hoy</span>}
+                      <span className="text-[9px] font-bold uppercase leading-tight">{day.dayName}</span>
+                      <span className={`text-sm font-extrabold leading-tight ${day.isWeekend && !isSelected ? 'text-red-400' : ''}`}>{day.dayNumber}</span>
+                      {isToday && <span className="text-[7px] font-bold uppercase tracking-wider leading-tight">Hoy</span>}
                     </button>
                   );
                 })}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {filteredOperators.map(op => {
                   const cellKey = `${op.id}_${selectedMobileDay}`;
                   const shiftCode = scheduleData[cellKey] || 'DES';
@@ -1747,21 +1716,21 @@ export default function App() {
                           setSelectedCell({ operatorId: op.id, dateStr: selectedMobileDay, currentShift: shiftCode });
                         }
                       }}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition ${shift.color} ${
+                      className={`w-full flex items-center gap-2 p-1.5 rounded-lg border text-left transition ${shift.color} ${
                         isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60' : ''
                       } ${!editable && !isLockedByAbsence ? 'opacity-60' : 'active:scale-[0.98]'}`}
                     >
-                      <div className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center border ${shift.color}`}>
-                        <IconComp className="w-5 h-5" />
+                      <div className={`shrink-0 w-7 h-7 rounded flex items-center justify-center border ${shift.color}`}>
+                        <IconComp className="w-3.5 h-3.5" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-bold text-sm truncate">{op.name}</div>
-                        <div className="text-[10px] opacity-80 truncate">{op.id} · {op.zone}</div>
+                        <div className="font-bold text-[12px] truncate leading-tight">{op.name}</div>
+                        <div className="text-[9px] opacity-80 truncate leading-tight">{op.id} · {op.zone}</div>
                       </div>
-                      <div className="shrink-0 flex items-center gap-1.5">
-                        <span className="font-extrabold text-sm">{shift.code}</span>
+                      <div className="shrink-0 flex items-center gap-1">
+                        <span className="font-extrabold text-xs">{shift.code}</span>
                         {(isLockedByAbsence || isHistoricalWeek) && (
-                          <Lock className={`w-3.5 h-3.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
+                          <Lock className={`w-3 h-3 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
                         )}
                       </div>
                     </button>
@@ -1769,21 +1738,21 @@ export default function App() {
                 })}
 
                 {filteredOperators.length === 0 && (
-                  <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
+                  <div className="bg-[#002812] border border-emerald-800/80 rounded-xl p-6 text-center">
                     {operators.length === 0 ? (
                       <>
-                        <Users className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
-                        <p className="text-emerald-300 font-bold text-sm">No hay operadores registrados</p>
+                        <Users className="w-8 h-8 text-emerald-700 mx-auto mb-2" />
+                        <p className="text-emerald-300 font-bold text-xs">No hay operadores registrados</p>
                       </>
                     ) : (
                       <>
-                        <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
-                        <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide</p>
+                        <FilterX className="w-8 h-8 text-cyan-700 mx-auto mb-2" />
+                        <p className="text-cyan-300 font-bold text-xs">Ningún operador coincide</p>
                         <button
                           onClick={clearAllFilters}
-                          className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
+                          className="mt-2 px-2.5 py-1 bg-cyan-700 hover:bg-cyan-600 text-white rounded text-[10px] font-bold transition inline-flex items-center gap-1"
                         >
-                          <FilterX className="w-3.5 h-3.5" /> Limpiar
+                          <FilterX className="w-3 h-3" /> Limpiar
                         </button>
                       </>
                     )}
@@ -1898,28 +1867,29 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap">
+            {/* ✅ Indicadores compactos */}
+            <div className="flex items-center justify-center gap-1 flex-wrap">
               {isCurrentWeek ? (
-                <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
-                  <span className="relative flex h-2 w-2 shrink-0">
+                <div className="relative flex items-center gap-1.5 rounded-md border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-1.5 py-1 shadow-md">
+                  <span className="relative flex h-1.5 w-1.5 shrink-0">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                   </span>
-                  <ActiveShiftIcon className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                  <ActiveShiftIcon className="w-3 h-3 text-emerald-300 shrink-0" />
                   <div className="min-w-0">
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-300 leading-none">En vivo</div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-sm sm:text-base font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
-                      <span className="text-[9px] text-emerald-400 font-mono leading-none hidden sm:inline">{formatTimeLocal(now)}</span>
+                    <div className="text-[8px] font-bold uppercase tracking-wider text-emerald-300 leading-none">En vivo</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-xs font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
+                      <span className="text-[8px] text-emerald-400 font-mono leading-none hidden sm:inline">{formatTimeLocal(now)}</span>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/60 px-2.5 py-1.5">
-                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <div className="flex items-center gap-1.5 rounded-md border border-slate-700/60 bg-slate-900/60 px-1.5 py-1">
+                  <Clock className="w-3 h-3 text-slate-400 shrink-0" />
                   <div>
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none">Resumen</div>
-                    <div className="text-[10px] sm:text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
+                    <div className="text-[8px] font-bold uppercase tracking-wider text-slate-400 leading-none">Resumen</div>
+                    <div className="text-[10px] font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
                   </div>
                 </div>
               )}
@@ -2530,7 +2500,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ✅ MODAL DE PREVIEW — solo en móvil */}
       {exportPreview && (
         <div className="fixed inset-0 bg-black z-[200] flex flex-col">
           <div className="p-3 bg-[#003818] border-b border-emerald-700 flex justify-between items-center shrink-0">

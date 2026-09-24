@@ -43,13 +43,10 @@ import {
   FilterX,
   ArrowRightLeft,
   BarChart3,
-  FileSpreadsheet,
   TrendingUp,
   CalendarDays,
   Users2,
-  DollarSign,
-  ShieldCheck,
-  UserPlus
+  ShieldCheck
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -196,25 +193,6 @@ function Toast({ toast, onDismiss, onUndo }) {
     </div>
   );
 }
-
-const calcHoursInRange = (operatorId, fromDate, toDate, scheduleData) => {
-  const days = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
-  let total = 0;
-  if (!fromDate || !toDate) return { total: 0, days };
-  const start = new Date(fromDate + 'T00:00:00');
-  const end = new Date(toDate + 'T00:00:00');
-  const curr = new Date(start);
-  while (curr <= end) {
-    const key = `${operatorId}_${formatDateLocal(curr)}`;
-    const code = scheduleData[key];
-    if (code && SHIFT_HOURS[code] !== undefined) {
-      total += SHIFT_HOURS[code];
-      days[code] = (days[code] || 0) + 1;
-    }
-    curr.setDate(curr.getDate() + 1);
-  }
-  return { total, days };
-};
 
 const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators, scheduleData, lockedCells) => {
   const target = operators.find(o => o.id === targetOperatorId);
@@ -364,17 +342,6 @@ export default function App() {
 
   const [reassignModal, setReassignModal] = useState(null);
   const [reassignShift, setReassignShift] = useState('M');
-
-  const [hoursStart, setHoursStart] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-  });
-  const [hoursEnd, setHoursEnd] = useState(() => {
-    const d = new Date();
-    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    return formatDateLocal(last);
-  });
-  const [hoursZoneFilter, setHoursZoneFilter] = useState('Todas las zonas');
 
   useEffect(() => {
     if (!lockoutUntil) return;
@@ -780,7 +747,6 @@ export default function App() {
   const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
   const canManageOperators = currentUser && currentUser.role === 'Admin';
   const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
-  const canViewHours = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
   const canViewReports = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
 
   const licenseAlerts = useMemo(() => {
@@ -1124,33 +1090,6 @@ export default function App() {
     }
   };
 
-  const exportHoursCSV = () => {
-    const rows = [
-      ['Operador', 'ID', 'Zona', 'Equipo', 'Turnos M', 'Turnos T', 'Turnos N', 'Días DES', 'Días VAC', 'Días INC', 'Horas Totales']
-    ];
-    const targetOps = hoursZoneFilter === 'Todas las zonas'
-      ? operators
-      : operators.filter(o => o.zone === hoursZoneFilter);
-
-    targetOps.forEach(op => {
-      const stats = calcHoursInRange(op.id, hoursStart, hoursEnd, scheduleData);
-      rows.push([
-        op.name, op.id, op.zone, op.equipment,
-        stats.days.M, stats.days.T, stats.days.N,
-        stats.days.DES, stats.days.VAC, stats.days.INC,
-        stats.total.toFixed(1)
-      ]);
-    });
-
-    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `Horas_${hoursStart}_${hoursEnd}.csv`;
-    link.click();
-    pushToast('success', `CSV exportado con ${targetOps.length} operadores`);
-  };
-
   const handleExportExecutivePDF = async () => {
     setIsExporting(true);
     try {
@@ -1459,11 +1398,6 @@ export default function App() {
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
             <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
             <button onClick={() => setActiveTab('vacations')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
-            {canViewHours && (
-              <button onClick={() => setActiveTab('hours')} className={`px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 ${activeTab === 'hours' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>
-                <DollarSign className="w-3 h-3" /> Horas
-              </button>
-            )}
             {canViewReports && (
               <button onClick={() => setActiveTab('reports')} className={`px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>
                 <BarChart3 className="w-3 h-3" /> Reportes
@@ -1940,118 +1874,6 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'hours' && canViewHours && (
-          <div className="space-y-5">
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
-              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center">
-                    <DollarSign className="w-5 h-5 text-emerald-300" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-white">Módulo de Horas y Nómina</h2>
-                    <p className="text-xs text-emerald-300">Cálculo de horas trabajadas por período</p>
-                  </div>
-                </div>
-                <button
-                  onClick={exportHoursCSV}
-                  disabled={operators.length === 0}
-                  className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition border border-emerald-500/50"
-                >
-                  <FileSpreadsheet className="w-4 h-4" /> Exportar CSV
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Desde</label>
-                  <input type="date" value={hoursStart} onChange={(e) => setHoursStart(e.target.value)} className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Hasta</label>
-                  <input type="date" value={hoursEnd} min={hoursStart} onChange={(e) => setHoursEnd(e.target.value)} className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1">Zona</label>
-                  <select value={hoursZoneFilter} onChange={(e) => setHoursZoneFilter(e.target.value)} className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-1.5 text-xs text-emerald-200 focus:outline-none">
-                    {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between mt-4 pt-4 border-t border-emerald-900/60 text-xs">
-                <div className="text-emerald-400">
-                  Período: <span className="font-bold text-white">{hoursStart}</span> al <span className="font-bold text-white">{hoursEnd}</span>
-                </div>
-                <div className="text-emerald-400">
-                  Total: <span className="font-bold text-emerald-300">
-                    {(() => {
-                      const targetOps = hoursZoneFilter === 'Todas las zonas' ? operators : operators.filter(o => o.zone === hoursZoneFilter);
-                      const sum = targetOps.reduce((acc, op) => acc + calcHoursInRange(op.id, hoursStart, hoursEnd, scheduleData).total, 0);
-                      return sum.toFixed(1);
-                    })()}h
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-[#001f0d] text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
-                      <th className="p-3">Operador</th>
-                      <th className="p-3">Zona</th>
-                      <th className="p-3 text-center">M</th>
-                      <th className="p-3 text-center">T</th>
-                      <th className="p-3 text-center">N</th>
-                      <th className="p-3 text-center">DES</th>
-                      <th className="p-3 text-center">VAC</th>
-                      <th className="p-3 text-center">INC</th>
-                      <th className="p-3 text-right">Horas</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-emerald-900/50">
-                    {(hoursZoneFilter === 'Todas las zonas' ? operators : operators.filter(o => o.zone === hoursZoneFilter)).map(op => {
-                      const stats = calcHoursInRange(op.id, hoursStart, hoursEnd, scheduleData);
-                      const isHigh = stats.total > 48;
-                      return (
-                        <tr key={op.id} className="hover:bg-[#003517]/50">
-                          <td className="p-3">
-                            <div className="font-bold text-white">{op.name}</div>
-                            <div className="text-[10px] text-emerald-400/70">{op.id}</div>
-                          </td>
-                          <td className="p-3 text-emerald-200 text-[11px]">{op.zone}</td>
-                          <td className="p-3 text-center text-emerald-300 font-bold">{stats.days.M}</td>
-                          <td className="p-3 text-center text-amber-300 font-bold">{stats.days.T}</td>
-                          <td className="p-3 text-center text-indigo-300 font-bold">{stats.days.N}</td>
-                          <td className="p-3 text-center text-slate-400">{stats.days.DES}</td>
-                          <td className="p-3 text-center text-purple-300">{stats.days.VAC}</td>
-                          <td className="p-3 text-center text-red-300">{stats.days.INC}</td>
-                          <td className={`p-3 text-right font-extrabold text-sm ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{stats.total.toFixed(1)}h</td>
-                        </tr>
-                      );
-                    })}
-                    {operators.length === 0 && (
-                      <tr>
-                        <td colSpan={9} className="p-12 text-center">
-                          <DollarSign className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
-                          <p className="text-emerald-300 font-bold text-sm">Sin operadores registrados</p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="text-[10px] text-emerald-500/70 text-center">
-              <p>Reglas: Mañana = 8h · Tarde = 8h · Noche = 8.5h · Descanso/Ausencia = 0h</p>
-              <p>Un total semanal por encima de 48h se marca en rojo como advertencia.</p>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'reports' && canViewReports && (
           <div className="space-y-5">
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
@@ -2277,7 +2099,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ✅ MODAL DE REASIGNACIÓN INTELIGENTE */}
       {reassignModal && reassignTarget && canEditShifts && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#002e14] border border-purple-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[90vh] flex flex-col">

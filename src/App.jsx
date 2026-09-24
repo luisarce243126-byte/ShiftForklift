@@ -42,7 +42,6 @@ import {
   Activity,
   Undo2,
   Info,
-  Copy,
   FilterX
 } from 'lucide-react';
 
@@ -123,13 +122,6 @@ const getMondayOfCurrentWeek = (refDate = new Date()) => {
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
   return formatDateLocal(d);
-};
-
-const addDaysToDateStr = (dateStr, days) => {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  date.setDate(date.getDate() + days);
-  return formatDateLocal(date);
 };
 
 const getLicenseStatusStyle = (expiryDateStr) => {
@@ -484,7 +476,6 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedZone, setSelectedZone] = useState('Todas las zonas');
-  // ✅ Nuevos filtros
   const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
   const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
 
@@ -595,22 +586,18 @@ export default function App() {
     return true;
   };
 
-  // ✅ Detección de conflictos mejorada
   const detectConflicts = (operatorId, dateStr, newShiftCode, isFullWeek = false) => {
     const conflicts = [];
     const currentCode = scheduleData[`${operatorId}_${dateStr}`];
     const op = operators.find(o => o.id === operatorId);
 
-    // No hay cambio real
     if (currentCode === newShiftCode && !isFullWeek) return conflicts;
 
-    // Conflicto con ausencia aprobada
     if (lockedCells.has(`${operatorId}_${dateStr}`)) {
       conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
       return conflicts;
     }
 
-    // ✅ Validar horas semanales si es un turno de trabajo
     if (['M', 'T', 'N'].includes(newShiftCode)) {
       const weekDates = weekDays.map(d => d.dateStr);
       let weeklyHours = 0;
@@ -629,18 +616,15 @@ export default function App() {
       }
     }
 
-    // ✅ Validar turnos nocturnos consecutivos (máximo 5)
     if (newShiftCode === 'N' && !isFullWeek) {
       const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
       if (currentIdx >= 0) {
         let consecutiveN = 1;
-        // Contar hacia atrás
         for (let i = currentIdx - 1; i >= 0; i--) {
           const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
           if (code === 'N') consecutiveN++;
           else break;
         }
-        // Contar hacia adelante
         for (let i = currentIdx + 1; i < 7; i++) {
           const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
           if (code === 'N') consecutiveN++;
@@ -748,7 +732,6 @@ export default function App() {
       .sort((a, b) => a.diffDays - b.diffDays);
   }, [operators]);
 
-  // ✅ Filtros combinados
   const filteredOperators = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -772,7 +755,6 @@ export default function App() {
     });
   }, [operators, searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
 
-  // ✅ Contar filtros activos
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (searchQuery.trim()) count++;
@@ -858,94 +840,6 @@ export default function App() {
       setScheduleData(previousSchedule);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
-  };
-
-  // ✅ Duplicar semana anterior
-  const handleDuplicatePreviousWeek = async () => {
-    if (!canEditShifts) return;
-    if (isHistoricalWeek) {
-      pushToast('warning', 'No se puede duplicar desde una semana histórica.');
-      return;
-    }
-
-    const prevMonday = addDaysToDateStr(currentWeekStart, -7);
-
-    // Verificar que hay datos en la semana anterior
-    const hasData = operators.some(op => 
-      weekDays.some((_, idx) => scheduleData[`${op.id}_${addDaysToDateStr(prevMonday, idx)}`])
-    );
-
-    if (!hasData) {
-      pushToast('warning', 'La semana anterior no tiene horarios guardados.');
-      return;
-    }
-
-    const ok = window.confirm(
-      '¿Copiar los turnos de la semana anterior a la semana actual?\n\n' +
-      '• No se sobreescribirán las celdas bloqueadas por ausencias aprobadas.\n' +
-      '• No se sobreescribirán las celdas que ya tienen un turno asignado en esta semana.'
-    );
-    if (!ok) return;
-
-    isUpdatingRef.current = true;
-    setSyncStatus('saving');
-
-    const previousSchedule = { ...scheduleData };
-    const updatedSchedule = { ...scheduleData };
-    let copied = 0;
-    const affectedKeys = [];
-
-    operators.forEach(op => {
-      weekDays.forEach((day, idx) => {
-        const currentKey = `${op.id}_${day.dateStr}`;
-        const prevDateStr = addDaysToDateStr(prevMonday, idx);
-        const prevKey = `${op.id}_${prevDateStr}`;
-        const prevValue = scheduleData[prevKey];
-
-        // No sobreescribir bloqueados ni celdas ya con valor
-        if (lockedCells.has(currentKey)) return;
-        if (updatedSchedule[currentKey] && updatedSchedule[currentKey] !== 'DES') return;
-        if (!prevValue) return;
-
-        if (updatedSchedule[currentKey] !== prevValue) {
-          updatedSchedule[currentKey] = prevValue;
-          affectedKeys.push(currentKey);
-          copied++;
-        }
-      });
-    });
-
-    if (copied === 0) {
-      pushToast('info', 'No hay nada nuevo que copiar.');
-      isUpdatingRef.current = false;
-      setSyncStatus('idle');
-      return;
-    }
-
-    setScheduleData(updatedSchedule);
-    triggerFlash(affectedKeys);
-
-    try {
-      await redis.set('sf_scheduleData', updatedSchedule);
-      reportSyncResult(true);
-      pushToast('success', `Se copiaron ${copied} turnos de la semana anterior`, {
-        undoAction: () => {
-          setScheduleData(previousSchedule);
-          redis.set('sf_scheduleData', previousSchedule).then(() => {
-            pushToast('info', 'Duplicado deshecho');
-          }).catch(() => {
-            pushToast('error', 'No se pudo deshacer');
-          });
-        }
-      });
-    } catch (error) {
-      console.error('Error al duplicar semana:', error);
-      setScheduleData(previousSchedule);
-      reportSyncResult(false);
-      pushToast('error', 'Error al duplicar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -1385,18 +1279,6 @@ export default function App() {
                     Hoy
                   </button>
                 )}
-
-                {/* ✅ Botón Duplicar semana anterior */}
-                {canEditShifts && !isHistoricalWeek && (
-                  <button
-                    onClick={handleDuplicatePreviousWeek}
-                    className="px-2.5 py-1.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg text-[10px] font-bold transition border border-indigo-500/50 flex items-center gap-1"
-                    title="Copiar los turnos de la semana anterior"
-                  >
-                    <Copy className="w-3 h-3" />
-                    Duplicar semana anterior
-                  </button>
-                )}
               </div>
 
               <div className="flex items-center gap-2 w-full lg:w-auto flex-wrap">
@@ -1418,7 +1300,6 @@ export default function App() {
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
 
-                {/* ✅ Filtro por equipo */}
                 <select
                   value={selectedEquipment}
                   onChange={(e) => setSelectedEquipment(e.target.value)}
@@ -1428,7 +1309,6 @@ export default function App() {
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                 </select>
 
-                {/* ✅ Toggle licencias por vencer */}
                 <button
                   onClick={() => setOnlyExpiringLicenses(v => !v)}
                   className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition flex items-center gap-1.5 ${
@@ -1442,7 +1322,6 @@ export default function App() {
                   Licencias críticas
                 </button>
 
-                {/* ✅ Limpiar filtros */}
                 {activeFiltersCount > 0 && (
                   <button
                     onClick={clearAllFilters}
@@ -1516,7 +1395,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ Indicador de filtros activos */}
             {activeFiltersCount > 0 && (
               <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-3 py-1.5 flex items-center gap-2 text-[10px] text-cyan-200">
                 <Filter className="w-3 h-3 text-cyan-300 shrink-0" />

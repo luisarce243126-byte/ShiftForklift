@@ -321,6 +321,9 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
 };
 
 export default function App() {
+  // ═══════════════════════════════════════════════════════
+  // TODOS LOS useState PRIMERO (el orden evita ReferenceErrors)
+  // ═══════════════════════════════════════════════════════
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPass, setLoginPass] = useState('');
@@ -331,11 +334,80 @@ export default function App() {
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
 
   const [syncStatus, setSyncStatus] = useState('idle');
-  const syncStatusTimeoutRef = useRef(null);
-
   const [toasts, setToasts] = useState([]);
-  const toastIdRef = useRef(0);
+  const [flashCells, setFlashCells] = useState(new Set());
 
+  const [showLicenseAlerts, setShowLicenseAlerts] = useState(true);
+  const [vacDateError, setVacDateError] = useState('');
+  const [activeTab, setActiveTab] = useState('scheduler');
+
+  const [operators, setOperators] = useState([]);
+  const [scheduleData, setScheduleData] = useState({});
+  const [vacationRequests, setVacationRequests] = useState([]);
+  const [extraHoursData, setExtraHoursData] = useState({});
+  const [extraHoursInput, setExtraHoursInput] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
+  const [applyToFullWeek, setApplyToFullWeek] = useState(false);
+
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportPreview, setExportPreview] = useState(null);
+
+  const [now, setNow] = useState(() => new Date());
+  const [reassignModal, setReassignModal] = useState(null);
+  const [reassignShift, setReassignShift] = useState('M');
+  const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
+
+  const [showIndicators, setShowIndicators] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sf_showIndicators');
+      return saved === null ? false : saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Estados de modales / formularios
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedZone, setSelectedZone] = useState('Todas las zonas');
+  const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
+  const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
+
+  const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
+  const [editingOperator, setEditingOperator] = useState(null);
+  const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
+  // ⚠️ selectedCell debe estar declarado ANTES del useEffect que lo usa
+  const [selectedCell, setSelectedCell] = useState(null);
+
+  const [newOp, setNewOp] = useState({
+    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
+    shiftPattern: 'Mañana', licenseExpiry: '2027-12-31'
+  });
+
+  const [newVac, setNewVac] = useState({
+    operatorId: '',
+    startDate: formatDateLocal(new Date()),
+    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
+    type: 'Vacaciones',
+    reason: ''
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // Refs
+  // ═══════════════════════════════════════════════════════
+  const syncStatusTimeoutRef = useRef(null);
+  const toastIdRef = useRef(0);
+  const flashCellsTimeoutRef = useRef(null);
+  const isUpdatingRef = useRef(false);
+  const scheduleRef = useRef(null);
+  const exportMenuRef = useRef(null);
+
+  // ═══════════════════════════════════════════════════════
+  // Callbacks / helpers
+  // ═══════════════════════════════════════════════════════
   const pushToast = useCallback((type, message, options = {}) => {
     const id = ++toastIdRef.current;
     const duration = options.duration ?? (options.undoAction ? UNDO_WINDOW_MS : 3000);
@@ -351,8 +423,6 @@ export default function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const [flashCells, setFlashCells] = useState(new Set());
-  const flashCellsTimeoutRef = useRef(null);
   const triggerFlash = useCallback((keys) => {
     setFlashCells(new Set(keys));
     if (flashCellsTimeoutRef.current) clearTimeout(flashCellsTimeoutRef.current);
@@ -365,59 +435,24 @@ export default function App() {
     syncStatusTimeoutRef.current = setTimeout(() => setSyncStatus('idle'), ok ? 2000 : 4000);
   };
 
-  const [showLicenseAlerts, setShowLicenseAlerts] = useState(true);
-  const [vacDateError, setVacDateError] = useState('');
+  // ═══════════════════════════════════════════════════════
+  // useEffects
+  // ═══════════════════════════════════════════════════════
 
-  const [activeTab, setActiveTab] = useState('scheduler');
-
-  const [operators, setOperators] = useState([]);
-  const [scheduleData, setScheduleData] = useState({});
-  const [vacationRequests, setVacationRequests] = useState([]);
-  // ✅ Horas extra por celda
-  const [extraHoursData, setExtraHoursData] = useState({});
-  const [extraHoursInput, setExtraHoursInput] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [loadError, setLoadError] = useState('');
-
-  const isUpdatingRef = useRef(false);
-  const scheduleRef = useRef(null);
-
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
-  const [applyToFullWeek, setApplyToFullWeek] = useState(false);
-
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const exportMenuRef = useRef(null);
-
-  const [exportPreview, setExportPreview] = useState(null);
-
-  const [now, setNow] = useState(() => new Date());
+  // Reloj en vivo (30s)
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(tick);
   }, []);
 
-  const [reassignModal, setReassignModal] = useState(null);
-  const [reassignShift, setReassignShift] = useState('M');
-  const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
-
-  // ✅ Indicadores arrancan OCULTOS y se recuerda la preferencia en localStorage
-  const [showIndicators, setShowIndicators] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sf_showIndicators');
-      return saved === null ? false : saved === 'true';
-    } catch {
-      return false;
-    }
-  });
-
+  // Guardar preferencia de indicadores
   useEffect(() => {
     try {
       localStorage.setItem('sf_showIndicators', String(showIndicators));
     } catch (err) { /* no-op */ }
   }, [showIndicators]);
 
-  // ✅ Al abrir el modal de cambio de turno, cargar las horas extra actuales
+  // Al abrir el modal de cambio de turno, cargar las horas extra actuales
   useEffect(() => {
     if (selectedCell) {
       const key = `${selectedCell.operatorId}_${selectedCell.dateStr}`;
@@ -427,6 +462,7 @@ export default function App() {
     }
   }, [selectedCell, extraHoursData]);
 
+  // Countdown del lockout
   useEffect(() => {
     if (!lockoutUntil) return;
     const tick = () => {
@@ -442,6 +478,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [lockoutUntil]);
 
+  // Cerrar menú de exportación al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
@@ -451,6 +488,286 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Auto-avanzar semana si cambia
+  useEffect(() => {
+    const checkWeekChange = () => {
+      const actualMonday = getMondayOfCurrentWeek();
+      if (actualMonday !== currentWeekStart) {
+        setCurrentWeekStart(actualMonday);
+      }
+    };
+    const interval = setInterval(checkWeekChange, 60000);
+    window.addEventListener('focus', checkWeekChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkWeekChange);
+    };
+  }, [currentWeekStart]);
+
+  // Reset día móvil si sale de la semana actual
+  useEffect(() => {
+    const isInCurrentView = weekDays.some(d => d.dateStr === selectedMobileDay);
+    if (!isInCurrentView) {
+      setSelectedMobileDay(weekDays[0].dateStr);
+    }
+  }, [currentWeekStart, weekDays, selectedMobileDay]);
+
+  // Carga inicial
+  const loadCloudData = async () => {
+    setIsLoaded(false);
+    setLoadError('');
+    try {
+      const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
+        redis.get('sf_operators'),
+        redis.get('sf_scheduleData'),
+        redis.get('sf_vacations'),
+        redis.get('sf_extraHours'),
+      ]);
+      setOperators(Array.isArray(savedOps) ? savedOps : []);
+      setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
+      setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
+      setExtraHoursData(savedExtra && typeof savedExtra === 'object' ? savedExtra : {});
+    } catch (error) {
+      console.error('Error al cargar datos:', error);
+      setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
+    } finally {
+      setIsLoaded(true);
+    }
+  };
+
+  useEffect(() => {
+    loadCloudData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Polling cada 3s
+  useEffect(() => {
+    if (!isLoaded || loadError) return;
+    const interval = setInterval(async () => {
+      if (isUpdatingRef.current) return;
+      try {
+        const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
+          redis.get('sf_operators'),
+          redis.get('sf_scheduleData'),
+          redis.get('sf_vacations'),
+          redis.get('sf_extraHours'),
+        ]);
+        if (!isUpdatingRef.current) {
+          if (Array.isArray(savedOps)) setOperators(savedOps);
+          if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+          if (Array.isArray(savedVac)) setVacationRequests(savedVac);
+          if (savedExtra && typeof savedExtra === 'object') setExtraHoursData(savedExtra);
+        }
+      } catch (err) {
+        console.error('Error en sincronización continua:', err);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isLoaded, loadError]);
+
+  // Restaurar sesión
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('sf_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const stillValid = MOCK_USERS.some(u => u.id === parsed.id && u.email === parsed.email);
+        if (stillValid) setCurrentUser(parsed);
+      }
+    } catch (err) { /* no-op */ }
+  }, []);
+
+  // ═══════════════════════════════════════════════════════
+  // Cómputos (useMemo)
+  // ═══════════════════════════════════════════════════════
+  const weekDays = useMemo(() => {
+    const days = [];
+    const [year, month, day] = currentWeekStart.split('-').map(Number);
+    const start = new Date(year, month - 1, day);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+      days.push({
+        dateStr: formatDateLocal(d),
+        dayName: dayNames[d.getDay()],
+        dayNumber: d.getDate(),
+        monthName: d.toLocaleDateString('es-ES', { month: 'short' }),
+        isWeekend: d.getDay() === 0 || d.getDay() === 6
+      });
+    }
+    return days;
+  }, [currentWeekStart]);
+
+  const isHistoricalWeek = useMemo(() => {
+    const currentMonday = getMondayOfCurrentWeek();
+    return currentWeekStart < currentMonday;
+  }, [currentWeekStart]);
+
+  const isCurrentWeek = useMemo(() => {
+    return currentWeekStart === getMondayOfCurrentWeek();
+  }, [currentWeekStart]);
+
+  const activeShiftCode = useMemo(() => getShiftCodeForDate(now), [now]);
+
+  const statsDateStr = useMemo(() => {
+    if (isCurrentWeek) return formatDateLocal(now);
+    return weekDays[0]?.dateStr || formatDateLocal(now);
+  }, [isCurrentWeek, now, weekDays]);
+
+  const statsDateLabel = useMemo(() => {
+    if (isCurrentWeek) return 'HOY';
+    return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
+  }, [isCurrentWeek, weekDays]);
+
+  const shiftStats = useMemo(() => {
+    const stats = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0, total: operators.length };
+    operators.forEach(op => {
+      const code = scheduleData[`${op.id}_${statsDateStr}`] || 'DES';
+      if (stats[code] !== undefined) stats[code]++;
+    });
+    stats.active = stats.M + stats.T + stats.N;
+    stats.absent = stats.VAC + stats.INC;
+    return stats;
+  }, [operators, scheduleData, statsDateStr]);
+
+  const lockedCells = useMemo(() => {
+    const locked = new Set();
+    vacationRequests
+      .filter(r => r.status === 'Aprobado')
+      .forEach(req => {
+        const [sY, sM, sD] = req.startDate.split('-').map(Number);
+        const [eY, eM, eD] = req.endDate.split('-').map(Number);
+        let curr = new Date(sY, sM - 1, sD);
+        const end = new Date(eY, eM - 1, eD);
+        while (curr <= end) {
+          locked.add(`${req.operatorId}_${formatDateLocal(curr)}`);
+          curr.setDate(curr.getDate() + 1);
+        }
+      });
+    return locked;
+  }, [vacationRequests]);
+
+  const lockedCellsInView = useMemo(() => {
+    let count = 0;
+    operators.forEach(op => {
+      weekDays.forEach(day => {
+        if (lockedCells.has(`${op.id}_${day.dateStr}`)) count++;
+      });
+    });
+    return count;
+  }, [operators, weekDays, lockedCells]);
+
+  const licenseAlerts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return operators
+      .map(op => {
+        if (!op.licenseExpiry) return null;
+        const expiry = new Date(op.licenseExpiry + 'T00:00:00');
+        const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 30) return null;
+        return { ...op, diffDays, expired: diffDays < 0 };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.diffDays - b.diffDays);
+  }, [operators]);
+
+  const filteredOperators = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return operators.filter(op => {
+      const matchesSearch = op.name.toLowerCase().includes(searchQuery.toLowerCase()) || op.id.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesZone = selectedZone === 'Todas las zonas' || op.zone === selectedZone;
+      const matchesEquipment = selectedEquipment === 'Todos los equipos' || op.equipment === selectedEquipment;
+      let matchesExpiring = true;
+      if (onlyExpiringLicenses) {
+        if (!op.licenseExpiry) matchesExpiring = false;
+        else {
+          const expiry = new Date(op.licenseExpiry + 'T00:00:00');
+          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          matchesExpiring = diffDays <= 30;
+        }
+      }
+      return matchesSearch && matchesZone && matchesEquipment && matchesExpiring;
+    });
+  }, [operators, searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count++;
+    if (selectedZone !== 'Todas las zonas') count++;
+    if (selectedEquipment !== 'Todos los equipos') count++;
+    if (onlyExpiringLicenses) count++;
+    return count;
+  }, [searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
+
+  // ═══════════════════════════════════════════════════════
+  // Permisos y helpers
+  // ═══════════════════════════════════════════════════════
+  const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+  const canManageOperators = currentUser && currentUser.role === 'Admin';
+  const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+  const canViewReports = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+
+  const canEditCell = (operatorId, dateStr) => {
+    if (!canEditShifts) return false;
+    if (isHistoricalWeek) return false;
+    if (lockedCells.has(`${operatorId}_${dateStr}`)) return false;
+    return true;
+  };
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setSelectedZone('Todas las zonas');
+    setSelectedEquipment('Todos los equipos');
+    setOnlyExpiringLicenses(false);
+    pushToast('info', 'Filtros limpiados');
+  };
+
+  const detectConflicts = (operatorId, dateStr, newShiftCode, isFullWeek = false) => {
+    const conflicts = [];
+    const currentCode = scheduleData[`${operatorId}_${dateStr}`];
+    const op = operators.find(o => o.id === operatorId);
+    if (currentCode === newShiftCode && !isFullWeek) return conflicts;
+    if (lockedCells.has(`${operatorId}_${dateStr}`)) {
+      conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
+      return conflicts;
+    }
+    if (['M', 'T', 'N'].includes(newShiftCode)) {
+      const weekDates = weekDays.map(d => d.dateStr);
+      let weeklyHours = 0;
+      let newShiftHours = newShiftCode === 'N' ? 8.5 : 8;
+      weekDates.forEach(date => {
+        const key = `${operatorId}_${date}`;
+        const code = date === dateStr ? newShiftCode : scheduleData[key];
+        if (code === 'M' || code === 'T') weeklyHours += 8;
+        else if (code === 'N') weeklyHours += 8.5;
+      });
+      if (weeklyHours + newShiftHours > 48) {
+        conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
+      }
+    }
+    if (newShiftCode === 'N' && !isFullWeek) {
+      const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
+      if (currentIdx >= 0) {
+        let consecutiveN = 1;
+        for (let i = currentIdx - 1; i >= 0; i--) {
+          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
+          if (code === 'N') consecutiveN++; else break;
+        }
+        for (let i = currentIdx + 1; i < 7; i++) {
+          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
+          if (code === 'N') consecutiveN++; else break;
+        }
+        if (consecutiveN > 5) {
+          conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
+        }
+      }
+    }
+    return conflicts;
+  };
 
   const loadExportLibraries = async () => {
     if (!window.html2canvas) {
@@ -471,6 +788,71 @@ export default function App() {
         document.head.appendChild(script);
       });
     }
+  };
+
+  // Auto-llenado de celdas vacías
+  useEffect(() => {
+    if (!isLoaded || isUpdatingRef.current) return;
+    if (operators.length === 0) return;
+    if (isHistoricalWeek) return;
+
+    const newSchedule = { ...scheduleData };
+    let changed = false;
+
+    operators.forEach((op) => {
+      weekDays.forEach((day, idx) => {
+        const key = `${op.id}_${day.dateStr}`;
+        if (lockedCells.has(key)) return;
+        if (!newSchedule[key]) {
+          if (idx === 5 || idx === 6) {
+            newSchedule[key] = 'DES';
+          } else {
+            if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
+            else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
+            else newSchedule[key] = 'N';
+          }
+          changed = true;
+        }
+      });
+    });
+
+    if (changed) {
+      setScheduleData(newSchedule);
+      redis.set('sf_scheduleData', newSchedule).catch(console.error);
+    }
+  }, [operators, weekDays, isLoaded, isHistoricalWeek, lockedCells]);
+
+  // ═══════════════════════════════════════════════════════
+  // Handlers
+  // ═══════════════════════════════════════════════════════
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (lockoutUntil && Date.now() < lockoutUntil) return;
+    const email = loginEmail.trim().toLowerCase();
+    const user = MOCK_USERS.find(u => u.email.toLowerCase() === email && u.pass === loginPass);
+    if (user) {
+      setCurrentUser(user);
+      setLoginError('');
+      setLoginAttempts(0);
+      setLoginPass('');
+      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* no-op */ }
+      pushToast('success', `Bienvenido, ${user.name}`);
+    } else {
+      const attempts = loginAttempts + 1;
+      setLoginAttempts(attempts);
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        setLockoutUntil(Date.now() + LOCKOUT_MS);
+        setLoginError(`Demasiados intentos fallidos. Espera ${LOCKOUT_MS / 1000}s para volver a intentar.`);
+      } else {
+        setLoginError(`Correo o contraseña incorrectos. (${MAX_LOGIN_ATTEMPTS - attempts} intento(s) restante(s))`);
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* no-op */ }
   };
 
   const handleExport = async (format) => {
@@ -555,358 +937,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    const checkWeekChange = () => {
-      const actualMonday = getMondayOfCurrentWeek();
-      if (actualMonday !== currentWeekStart) {
-        setCurrentWeekStart(actualMonday);
-      }
-    };
-    const interval = setInterval(checkWeekChange, 60000);
-    window.addEventListener('focus', checkWeekChange);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', checkWeekChange);
-    };
-  }, [currentWeekStart]);
-
-  const loadCloudData = async () => {
-    setIsLoaded(false);
-    setLoadError('');
-    try {
-      const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
-        redis.get('sf_operators'),
-        redis.get('sf_scheduleData'),
-        redis.get('sf_vacations'),
-        redis.get('sf_extraHours'),
-      ]);
-      setOperators(Array.isArray(savedOps) ? savedOps : []);
-      setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
-      setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
-      setExtraHoursData(savedExtra && typeof savedExtra === 'object' ? savedExtra : {});
-    } catch (error) {
-      console.error('Error al cargar datos:', error);
-      setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
-    } finally {
-      setIsLoaded(true);
-    }
-  };
-
-  useEffect(() => {
-    loadCloudData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!isLoaded || loadError) return;
-    const interval = setInterval(async () => {
-      if (isUpdatingRef.current) return;
-      try {
-        const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
-          redis.get('sf_operators'),
-          redis.get('sf_scheduleData'),
-          redis.get('sf_vacations'),
-          redis.get('sf_extraHours'),
-        ]);
-        if (!isUpdatingRef.current) {
-          if (Array.isArray(savedOps)) setOperators(savedOps);
-          if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-          if (Array.isArray(savedVac)) setVacationRequests(savedVac);
-          if (savedExtra && typeof savedExtra === 'object') setExtraHoursData(savedExtra);
-        }
-      } catch (err) {
-        console.error('Error en sincronización continua:', err);
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [isLoaded, loadError]);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedZone, setSelectedZone] = useState('Todas las zonas');
-  const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
-  const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
-
-  const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
-  const [editingOperator, setEditingOperator] = useState(null);
-  const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
-  const [selectedCell, setSelectedCell] = useState(null);
-
-  const [newOp, setNewOp] = useState({
-    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
-    shiftPattern: 'Mañana', licenseExpiry: '2027-12-31'
-  });
-
-  const [newVac, setNewVac] = useState({
-    operatorId: '',
-    startDate: formatDateLocal(new Date()),
-    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
-    type: 'Vacaciones',
-    reason: ''
-  });
-
-  const weekDays = useMemo(() => {
-    const days = [];
-    const [year, month, day] = currentWeekStart.split('-').map(Number);
-    const start = new Date(year, month - 1, day);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-      days.push({
-        dateStr: formatDateLocal(d),
-        dayName: dayNames[d.getDay()],
-        dayNumber: d.getDate(),
-        monthName: d.toLocaleDateString('es-ES', { month: 'short' }),
-        isWeekend: d.getDay() === 0 || d.getDay() === 6
-      });
-    }
-    return days;
-  }, [currentWeekStart]);
-
-  useEffect(() => {
-    const isInCurrentView = weekDays.some(d => d.dateStr === selectedMobileDay);
-    if (!isInCurrentView) {
-      setSelectedMobileDay(weekDays[0].dateStr);
-    }
-  }, [currentWeekStart, weekDays, selectedMobileDay]);
-
-  const isHistoricalWeek = useMemo(() => {
-    const currentMonday = getMondayOfCurrentWeek();
-    return currentWeekStart < currentMonday;
-  }, [currentWeekStart]);
-
-  const isCurrentWeek = useMemo(() => {
-    return currentWeekStart === getMondayOfCurrentWeek();
-  }, [currentWeekStart]);
-
-  const activeShiftCode = useMemo(() => getShiftCodeForDate(now), [now]);
-
-  const statsDateStr = useMemo(() => {
-    if (isCurrentWeek) return formatDateLocal(now);
-    return weekDays[0]?.dateStr || formatDateLocal(now);
-  }, [isCurrentWeek, now, weekDays]);
-
-  const statsDateLabel = useMemo(() => {
-    if (isCurrentWeek) return 'HOY';
-    return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
-  }, [isCurrentWeek, weekDays]);
-
-  const shiftStats = useMemo(() => {
-    const stats = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0, total: operators.length };
-    operators.forEach(op => {
-      const code = scheduleData[`${op.id}_${statsDateStr}`] || 'DES';
-      if (stats[code] !== undefined) stats[code]++;
-    });
-    stats.active = stats.M + stats.T + stats.N;
-    stats.absent = stats.VAC + stats.INC;
-    return stats;
-  }, [operators, scheduleData, statsDateStr]);
-
-  const lockedCells = useMemo(() => {
-    const locked = new Set();
-    vacationRequests
-      .filter(r => r.status === 'Aprobado')
-      .forEach(req => {
-        const [sY, sM, sD] = req.startDate.split('-').map(Number);
-        const [eY, eM, eD] = req.endDate.split('-').map(Number);
-        let curr = new Date(sY, sM - 1, sD);
-        const end = new Date(eY, eM - 1, eD);
-        while (curr <= end) {
-          locked.add(`${req.operatorId}_${formatDateLocal(curr)}`);
-          curr.setDate(curr.getDate() + 1);
-        }
-      });
-    return locked;
-  }, [vacationRequests]);
-
-  const lockedCellsInView = useMemo(() => {
-    let count = 0;
-    operators.forEach(op => {
-      weekDays.forEach(day => {
-        if (lockedCells.has(`${op.id}_${day.dateStr}`)) count++;
-      });
-    });
-    return count;
-  }, [operators, weekDays, lockedCells]);
-
-  const canEditCell = (operatorId, dateStr) => {
-    if (!canEditShifts) return false;
-    if (isHistoricalWeek) return false;
-    if (lockedCells.has(`${operatorId}_${dateStr}`)) return false;
-    return true;
-  };
-
-  const detectConflicts = (operatorId, dateStr, newShiftCode, isFullWeek = false) => {
-    const conflicts = [];
-    const currentCode = scheduleData[`${operatorId}_${dateStr}`];
-    const op = operators.find(o => o.id === operatorId);
-    if (currentCode === newShiftCode && !isFullWeek) return conflicts;
-    if (lockedCells.has(`${operatorId}_${dateStr}`)) {
-      conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
-      return conflicts;
-    }
-    if (['M', 'T', 'N'].includes(newShiftCode)) {
-      const weekDates = weekDays.map(d => d.dateStr);
-      let weeklyHours = 0;
-      let newShiftHours = newShiftCode === 'N' ? 8.5 : 8;
-      weekDates.forEach(date => {
-        const key = `${operatorId}_${date}`;
-        const code = date === dateStr ? newShiftCode : scheduleData[key];
-        if (code === 'M' || code === 'T') weeklyHours += 8;
-        else if (code === 'N') weeklyHours += 8.5;
-      });
-      if (weeklyHours + newShiftHours > 48) {
-        conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
-      }
-    }
-    if (newShiftCode === 'N' && !isFullWeek) {
-      const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
-      if (currentIdx >= 0) {
-        let consecutiveN = 1;
-        for (let i = currentIdx - 1; i >= 0; i--) {
-          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
-          if (code === 'N') consecutiveN++; else break;
-        }
-        for (let i = currentIdx + 1; i < 7; i++) {
-          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
-          if (code === 'N') consecutiveN++; else break;
-        }
-        if (consecutiveN > 5) {
-          conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
-        }
-      }
-    }
-    return conflicts;
-  };
-
-  useEffect(() => {
-    if (!isLoaded || isUpdatingRef.current) return;
-    if (operators.length === 0) return;
-    if (isHistoricalWeek) return;
-
-    const newSchedule = { ...scheduleData };
-    let changed = false;
-
-    operators.forEach((op) => {
-      weekDays.forEach((day, idx) => {
-        const key = `${op.id}_${day.dateStr}`;
-        if (lockedCells.has(key)) return;
-        if (!newSchedule[key]) {
-          if (idx === 5 || idx === 6) {
-            newSchedule[key] = 'DES';
-          } else {
-            if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
-            else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
-            else newSchedule[key] = 'N';
-          }
-          changed = true;
-        }
-      });
-    });
-
-    if (changed) {
-      setScheduleData(newSchedule);
-      redis.set('sf_scheduleData', newSchedule).catch(console.error);
-    }
-  }, [operators, weekDays, isLoaded, isHistoricalWeek, lockedCells]);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (lockoutUntil && Date.now() < lockoutUntil) return;
-    const email = loginEmail.trim().toLowerCase();
-    const user = MOCK_USERS.find(u => u.email.toLowerCase() === email && u.pass === loginPass);
-    if (user) {
-      setCurrentUser(user);
-      setLoginError('');
-      setLoginAttempts(0);
-      setLoginPass('');
-      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* no-op */ }
-      pushToast('success', `Bienvenido, ${user.name}`);
-    } else {
-      const attempts = loginAttempts + 1;
-      setLoginAttempts(attempts);
-      if (attempts >= MAX_LOGIN_ATTEMPTS) {
-        setLockoutUntil(Date.now() + LOCKOUT_MS);
-        setLoginError(`Demasiados intentos fallidos. Espera ${LOCKOUT_MS / 1000}s para volver a intentar.`);
-      } else {
-        setLoginError(`Correo o contraseña incorrectos. (${MAX_LOGIN_ATTEMPTS - attempts} intento(s) restante(s))`);
-      }
-    }
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* no-op */ }
-  };
-
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem('sf_session');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const stillValid = MOCK_USERS.some(u => u.id === parsed.id && u.email === parsed.email);
-        if (stillValid) setCurrentUser(parsed);
-      }
-    } catch (err) { /* no-op */ }
-  }, []);
-
-  const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
-  const canManageOperators = currentUser && currentUser.role === 'Admin';
-  const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
-  const canViewReports = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
-
-  const licenseAlerts = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return operators
-      .map(op => {
-        if (!op.licenseExpiry) return null;
-        const expiry = new Date(op.licenseExpiry + 'T00:00:00');
-        const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays > 30) return null;
-        return { ...op, diffDays, expired: diffDays < 0 };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.diffDays - b.diffDays);
-  }, [operators]);
-
-  const filteredOperators = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return operators.filter(op => {
-      const matchesSearch = op.name.toLowerCase().includes(searchQuery.toLowerCase()) || op.id.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesZone = selectedZone === 'Todas las zonas' || op.zone === selectedZone;
-      const matchesEquipment = selectedEquipment === 'Todos los equipos' || op.equipment === selectedEquipment;
-      let matchesExpiring = true;
-      if (onlyExpiringLicenses) {
-        if (!op.licenseExpiry) matchesExpiring = false;
-        else {
-          const expiry = new Date(op.licenseExpiry + 'T00:00:00');
-          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          matchesExpiring = diffDays <= 30;
-        }
-      }
-      return matchesSearch && matchesZone && matchesEquipment && matchesExpiring;
-    });
-  }, [operators, searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
-
-  const activeFiltersCount = useMemo(() => {
-    let count = 0;
-    if (searchQuery.trim()) count++;
-    if (selectedZone !== 'Todas las zonas') count++;
-    if (selectedEquipment !== 'Todos los equipos') count++;
-    if (onlyExpiringLicenses) count++;
-    return count;
-  }, [searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
-
-  const clearAllFilters = () => {
-    setSearchQuery('');
-    setSelectedZone('Todas las zonas');
-    setSelectedEquipment('Todos los equipos');
-    setOnlyExpiringLicenses(false);
-    pushToast('info', 'Filtros limpiados');
-  };
-
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     if (isHistoricalWeek) return;
@@ -924,7 +954,6 @@ export default function App() {
     const previousValue = scheduleData[clickedKey];
     const newValue = shiftCode;
 
-    // Determinar cuántas horas extra se van a guardar (solo aplican a turnos de trabajo)
     const isWorkShift = ['M', 'T', 'N'].includes(shiftCode);
     const extraToSave = isWorkShift ? (Number(extraHoursInput) || 0) : 0;
 
@@ -1022,7 +1051,7 @@ export default function App() {
 
     const updatedSchedule = { ...scheduleData, [newKey]: shiftCode };
     const updatedExtra = { ...extraHoursData };
-    delete updatedExtra[newKey]; // Al reasignar, no hereda las horas extra del ausente
+    delete updatedExtra[newKey];
 
     setScheduleData(updatedSchedule);
     setExtraHoursData(updatedExtra);
@@ -1215,7 +1244,7 @@ export default function App() {
         const dateStr = formatDateLocal(curr);
         const key = `${req.operatorId}_${dateStr}`;
         updatedSchedule[key] = shiftCode;
-        delete updatedExtra[key]; // Si aprueban ausencia, se limpian las horas extra
+        delete updatedExtra[key];
         curr.setDate(curr.getDate() + 1);
       }
       setScheduleData(updatedSchedule);
@@ -1426,6 +1455,9 @@ export default function App() {
     }
   };
 
+  // ═══════════════════════════════════════════════════════
+  // Early returns
+  // ═══════════════════════════════════════════════════════
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
@@ -1837,7 +1869,6 @@ export default function App() {
                         <div className="font-bold text-[13px] break-words leading-tight">{op.name}</div>
                         <div className="text-[10px] opacity-80 break-words leading-tight">{op.id} · {op.zone}</div>
                       </div>
-                      {/* ✅ Badge de horas extra en móvil */}
                       {['M','T','N'].includes(shiftCode) && extraH > 0 && (
                         <span className="shrink-0 text-[9px] font-extrabold bg-amber-500 text-black px-1.5 py-0.5 rounded">
                           +{extraH}h
@@ -1946,7 +1977,6 @@ export default function App() {
                                 >
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
-                                  {/* ✅ Badge de horas extra en desktop */}
                                   {['M','T','N'].includes(shiftCode) && extraH > 0 && (
                                     <span className="absolute -bottom-1 -left-1 text-[8px] font-extrabold bg-amber-500 text-black px-1 rounded">
                                       +{extraH}h
@@ -2466,7 +2496,6 @@ export default function App() {
               />
             </div>
 
-            {/* ✅ Selector de horas extra */}
             <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-amber-700/60">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">

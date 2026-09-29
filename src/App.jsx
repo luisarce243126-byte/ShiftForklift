@@ -131,6 +131,18 @@ const getMondayOfCurrentWeek = (refDate = new Date()) => {
   return formatDateLocal(d);
 };
 
+const LOAD_TIMEOUT_MS = 15000;
+const POLL_TIMEOUT_MS = 8000;
+const SLOW_LOAD_SECONDS = 4;
+
+const withTimeout = (promise, ms) => {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
+
 const OVERTIME_TYPES = ['Hora extra', 'Descanso trabajado', 'Día festivo'];
 const OT_MAX_HOURS_PER_DAY = 3;
 const OT_MAX_DAYS_PER_WEEK = 3;
@@ -401,6 +413,10 @@ export default function App() {
   const [vacationRequests, setVacationRequests] = useState([]);
   const [overtimeRequests, setOvertimeRequests] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadSeconds, setLoadSeconds] = useState(0);
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  const [pollFailed, setPollFailed] = useState(false);
+  const isPollingRef = useRef(false);
   const [loadError, setLoadError] = useState('');
 
   const isUpdatingRef = useRef(false);
@@ -589,19 +605,26 @@ export default function App() {
     setIsLoaded(false);
     setLoadError('');
     try {
-      const [savedOps, savedSchedule, savedVac, savedOt] = await Promise.all([
+      const [savedOps, savedSchedule, savedVac, savedOt] = await withTimeout(Promise.all([
         redis.get('sf_operators'),
         redis.get('sf_scheduleData'),
         redis.get('sf_vacations'),
         redis.get('sf_overtime'),
-      ]);
+      ]), LOAD_TIMEOUT_MS);
+      setPollFailed(false);
       setOvertimeRequests(Array.isArray(savedOt) ? savedOt : []);
       setOperators(Array.isArray(savedOps) ? savedOps : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
       setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
     } catch (error) {
       console.error('Error al cargar datos:', error);
-      setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        setLoadError('Sin conexión a internet. Conéctate a una red e intenta de nuevo.');
+      } else if (error && error.message === 'timeout') {
+        setLoadError('El servidor tardó demasiado en responder. Puede ser tu conexión o el servicio; intenta de nuevo en unos segundos.');
+      } else {
+        setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
+      }
     } finally {
       setIsLoaded(true);
     }
@@ -613,16 +636,36 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (isLoaded) { setLoadSeconds(0); return; }
+    const t = setInterval(() => setLoadSeconds(sec => sec + 1), 1000);
+    return () => clearInterval(t);
+  }, [isLoaded]);
+
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => { setIsOffline(false); setPollFailed(false); };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isLoaded || loadError) return;
     const interval = setInterval(async () => {
-      if (isUpdatingRef.current) return;
+      if (isUpdatingRef.current || isPollingRef.current) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      isPollingRef.current = true;
       try {
-        const [savedOps, savedSchedule, savedVac, savedOt] = await Promise.all([
+        const [savedOps, savedSchedule, savedVac, savedOt] = await withTimeout(Promise.all([
           redis.get('sf_operators'),
           redis.get('sf_scheduleData'),
           redis.get('sf_vacations'),
           redis.get('sf_overtime'),
-        ]);
+        ]), POLL_TIMEOUT_MS);
+        setPollFailed(false);
         if (!isUpdatingRef.current) {
           if (Array.isArray(savedOt)) setOvertimeRequests(savedOt);
           if (Array.isArray(savedOps)) setOperators(savedOps);
@@ -631,6 +674,9 @@ export default function App() {
         }
       } catch (err) {
         console.error('Error en sincronización continua:', err);
+        setPollFailed(true);
+      } finally {
+        isPollingRef.current = false;
       }
     }, 3000);
     return () => clearInterval(interval);
@@ -1021,7 +1067,7 @@ export default function App() {
     triggerFlash(affectedKeys);
 
     try {
-      await redis.set('sf_scheduleData', updatedSchedule);
+      await withTimeout(redis.set('sf_scheduleData', updatedSchedule), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       const op = operators.find(o => o.id === operatorId);
       const dayLabel = isFullWeek ? 'toda la semana' : dateStr;
@@ -1066,7 +1112,7 @@ export default function App() {
     triggerFlash([newKey]);
 
     try {
-      await redis.set('sf_scheduleData', updatedSchedule);
+      await withTimeout(redis.set('sf_scheduleData', updatedSchedule), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       const target = operators.find(o => o.id === targetOperatorId);
       const absent = operators.find(o => o.id === reassignModal.operatorId);
@@ -1115,7 +1161,7 @@ export default function App() {
     setSyncStatus('saving');
 
     try {
-      await redis.set('sf_operators', updatedOps);
+      await withTimeout(redis.set('sf_operators', updatedOps), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       pushToast('success', editingOperator ? 'Operador actualizado' : 'Operador registrado');
     } catch (error) {
@@ -1137,7 +1183,7 @@ export default function App() {
       const updatedOps = operators.filter(op => op.id !== operatorId);
       setOperators(updatedOps);
       try {
-        await redis.set('sf_operators', updatedOps);
+        await withTimeout(redis.set('sf_operators', updatedOps), LOAD_TIMEOUT_MS);
         reportSyncResult(true);
         pushToast('success', 'Operador eliminado');
       } catch (error) {
@@ -1181,7 +1227,7 @@ export default function App() {
     setIsRequestVacationOpen(false);
 
     try {
-      await redis.set('sf_vacations', updatedVac);
+      await withTimeout(redis.set('sf_vacations', updatedVac), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       pushToast('success', 'Solicitud registrada');
     } catch (error) {
@@ -1203,7 +1249,7 @@ export default function App() {
     const updatedVac = vacationRequests.filter(r => r.id !== id);
     setVacationRequests(updatedVac);
     try {
-      await redis.set('sf_vacations', updatedVac);
+      await withTimeout(redis.set('sf_vacations', updatedVac), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       pushToast('success', 'Solicitud cancelada');
     } catch (error) {
@@ -1246,9 +1292,9 @@ export default function App() {
     }
 
     try {
-      await redis.set('sf_vacations', updatedVac);
+      await withTimeout(redis.set('sf_vacations', updatedVac), LOAD_TIMEOUT_MS);
       if (newStatus === 'Aprobado' && req) {
-        await redis.set('sf_scheduleData', updatedSchedule);
+        await withTimeout(redis.set('sf_scheduleData', updatedSchedule), LOAD_TIMEOUT_MS);
       }
       reportSyncResult(true);
       pushToast('success', `Solicitud marcada como ${newStatus}`);
@@ -1297,7 +1343,7 @@ export default function App() {
     setIsOvertimeOpen(false);
 
     try {
-      await redis.set('sf_overtime', updatedOt);
+      await withTimeout(redis.set('sf_overtime', updatedOt), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       pushToast('success', `Horas extras registradas: ${op.name} (+${hours}h)`);
     } catch (error) {
@@ -1323,7 +1369,7 @@ export default function App() {
     setOvertimeRequests(updatedOt);
 
     try {
-      await redis.set('sf_overtime', updatedOt);
+      await withTimeout(redis.set('sf_overtime', updatedOt), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       pushToast('success', `Horas extras marcadas como ${newStatus}`);
       if (newStatus === 'Aprobado') {
@@ -1353,7 +1399,7 @@ export default function App() {
     const updatedOt = overtimeRequests.filter(r => r.id !== id);
     setOvertimeRequests(updatedOt);
     try {
-      await redis.set('sf_overtime', updatedOt);
+      await withTimeout(redis.set('sf_overtime', updatedOt), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       pushToast('success', 'Registro eliminado');
     } catch (error) {
@@ -1606,12 +1652,39 @@ export default function App() {
   }
 
   if (!isLoaded) {
+    const isSlow = loadSeconds >= SLOW_LOAD_SECONDS;
+    const progress = Math.min(100, Math.round((loadSeconds / (LOAD_TIMEOUT_MS / 1000)) * 100));
     return (
-      <div className="min-h-screen bg-[#021f12] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-emerald-300">
-          <Loader2 className="w-10 h-10 animate-spin" />
-          <span className="text-sm font-bold tracking-wide">Cargando datos…</span>
-          <span className="text-[10px] text-emerald-500">Sincronizando con la base de datos</span>
+      <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
+        <div className="w-full max-w-xs flex flex-col items-center gap-3 text-emerald-300 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center">
+            {isOffline ? <CloudOff className="w-8 h-8 text-red-300" /> : <Truck className="w-8 h-8 text-emerald-300" />}
+          </div>
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm font-bold tracking-wide">Cargando datos…</span>
+          </div>
+          <div className="w-full h-1.5 rounded-full bg-emerald-950 overflow-hidden border border-emerald-900">
+            <div
+              className={`h-full rounded-full transition-all duration-1000 ease-linear ${isSlow ? 'bg-amber-500' : 'bg-emerald-500'}`}
+              style={{ width: `${Math.max(progress, 6)}%` }}
+            />
+          </div>
+          {isOffline ? (
+            <p className="text-xs text-red-300 font-semibold">Sin conexión a internet. Esperando a que vuelva la señal…</p>
+          ) : isSlow ? (
+            <p className="text-xs text-amber-300 font-semibold">La conexión está lenta. Sigue intentando, {loadSeconds}s…</p>
+          ) : (
+            <p className="text-[11px] text-emerald-500">Sincronizando con la base de datos</p>
+          )}
+          {(isSlow || isOffline) && (
+            <button
+              onClick={loadCloudData}
+              className="mt-1 px-4 py-2 bg-emerald-950 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 transition"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Reintentar ahora
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1745,6 +1818,19 @@ export default function App() {
           )}
         </div>
       </nav>
+
+      {(isOffline || pollFailed) && (
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mt-3">
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${isOffline ? 'bg-red-950/80 border-red-800 text-red-200' : 'bg-amber-950/80 border-amber-700/70 text-amber-200'}`}>
+            <CloudOff className="w-4 h-4 shrink-0" />
+            <span className="flex-1">
+              {isOffline
+                ? 'Sin conexión a internet. Lo que ves puede estar desactualizado y los cambios no se guardarán hasta que vuelva la señal.'
+                : 'El servidor responde lento o no responde. Reintentando automáticamente; lo que ves puede estar desactualizado.'}
+            </span>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 mt-3 sm:mt-6">
         {activeTab === 'scheduler' && (

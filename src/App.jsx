@@ -131,6 +131,31 @@ const getMondayOfCurrentWeek = (refDate = new Date()) => {
   return formatDateLocal(d);
 };
 
+const OVERTIME_TYPES = ['Hora extra', 'Descanso trabajado', 'Día festivo'];
+const OT_MAX_HOURS_PER_DAY = 3;
+const OT_MAX_DAYS_PER_WEEK = 3;
+const WEEK_HOURS_LIMIT = 48;
+
+const getWeekDatesFromDate = (dateStr) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const base = new Date(y, m - 1, d);
+  const dow = base.getDay();
+  const monday = new Date(base);
+  monday.setDate(base.getDate() - dow + (dow === 0 ? -6 : 1));
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(monday);
+    dd.setDate(monday.getDate() + i);
+    dates.push(formatDateLocal(dd));
+  }
+  return dates;
+};
+
+const sumOvertime = (requests, operatorId, dates, statuses = ['Aprobado']) =>
+  (requests || [])
+    .filter(r => r.operatorId === operatorId && dates.includes(r.date) && statuses.includes(r.status))
+    .reduce((acc, r) => acc + (Number(r.hours) || 0), 0);
+
 const getLicenseStatusStyle = (expiryDateStr) => {
   if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
   const today = new Date();
@@ -245,7 +270,7 @@ const dataURLtoBlob = (dataURL) => {
   return new Blob([u8arr], { type: mime });
 };
 
-const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators, scheduleData, lockedCells) => {
+const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators, scheduleData, lockedCells, overtimeRequests = []) => {
   const target = operators.find(o => o.id === targetOperatorId);
   if (!target) return [];
 
@@ -289,6 +314,8 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
           if (c && SHIFT_HOURS[c] !== undefined) weekHours += SHIFT_HOURS[c];
         }
       });
+
+      weekHours += sumOvertime(overtimeRequests, op.id, weekDates);
 
       if (weekHours > 48) {
         score -= 40;
@@ -372,6 +399,7 @@ export default function App() {
   const [operators, setOperators] = useState([]);
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState([]);
+  const [overtimeRequests, setOvertimeRequests] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -561,11 +589,13 @@ export default function App() {
     setIsLoaded(false);
     setLoadError('');
     try {
-      const [savedOps, savedSchedule, savedVac] = await Promise.all([
+      const [savedOps, savedSchedule, savedVac, savedOt] = await Promise.all([
         redis.get('sf_operators'),
         redis.get('sf_scheduleData'),
         redis.get('sf_vacations'),
+        redis.get('sf_overtime'),
       ]);
+      setOvertimeRequests(Array.isArray(savedOt) ? savedOt : []);
       setOperators(Array.isArray(savedOps) ? savedOps : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
       setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
@@ -587,12 +617,14 @@ export default function App() {
     const interval = setInterval(async () => {
       if (isUpdatingRef.current) return;
       try {
-        const [savedOps, savedSchedule, savedVac] = await Promise.all([
+        const [savedOps, savedSchedule, savedVac, savedOt] = await Promise.all([
           redis.get('sf_operators'),
           redis.get('sf_scheduleData'),
           redis.get('sf_vacations'),
+          redis.get('sf_overtime'),
         ]);
         if (!isUpdatingRef.current) {
+          if (Array.isArray(savedOt)) setOvertimeRequests(savedOt);
           if (Array.isArray(savedOps)) setOperators(savedOps);
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
           if (Array.isArray(savedVac)) setVacationRequests(savedVac);
@@ -612,6 +644,8 @@ export default function App() {
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
+  const [isOvertimeOpen, setIsOvertimeOpen] = useState(false);
+  const [otError, setOtError] = useState('');
   const [selectedCell, setSelectedCell] = useState(null);
 
   const [newOp, setNewOp] = useState({
@@ -624,6 +658,14 @@ export default function App() {
     startDate: formatDateLocal(new Date()),
     endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
     type: 'Vacaciones',
+    reason: ''
+  });
+
+  const [newOt, setNewOt] = useState({
+    operatorId: '',
+    date: formatDateLocal(new Date()),
+    hours: 2,
+    type: OVERTIME_TYPES[0],
     reason: ''
   });
 
@@ -702,6 +744,47 @@ export default function App() {
     return locked;
   }, [vacationRequests]);
 
+  const overtimeByCell = useMemo(() => {
+    const map = {};
+    overtimeRequests.forEach(r => {
+      if (r.status === 'Rechazado') return;
+      const key = `${r.operatorId}_${r.date}`;
+      if (!map[key]) map[key] = { approved: 0, pending: 0 };
+      if (r.status === 'Aprobado') map[key].approved += Number(r.hours) || 0;
+      else map[key].pending += Number(r.hours) || 0;
+    });
+    return map;
+  }, [overtimeRequests]);
+
+  const otWarnings = useMemo(() => {
+    const warnings = [];
+    if (!isOvertimeOpen || !newOt.operatorId || !newOt.date) return warnings;
+    const hours = Number(newOt.hours);
+    if (!hours || hours <= 0) return warnings;
+    const active = ['Pendiente', 'Aprobado'];
+    const mine = overtimeRequests.filter(r => r.operatorId === newOt.operatorId && active.includes(r.status));
+    const weekDates = getWeekDatesFromDate(newOt.date);
+
+    if (newOt.type === 'Hora extra') {
+      const dayTotal = mine.filter(r => r.date === newOt.date).reduce((a, r) => a + (Number(r.hours) || 0), 0) + hours;
+      if (dayTotal > OT_MAX_HOURS_PER_DAY) {
+        warnings.push(`Ese día sumaría ${dayTotal}h extra (máximo legal: ${OT_MAX_HOURS_PER_DAY}h por día).`);
+      }
+      const days = new Set(mine.filter(r => r.type === 'Hora extra' && weekDates.includes(r.date)).map(r => r.date));
+      days.add(newOt.date);
+      if (days.size > OT_MAX_DAYS_PER_WEEK) {
+        warnings.push(`Serían ${days.size} días con horas extra en la semana (máximo legal: ${OT_MAX_DAYS_PER_WEEK}).`);
+      }
+    }
+
+    const baseHours = weekDates.reduce((acc, d) => acc + (SHIFT_HOURS[scheduleData[`${newOt.operatorId}_${d}`]] || 0), 0);
+    const otHours = mine.filter(r => weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0) + hours;
+    if (baseHours + otHours > WEEK_HOURS_LIMIT) {
+      warnings.push(`La semana quedaría en ${(baseHours + otHours).toFixed(1)}h (referencia: ${WEEK_HOURS_LIMIT}h).`);
+    }
+    return warnings;
+  }, [isOvertimeOpen, newOt, overtimeRequests, scheduleData]);
+
   const lockedCellsInView = useMemo(() => {
     let count = 0;
     operators.forEach(op => {
@@ -738,6 +821,7 @@ export default function App() {
         if (code === 'M' || code === 'T') weeklyHours += 8;
         else if (code === 'N') weeklyHours += 8.5;
       });
+      weeklyHours += sumOvertime(overtimeRequests, operatorId, weekDates);
       if (weeklyHours + newShiftHours > 48) {
         conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
       }
@@ -1179,6 +1263,109 @@ export default function App() {
     }
   };
 
+  const handleCreateOvertime = async (e) => {
+    e.preventDefault();
+    const op = operators.find(o => o.id === newOt.operatorId);
+    const hours = Number(newOt.hours);
+    if (!op) { setOtError('Selecciona un operador válido.'); return; }
+    if (!newOt.date) { setOtError('Selecciona la fecha.'); return; }
+    if (!hours || hours <= 0 || hours > 12) { setOtError('Las horas deben estar entre 0.5 y 12.'); return; }
+    if (lockedCells.has(`${op.id}_${newOt.date}`)) {
+      setOtError(`${op.name} tiene una ausencia aprobada ese día.`);
+      return;
+    }
+    setOtError('');
+
+    isUpdatingRef.current = true;
+    setSyncStatus('saving');
+    const newReq = {
+      id: generateId(),
+      operatorId: op.id,
+      operatorName: op.name,
+      date: newOt.date,
+      hours,
+      type: newOt.type,
+      reason: newOt.reason.trim() || 'Sin motivo especificado',
+      status: 'Pendiente',
+      createdBy: currentUser?.name || '',
+      createdAt: new Date().toISOString()
+    };
+
+    const previousOt = overtimeRequests;
+    const updatedOt = [newReq, ...overtimeRequests];
+    setOvertimeRequests(updatedOt);
+    setIsOvertimeOpen(false);
+
+    try {
+      await redis.set('sf_overtime', updatedOt);
+      reportSyncResult(true);
+      pushToast('success', `Horas extras registradas: ${op.name} (+${hours}h)`);
+    } catch (error) {
+      console.error('Error al guardar horas extras:', error);
+      setOvertimeRequests(previousOt);
+      reportSyncResult(false);
+      pushToast('error', 'Error al registrar horas extras. Cambio revertido.');
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  const handleOvertimeStatus = async (id, newStatus) => {
+    if (!canApproveVacations) return;
+    const req = overtimeRequests.find(r => r.id === id);
+    if (!req) return;
+    isUpdatingRef.current = true;
+    setSyncStatus('saving');
+    const previousOt = overtimeRequests;
+    const updatedOt = overtimeRequests.map(r => r.id === id
+      ? { ...r, status: newStatus, reviewedBy: currentUser?.name || '', reviewedAt: new Date().toISOString() }
+      : r);
+    setOvertimeRequests(updatedOt);
+
+    try {
+      await redis.set('sf_overtime', updatedOt);
+      reportSyncResult(true);
+      pushToast('success', `Horas extras marcadas como ${newStatus}`);
+      if (newStatus === 'Aprobado') {
+        const weekDates = getWeekDatesFromDate(req.date);
+        const base = weekDates.reduce((acc, d) => acc + (SHIFT_HOURS[scheduleData[`${req.operatorId}_${d}`]] || 0), 0);
+        const total = base + sumOvertime(updatedOt, req.operatorId, weekDates);
+        if (total > WEEK_HOURS_LIMIT) {
+          pushToast('warning', `${req.operatorName} llega a ${total.toFixed(1)}h en esa semana (referencia: ${WEEK_HOURS_LIMIT}h).`, { duration: 6000 });
+        }
+      }
+    } catch (error) {
+      console.error('Error al actualizar horas extras:', error);
+      setOvertimeRequests(previousOt);
+      reportSyncResult(false);
+      pushToast('error', 'Error al actualizar. Cambio revertido.');
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
+  const handleDeleteOvertime = async (id) => {
+    if (!canApproveVacations) return;
+    if (!window.confirm('¿Eliminar este registro de horas extras?')) return;
+    isUpdatingRef.current = true;
+    setSyncStatus('saving');
+    const previousOt = overtimeRequests;
+    const updatedOt = overtimeRequests.filter(r => r.id !== id);
+    setOvertimeRequests(updatedOt);
+    try {
+      await redis.set('sf_overtime', updatedOt);
+      reportSyncResult(true);
+      pushToast('success', 'Registro eliminado');
+    } catch (error) {
+      console.error('Error al eliminar horas extras:', error);
+      setOvertimeRequests(previousOt);
+      reportSyncResult(false);
+      pushToast('error', 'Error al eliminar. Cambio revertido.');
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
+    }
+  };
+
   const handleExportExecutivePDF = async () => {
     setIsExporting(true);
     try {
@@ -1295,7 +1482,8 @@ export default function App() {
       pdf.text('M', 138, y);
       pdf.text('T', 148, y);
       pdf.text('N', 158, y);
-      pdf.text('Total', 175, y);
+      pdf.text('Ext', 166, y);
+      pdf.text('Total', 180, y);
       y += 4;
       pdf.line(14, y, W - 14, y);
       y += 5;
@@ -1311,7 +1499,8 @@ export default function App() {
             if (['M', 'T', 'N'].includes(code)) c[code]++;
           }
         });
-        return { ...op, totalH, c };
+        const otH = sumOvertime(overtimeRequests, op.id, weekDates);
+        return { ...op, totalH: totalH + otH, otH, c };
       }).sort((a, b) => b.totalH - a.totalH);
 
       sortedByHours.forEach(op => {
@@ -1325,7 +1514,10 @@ export default function App() {
         pdf.text(String(op.c.T), 148, y);
         pdf.text(String(op.c.N), 158, y);
         pdf.setTextColor(16, 185, 129);
-        pdf.text(`${op.totalH.toFixed(1)}h`, 175, y);
+        pdf.setTextColor(251, 191, 36);
+        pdf.text(op.otH > 0 ? `${op.otH.toFixed(1)}h` : '-', 166, y);
+        pdf.setTextColor(16, 185, 129);
+        pdf.text(`${op.totalH.toFixed(1)}h`, 180, y);
         y += 5.5;
       });
 
@@ -1456,7 +1648,7 @@ export default function App() {
 
   const reassignTarget = reassignModal ? operators.find(o => o.id === reassignModal.operatorId) : null;
   const reassignCandidates = reassignModal
-    ? getSuitableReplacements(reassignModal.operatorId, reassignModal.dateStr, reassignShift, operators, scheduleData, lockedCells)
+    ? getSuitableReplacements(reassignModal.operatorId, reassignModal.dateStr, reassignShift, operators, scheduleData, lockedCells, overtimeRequests)
     : [];
 
   return (
@@ -1494,6 +1686,7 @@ export default function App() {
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
             <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
             <button onClick={() => setActiveTab('vacations')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
+            <button onClick={() => setActiveTab('overtime')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Horas extras</button>
             {canViewReports && (
               <button onClick={() => setActiveTab('reports')} className={`px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>
                 <BarChart3 className="w-3 h-3" /> Reportes
@@ -1544,6 +1737,7 @@ export default function App() {
           <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
           <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
           <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
+          <button onClick={() => setActiveTab('overtime')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Horas extras</button>
           {canViewReports && (
             <button onClick={() => setActiveTab('reports')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap flex items-center gap-1.5 transition ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
               <BarChart3 className="w-3 h-3" /> Reportes
@@ -1761,6 +1955,11 @@ export default function App() {
                         <div className="text-[10px] opacity-80 break-words leading-tight">{op.id} · {op.zone}</div>
                       </div>
                       <div className="shrink-0 flex items-center gap-1">
+                        {overtimeByCell[cellKey] && (
+                          <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${overtimeByCell[cellKey].approved > 0 ? 'bg-amber-500/90 text-black' : 'border border-dashed border-amber-400 text-amber-300'}`}>
+                            +{overtimeByCell[cellKey].approved > 0 ? overtimeByCell[cellKey].approved : overtimeByCell[cellKey].pending}h
+                          </span>
+                        )}
                         <span className="font-extrabold text-sm">{shift.code}</span>
                         {(isLockedByAbsence || isHistoricalWeek) && (
                           <Lock className={`w-3.5 h-3.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
@@ -1862,6 +2061,14 @@ export default function App() {
                                 >
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
+                                  {overtimeByCell[cellKey] && (
+                                    <span
+                                      title={overtimeByCell[cellKey].approved > 0 ? 'Horas extras aprobadas' : 'Horas extras pendientes'}
+                                      className={`absolute -top-1 -left-1 text-[9px] leading-none font-extrabold px-1 py-0.5 rounded ${overtimeByCell[cellKey].approved > 0 ? 'bg-amber-500 text-black' : 'bg-[#011a0d] border border-dashed border-amber-400 text-amber-300'}`}
+                                    >
+                                      +{overtimeByCell[cellKey].approved > 0 ? overtimeByCell[cellKey].approved : overtimeByCell[cellKey].pending}h
+                                    </span>
+                                  )}
                                   {(isLockedByAbsence || isHistoricalWeek) && (
                                     <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
                                   )}
@@ -2151,6 +2358,150 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'overtime' && (
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 gap-3">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-white">Horas Extras</h2>
+                {(() => {
+                  const weekDates = weekDays.map(d => d.dateStr);
+                  const approved = overtimeRequests.filter(r => r.status === 'Aprobado' && weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0);
+                  const pending = overtimeRequests.filter(r => r.status === 'Pendiente').length;
+                  return (
+                    <p className="text-[11px] text-emerald-300">
+                      Semana visible: <span className="font-bold text-amber-300">{approved.toFixed(1)}h aprobadas</span>
+                      {pending > 0 && <span> · {pending} pendiente{pending === 1 ? '' : 's'} de revisar</span>}
+                    </p>
+                  );
+                })()}
+              </div>
+              <button
+                disabled={operators.length === 0}
+                onClick={() => {
+                  setOtError('');
+                  setNewOt(prev => ({ ...prev, operatorId: operators[0]?.id || '', date: formatDateLocal(new Date()) }));
+                  setIsOvertimeOpen(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition"
+              >
+                <Plus className="w-4 h-4"/><span>Registrar Horas Extras</span>
+              </button>
+            </div>
+
+            <div className="md:hidden space-y-2">
+              {overtimeRequests.map(req => (
+                <div key={req.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3.5">
+                  <div className="flex justify-between items-start gap-2 mb-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-white text-sm">{req.operatorName}</div>
+                      <div className="text-[10px] text-emerald-400">{req.operatorId}</div>
+                    </div>
+                    <span className={`shrink-0 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 ${
+                      req.status === 'Aprobado' ? 'bg-emerald-950 text-emerald-300' :
+                      req.status === 'Rechazado' ? 'bg-red-950 text-red-300' :
+                      'bg-amber-950 text-amber-300'
+                    }`}>
+                      {req.status === 'Aprobado' && <Check className="w-2.5 h-2.5" />}
+                      {req.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-emerald-200 space-y-1">
+                    <div><span className="text-emerald-400">Fecha:</span> {req.date}</div>
+                    <div><span className="text-emerald-400">Horas:</span> <span className="font-extrabold text-amber-300">+{req.hours}h</span> · {req.type}</div>
+                    <div className="text-white/80 text-[11px]"><span className="text-emerald-400">Motivo:</span> {req.reason}</div>
+                    {req.createdBy && <div className="text-[10px] text-emerald-500">Registró: {req.createdBy}</div>}
+                  </div>
+                  {canApproveVacations && (
+                    <div className="flex justify-end space-x-1 mt-3 pt-3 border-t border-emerald-900/60">
+                      {req.status === 'Pendiente' ? (
+                        <>
+                          <button onClick={() => handleOvertimeStatus(req.id, 'Aprobado')} className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition"><Check className="w-3.5 h-3.5"/> Aprobar</button>
+                          <button onClick={() => handleOvertimeStatus(req.id, 'Rechazado')} className="px-3 py-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition"><X className="w-3.5 h-3.5"/> Rechazar</button>
+                        </>
+                      ) : req.status === 'Aprobado' ? (
+                        <button onClick={() => handleOvertimeStatus(req.id, 'Rechazado')} className="px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-100 rounded-lg text-[10px] font-bold transition">Revocar</button>
+                      ) : null}
+                      <button onClick={() => handleDeleteOvertime(req.id)} className="px-2 py-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {overtimeRequests.length === 0 && (
+                <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
+                  <Clock className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                  <p className="text-emerald-300 font-bold text-sm">Sin horas extras registradas</p>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden md:block bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-[#001f0d] text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                    <th className="p-3.5">Operador</th>
+                    <th className="p-3.5">Fecha</th>
+                    <th className="p-3.5">Horas</th>
+                    <th className="p-3.5">Tipo</th>
+                    <th className="p-3.5">Motivo</th>
+                    <th className="p-3.5">Estado</th>
+                    <th className="p-3.5 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-emerald-900/50">
+                  {overtimeRequests.map(req => (
+                    <tr key={req.id}>
+                      <td className="p-3.5"><div className="font-bold text-white">{req.operatorName}</div><div className="text-[10px] text-emerald-400">{req.operatorId}</div></td>
+                      <td className="p-3.5 text-emerald-200 whitespace-nowrap">{req.date}</td>
+                      <td className="p-3.5 font-extrabold text-amber-300">+{req.hours}h</td>
+                      <td className="p-3.5 font-semibold text-emerald-200">{req.type}</td>
+                      <td className="p-3.5 text-white/90 max-w-xs">
+                        {req.reason}
+                        {req.createdBy && <div className="text-[10px] text-emerald-500">Registró: {req.createdBy}</div>}
+                      </td>
+                      <td className="p-3.5">
+                        <span className={`px-2 py-0.5 rounded font-bold inline-flex items-center gap-1 ${
+                          req.status === 'Aprobado' ? 'bg-emerald-950 text-emerald-300' :
+                          req.status === 'Rechazado' ? 'bg-red-950 text-red-300' :
+                          'bg-amber-950 text-amber-300'
+                        }`}>
+                          {req.status === 'Aprobado' && <Check className="w-3 h-3" />}
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        {canApproveVacations ? (
+                          <div className="flex justify-center space-x-1">
+                            {req.status === 'Pendiente' && (
+                              <>
+                                <button title="Aprobar" onClick={() => handleOvertimeStatus(req.id, 'Aprobado')} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg transition"><Check className="w-4 h-4"/></button>
+                                <button title="Rechazar" onClick={() => handleOvertimeStatus(req.id, 'Rechazado')} className="p-1.5 bg-red-800 hover:bg-red-700 text-white rounded-lg transition"><X className="w-4 h-4"/></button>
+                              </>
+                            )}
+                            {req.status === 'Aprobado' && (
+                              <button onClick={() => handleOvertimeStatus(req.id, 'Rechazado')} className="px-2 py-1 bg-red-900 hover:bg-red-800 text-red-100 rounded-lg transition text-[10px] font-bold">Revocar</button>
+                            )}
+                            <button title="Eliminar" onClick={() => handleDeleteOvertime(req.id)} className="p-1.5 bg-[#011a0d] hover:bg-red-950 text-emerald-400 hover:text-red-300 border border-emerald-800 rounded-lg transition"><Trash2 className="w-4 h-4"/></button>
+                          </div>
+                        ) : (
+                          <span className="text-emerald-600 text-[10px]">Sin acciones</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {overtimeRequests.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-12 text-center">
+                        <Clock className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                        <p className="text-emerald-300 font-bold text-sm">Sin horas extras registradas</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'reports' && canViewReports && (
           <div className="space-y-5">
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -2286,6 +2637,17 @@ export default function App() {
                 <TrendingUp className="w-4 h-4 text-emerald-400" />
                 Horas por operador
               </h3>
+              {(() => {
+                const weekDates = weekDays.map(d => d.dateStr);
+                const approved = overtimeRequests.filter(r => r.status === 'Aprobado' && weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0);
+                const pending = overtimeRequests.filter(r => r.status === 'Pendiente' && weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0);
+                return (
+                  <p className="text-[11px] text-emerald-300 mb-3">
+                    Horas extras de la semana: <span className="font-bold text-amber-300">{approved.toFixed(1)}h aprobadas</span>
+                    {pending > 0 && <span className="text-amber-400/80"> · {pending.toFixed(1)}h pendientes</span>}
+                  </p>
+                );
+              })()}
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs min-w-[450px]">
                   <thead>
@@ -2295,6 +2657,7 @@ export default function App() {
                       <th className="p-2 text-center">M</th>
                       <th className="p-2 text-center">T</th>
                       <th className="p-2 text-center">N</th>
+                      <th className="p-2 text-right">Extras</th>
                       <th className="p-2 text-right">Total</th>
                     </tr>
                   </thead>
@@ -2310,7 +2673,9 @@ export default function App() {
                           if (['M', 'T', 'N'].includes(code)) c[code]++;
                         }
                       });
-                      const isHigh = totalH > 48;
+                      const otH = sumOvertime(overtimeRequests, op.id, weekDates);
+                      const grandH = totalH + otH;
+                      const isHigh = grandH > 48;
                       return (
                         <tr key={op.id} className="hover:bg-[#003517]/50">
                           <td className="p-2 font-bold text-white whitespace-nowrap">{op.name}</td>
@@ -2318,13 +2683,14 @@ export default function App() {
                           <td className="p-2 text-center text-emerald-300">{c.M}</td>
                           <td className="p-2 text-center text-amber-300">{c.T}</td>
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
-                          <td className={`p-2 text-right font-extrabold ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{totalH.toFixed(1)}h</td>
+                          <td className={`p-2 text-right font-bold ${otH > 0 ? 'text-amber-300' : 'text-emerald-700'}`}>{otH > 0 ? `+${otH.toFixed(1)}h` : '-'}</td>
+                          <td className={`p-2 text-right font-extrabold ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{grandH.toFixed(1)}h</td>
                         </tr>
                       );
                     })}
                     {operators.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
+                        <td colSpan={7} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
                       </tr>
                     )}
                   </tbody>
@@ -2502,6 +2868,63 @@ export default function App() {
               <div className="flex justify-end space-x-2 pt-3">
                 <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isOvertimeOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-t-2xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <h3 className="text-base font-bold text-white mb-4">Registrar Horas Extras</h3>
+            <form onSubmit={handleCreateOvertime} className="space-y-3 text-xs">
+              {otError && (
+                <div className="p-2.5 bg-red-950/80 border border-red-800 rounded-xl text-red-200 font-bold flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{otError}</span>
+                </div>
+              )}
+              {otWarnings.length > 0 && (
+                <div className="p-2.5 bg-amber-950/70 border border-amber-700/70 rounded-xl text-amber-200 space-y-1">
+                  {otWarnings.map((w, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>{w}</span>
+                    </div>
+                  ))}
+                  <div className="text-[10px] text-amber-400/80 pl-5">Puedes registrarlo igual; quien apruebe decidirá.</div>
+                </div>
+              )}
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Operador</label>
+                <select value={newOt.operatorId} onChange={(e) => setNewOt({ ...newOt, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                  {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Fecha</label>
+                  <input type="date" value={newOt.date} onChange={(e) => setNewOt({ ...newOt, date: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Horas</label>
+                  <input type="number" min="0.5" max="12" step="0.5" value={newOt.hours} onChange={(e) => setNewOt({ ...newOt, hours: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo</label>
+                <select value={newOt.type} onChange={(e) => setNewOt({ ...newOt, type: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                  {OVERTIME_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Motivo</label>
+                <textarea rows={3} placeholder="Ej. Cobertura por ausencia, descarga de contenedor..." value={newOt.reason} onChange={(e) => setNewOt({ ...newOt, reason: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <button type="button" onClick={() => { setIsOvertimeOpen(false); setOtError(''); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Registrar</button>
               </div>
             </form>
           </div>

@@ -47,7 +47,8 @@ import {
   CalendarDays,
   Users2,
   ShieldCheck,
-  Share2
+  Share2,
+  Timer
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -372,6 +373,9 @@ export default function App() {
   const [operators, setOperators] = useState([]);
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState([]);
+  // ✅ Horas extra por celda
+  const [extraHoursData, setExtraHoursData] = useState({});
+  const [extraHoursInput, setExtraHoursInput] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
 
@@ -407,12 +411,21 @@ export default function App() {
     }
   });
 
-  // ✅ Persistir preferencia cada vez que cambia
   useEffect(() => {
     try {
       localStorage.setItem('sf_showIndicators', String(showIndicators));
     } catch (err) { /* no-op */ }
   }, [showIndicators]);
+
+  // ✅ Al abrir el modal de cambio de turno, cargar las horas extra actuales
+  useEffect(() => {
+    if (selectedCell) {
+      const key = `${selectedCell.operatorId}_${selectedCell.dateStr}`;
+      setExtraHoursInput(extraHoursData[key] || 0);
+    } else {
+      setExtraHoursInput(0);
+    }
+  }, [selectedCell, extraHoursData]);
 
   useEffect(() => {
     if (!lockoutUntil) return;
@@ -561,14 +574,16 @@ export default function App() {
     setIsLoaded(false);
     setLoadError('');
     try {
-      const [savedOps, savedSchedule, savedVac] = await Promise.all([
+      const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
         redis.get('sf_operators'),
         redis.get('sf_scheduleData'),
         redis.get('sf_vacations'),
+        redis.get('sf_extraHours'),
       ]);
       setOperators(Array.isArray(savedOps) ? savedOps : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
       setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
+      setExtraHoursData(savedExtra && typeof savedExtra === 'object' ? savedExtra : {});
     } catch (error) {
       console.error('Error al cargar datos:', error);
       setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
@@ -587,15 +602,17 @@ export default function App() {
     const interval = setInterval(async () => {
       if (isUpdatingRef.current) return;
       try {
-        const [savedOps, savedSchedule, savedVac] = await Promise.all([
+        const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
           redis.get('sf_operators'),
           redis.get('sf_scheduleData'),
           redis.get('sf_vacations'),
+          redis.get('sf_extraHours'),
         ]);
         if (!isUpdatingRef.current) {
           if (Array.isArray(savedOps)) setOperators(savedOps);
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
           if (Array.isArray(savedVac)) setVacationRequests(savedVac);
+          if (savedExtra && typeof savedExtra === 'object') setExtraHoursData(savedExtra);
         }
       } catch (err) {
         console.error('Error en sincronización continua:', err);
@@ -903,10 +920,15 @@ export default function App() {
     }
 
     const previousSchedule = { ...scheduleData };
+    const previousExtra = { ...extraHoursData };
     const previousValue = scheduleData[clickedKey];
     const newValue = shiftCode;
 
-    if (previousValue === newValue && !isFullWeek) {
+    // Determinar cuántas horas extra se van a guardar (solo aplican a turnos de trabajo)
+    const isWorkShift = ['M', 'T', 'N'].includes(shiftCode);
+    const extraToSave = isWorkShift ? (Number(extraHoursInput) || 0) : 0;
+
+    if (previousValue === newValue && !isFullWeek && (previousExtra[clickedKey] || 0) === extraToSave) {
       setSelectedCell(null);
       setApplyToFullWeek(false);
       return;
@@ -916,6 +938,7 @@ export default function App() {
     setSyncStatus('saving');
 
     const updatedSchedule = { ...scheduleData };
+    const updatedExtra = { ...extraHoursData };
     const affectedKeys = [];
 
     if (isFullWeek) {
@@ -924,27 +947,46 @@ export default function App() {
         if (!lockedCells.has(key)) {
           updatedSchedule[key] = shiftCode;
           affectedKeys.push(key);
+          if (extraToSave > 0) {
+            updatedExtra[key] = extraToSave;
+          } else {
+            delete updatedExtra[key];
+          }
         }
       });
     } else {
       updatedSchedule[clickedKey] = shiftCode;
       affectedKeys.push(clickedKey);
+      if (extraToSave > 0) {
+        updatedExtra[clickedKey] = extraToSave;
+      } else {
+        delete updatedExtra[clickedKey];
+      }
     }
 
     setScheduleData(updatedSchedule);
+    setExtraHoursData(updatedExtra);
     setSelectedCell(null);
     setApplyToFullWeek(false);
     triggerFlash(affectedKeys);
 
     try {
-      await redis.set('sf_scheduleData', updatedSchedule);
+      await Promise.all([
+        redis.set('sf_scheduleData', updatedSchedule),
+        redis.set('sf_extraHours', updatedExtra),
+      ]);
       reportSyncResult(true);
       const op = operators.find(o => o.id === operatorId);
       const dayLabel = isFullWeek ? 'toda la semana' : dateStr;
-      pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label} (${dayLabel})`, {
+      const extraLabel = extraToSave > 0 ? ` (+${extraToSave}h extra)` : '';
+      pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label}${extraLabel} (${dayLabel})`, {
         undoAction: () => {
           setScheduleData(previousSchedule);
-          redis.set('sf_scheduleData', previousSchedule).then(() => {
+          setExtraHoursData(previousExtra);
+          Promise.all([
+            redis.set('sf_scheduleData', previousSchedule),
+            redis.set('sf_extraHours', previousExtra),
+          ]).then(() => {
             pushToast('info', 'Cambio deshecho');
           }).catch(() => {
             pushToast('error', 'No se pudo deshacer');
@@ -954,6 +996,7 @@ export default function App() {
     } catch (error) {
       console.error('Error al guardar turno:', error);
       setScheduleData(previousSchedule);
+      setExtraHoursData(previousExtra);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar. Cambio revertido.');
     } finally {
@@ -966,6 +1009,7 @@ export default function App() {
     const shiftCode = reassignShift;
     const newKey = `${targetOperatorId}_${reassignModal.dateStr}`;
     const previousSchedule = { ...scheduleData };
+    const previousExtra = { ...extraHoursData };
 
     const conflicts = detectConflicts(targetOperatorId, reassignModal.dateStr, shiftCode, false);
     if (conflicts.length > 0) {
@@ -977,19 +1021,30 @@ export default function App() {
     setSyncStatus('saving');
 
     const updatedSchedule = { ...scheduleData, [newKey]: shiftCode };
+    const updatedExtra = { ...extraHoursData };
+    delete updatedExtra[newKey]; // Al reasignar, no hereda las horas extra del ausente
+
     setScheduleData(updatedSchedule);
+    setExtraHoursData(updatedExtra);
     setReassignModal(null);
     triggerFlash([newKey]);
 
     try {
-      await redis.set('sf_scheduleData', updatedSchedule);
+      await Promise.all([
+        redis.set('sf_scheduleData', updatedSchedule),
+        redis.set('sf_extraHours', updatedExtra),
+      ]);
       reportSyncResult(true);
       const target = operators.find(o => o.id === targetOperatorId);
       const absent = operators.find(o => o.id === reassignModal.operatorId);
       pushToast('success', `${target?.name} cubrirá ${SHIFT_TYPES[shiftCode].label} de ${absent?.name} (${reassignModal.dateStr})`, {
         undoAction: () => {
           setScheduleData(previousSchedule);
-          redis.set('sf_scheduleData', previousSchedule).then(() => {
+          setExtraHoursData(previousExtra);
+          Promise.all([
+            redis.set('sf_scheduleData', previousSchedule),
+            redis.set('sf_extraHours', previousExtra),
+          ]).then(() => {
             pushToast('info', 'Reasignación deshecha');
           }).catch(() => {
             pushToast('error', 'No se pudo deshacer');
@@ -999,6 +1054,7 @@ export default function App() {
     } catch (error) {
       console.error('Error al reasignar:', error);
       setScheduleData(previousSchedule);
+      setExtraHoursData(previousExtra);
       reportSyncResult(false);
       pushToast('error', 'Error al reasignar. Cambio revertido.');
     } finally {
@@ -1139,10 +1195,12 @@ export default function App() {
     const req = vacationRequests.find(r => r.id === id);
     const previousVac = vacationRequests;
     const previousSchedule = scheduleData;
+    const previousExtra = extraHoursData;
     const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
     setVacationRequests(updatedVac);
 
     let updatedSchedule = { ...scheduleData };
+    let updatedExtra = { ...extraHoursData };
     if (newStatus === 'Aprobado' && req) {
       let shiftCode = 'DES';
       if (req.type === 'Vacaciones') shiftCode = 'VAC';
@@ -1155,16 +1213,22 @@ export default function App() {
       const end = new Date(eY, eM - 1, eD);
       while (curr <= end) {
         const dateStr = formatDateLocal(curr);
-        updatedSchedule[`${req.operatorId}_${dateStr}`] = shiftCode;
+        const key = `${req.operatorId}_${dateStr}`;
+        updatedSchedule[key] = shiftCode;
+        delete updatedExtra[key]; // Si aprueban ausencia, se limpian las horas extra
         curr.setDate(curr.getDate() + 1);
       }
       setScheduleData(updatedSchedule);
+      setExtraHoursData(updatedExtra);
     }
 
     try {
       await redis.set('sf_vacations', updatedVac);
       if (newStatus === 'Aprobado' && req) {
-        await redis.set('sf_scheduleData', updatedSchedule);
+        await Promise.all([
+          redis.set('sf_scheduleData', updatedSchedule),
+          redis.set('sf_extraHours', updatedExtra),
+        ]);
       }
       reportSyncResult(true);
       pushToast('success', `Solicitud marcada como ${newStatus}`);
@@ -1172,6 +1236,7 @@ export default function App() {
       console.error('Error al actualizar estado del permiso:', error);
       setVacationRequests(previousVac);
       setScheduleData(previousSchedule);
+      setExtraHoursData(previousExtra);
       reportSyncResult(false);
       pushToast('error', 'Error al actualizar. Cambio revertido.');
     } finally {
@@ -1209,13 +1274,17 @@ export default function App() {
         return exp >= today;
       }).length;
 
-      let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
+      let totalWorked = 0, totalAbsent = 0, totalSlots = 0, totalExtra = 0;
       weekDays.forEach(day => {
         operators.forEach(op => {
-          const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+          const key = `${op.id}_${day.dateStr}`;
+          const code = scheduleData[key] || 'DES';
           totalSlots++;
           if (['M', 'T', 'N'].includes(code)) totalWorked++;
           if (['VAC', 'INC'].includes(code)) totalAbsent++;
+          if (extraHoursData[key] > 0 && ['M', 'T', 'N'].includes(code)) {
+            totalExtra += extraHoursData[key];
+          }
         });
       });
       const coveragePct = totalSlots > 0 ? Math.round((totalWorked / totalSlots) * 100) : 0;
@@ -1225,7 +1294,7 @@ export default function App() {
         { label: 'Cobertura', value: `${coveragePct}%`, color: [16, 185, 129] },
         { label: 'Ausentismo', value: `${absentPct}%`, color: [239, 68, 68] },
         { label: 'Licencias OK', value: `${licenseOk}/${totalOps}`, color: [59, 130, 246] },
-        { label: 'Operadores', value: `${totalOps}`, color: [168, 85, 247] }
+        { label: 'Horas extra', value: `${totalExtra.toFixed(1)}h`, color: [245, 158, 11] }
       ];
 
       const kpiY = 32;
@@ -1303,15 +1372,22 @@ export default function App() {
       const sortedByHours = [...operators].map(op => {
         const weekDates = weekDays.map(d => d.dateStr);
         let totalH = 0;
+        let totalExtras = 0;
         const c = { M: 0, T: 0, N: 0 };
         weekDates.forEach(date => {
-          const code = scheduleData[`${op.id}_${date}`];
+          const key = `${op.id}_${date}`;
+          const code = scheduleData[key];
           if (code && SHIFT_HOURS[code] !== undefined) {
             totalH += SHIFT_HOURS[code];
+            const extra = extraHoursData[key] || 0;
+            if (extra > 0 && ['M','T','N'].includes(code)) {
+              totalH += extra;
+              totalExtras += extra;
+            }
             if (['M', 'T', 'N'].includes(code)) c[code]++;
           }
         });
-        return { ...op, totalH, c };
+        return { ...op, totalH, totalExtras, c };
       }).sort((a, b) => b.totalH - a.totalH);
 
       sortedByHours.forEach(op => {
@@ -1325,7 +1401,7 @@ export default function App() {
         pdf.text(String(op.c.T), 148, y);
         pdf.text(String(op.c.N), 158, y);
         pdf.setTextColor(16, 185, 129);
-        pdf.text(`${op.totalH.toFixed(1)}h`, 175, y);
+        pdf.text(`${op.totalH.toFixed(1)}h${op.totalExtras > 0 ? ` (+${op.totalExtras}h ex)` : ''}`, 175, y);
         y += 5.5;
       });
 
@@ -1728,6 +1804,7 @@ export default function App() {
                   const IconComp = shift.icon;
                   const isLockedByAbsence = lockedCells.has(cellKey);
                   const editable = canEditCell(op.id, selectedMobileDay);
+                  const extraH = extraHoursData[cellKey] || 0;
 
                   return (
                     <button
@@ -1760,6 +1837,12 @@ export default function App() {
                         <div className="font-bold text-[13px] break-words leading-tight">{op.name}</div>
                         <div className="text-[10px] opacity-80 break-words leading-tight">{op.id} · {op.zone}</div>
                       </div>
+                      {/* ✅ Badge de horas extra en móvil */}
+                      {['M','T','N'].includes(shiftCode) && extraH > 0 && (
+                        <span className="shrink-0 text-[9px] font-extrabold bg-amber-500 text-black px-1.5 py-0.5 rounded">
+                          +{extraH}h
+                        </span>
+                      )}
                       <div className="shrink-0 flex items-center gap-1">
                         <span className="font-extrabold text-sm">{shift.code}</span>
                         {(isLockedByAbsence || isHistoricalWeek) && (
@@ -1833,6 +1916,7 @@ export default function App() {
                             const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                             const isCurrentShiftForMe = isToday && shiftCode === activeShiftCode;
                             const isFlashing = flashCells.has(cellKey);
+                            const extraH = extraHoursData[cellKey] || 0;
 
                             let tooltip = '';
                             if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
@@ -1862,6 +1946,12 @@ export default function App() {
                                 >
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
+                                  {/* ✅ Badge de horas extra en desktop */}
+                                  {['M','T','N'].includes(shiftCode) && extraH > 0 && (
+                                    <span className="absolute -bottom-1 -left-1 text-[8px] font-extrabold bg-amber-500 text-black px-1 rounded">
+                                      +{extraH}h
+                                    </span>
+                                  )}
                                   {(isLockedByAbsence || isHistoricalWeek) && (
                                     <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
                                   )}
@@ -1900,7 +1990,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ Indicadores con botón de mostrar/ocultar */}
             {showIndicators ? (
               <div className="relative flex items-center justify-center gap-1.5 flex-wrap pt-1">
                 <button
@@ -2175,13 +2264,15 @@ export default function App() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {(() => {
-                let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
+                let totalWorked = 0, totalAbsent = 0, totalSlots = 0, totalExtra = 0;
                 weekDays.forEach(day => {
                   operators.forEach(op => {
-                    const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
+                    const key = `${op.id}_${day.dateStr}`;
+                    const code = scheduleData[key] || 'DES';
                     totalSlots++;
                     if (['M', 'T', 'N'].includes(code)) totalWorked++;
                     if (['VAC', 'INC'].includes(code)) totalAbsent++;
+                    if (extraHoursData[key] > 0 && ['M', 'T', 'N'].includes(code)) totalExtra += extraHoursData[key];
                   });
                 });
                 const coverage = totalSlots > 0 ? Math.round((totalWorked / totalSlots) * 100) : 0;
@@ -2220,13 +2311,13 @@ export default function App() {
                       <div className="text-xl sm:text-2xl font-extrabold text-cyan-100">{licenseOk}/{operators.length}</div>
                       <div className="text-[10px] text-cyan-400/70 mt-0.5">{operators.length - licenseOk} críticas</div>
                     </div>
-                    <div className="rounded-2xl border border-purple-700/60 bg-purple-950/70 p-3 sm:p-4">
+                    <div className="rounded-2xl border border-amber-700/60 bg-amber-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
-                        <Users2 className="w-3.5 h-3.5 text-purple-300" />
-                        <span className="text-[10px] font-bold uppercase text-purple-300">Plantilla</span>
+                        <Timer className="w-3.5 h-3.5 text-amber-300" />
+                        <span className="text-[10px] font-bold uppercase text-amber-300">Horas extra</span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{operators.length}</div>
-                      <div className="text-[10px] text-purple-400/70 mt-0.5">operadores</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-amber-100">{totalExtra.toFixed(1)}h</div>
+                      <div className="text-[10px] text-amber-400/70 mt-0.5">semana actual</div>
                     </div>
                   </>
                 );
@@ -2287,7 +2378,7 @@ export default function App() {
                 Horas por operador
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs min-w-[450px]">
+                <table className="w-full text-left border-collapse text-xs min-w-[500px]">
                   <thead>
                     <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                       <th className="p-2">Operador</th>
@@ -2295,6 +2386,7 @@ export default function App() {
                       <th className="p-2 text-center">M</th>
                       <th className="p-2 text-center">T</th>
                       <th className="p-2 text-center">N</th>
+                      <th className="p-2 text-center">Extra</th>
                       <th className="p-2 text-right">Total</th>
                     </tr>
                   </thead>
@@ -2302,11 +2394,18 @@ export default function App() {
                     {operators.map(op => {
                       const weekDates = weekDays.map(d => d.dateStr);
                       let totalH = 0;
+                      let totalExtras = 0;
                       const c = { M: 0, T: 0, N: 0 };
                       weekDates.forEach(date => {
-                        const code = scheduleData[`${op.id}_${date}`];
+                        const key = `${op.id}_${date}`;
+                        const code = scheduleData[key];
                         if (code && SHIFT_HOURS[code] !== undefined) {
                           totalH += SHIFT_HOURS[code];
+                          const extra = extraHoursData[key] || 0;
+                          if (extra > 0 && ['M','T','N'].includes(code)) {
+                            totalH += extra;
+                            totalExtras += extra;
+                          }
                           if (['M', 'T', 'N'].includes(code)) c[code]++;
                         }
                       });
@@ -2318,13 +2417,19 @@ export default function App() {
                           <td className="p-2 text-center text-emerald-300">{c.M}</td>
                           <td className="p-2 text-center text-amber-300">{c.T}</td>
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
+                          <td className="p-2 text-center">
+                            {totalExtras > 0
+                              ? <span className="font-bold text-amber-300">+{totalExtras}h</span>
+                              : <span className="text-emerald-700">—</span>
+                            }
+                          </td>
                           <td className={`p-2 text-right font-extrabold ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{totalH.toFixed(1)}h</td>
                         </tr>
                       );
                     })}
                     {operators.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
+                        <td colSpan={7} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
                       </tr>
                     )}
                   </tbody>
@@ -2361,14 +2466,61 @@ export default function App() {
               />
             </div>
 
+            {/* ✅ Selector de horas extra */}
+            <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-amber-700/60">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <Timer className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold text-amber-200">Horas extra (opcional)</span>
+                </div>
+                <span className="text-[11px] font-bold text-amber-300">
+                  {extraHoursInput > 0 ? `+${extraHoursInput}h` : 'Sin extras'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {[0, 1, 2, 3, 4].map(h => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => setExtraHoursInput(h)}
+                    className={`flex-1 min-w-[40px] py-1.5 rounded-lg text-xs font-bold border transition ${
+                      extraHoursInput === h
+                        ? 'bg-amber-500 border-amber-400 text-black'
+                        : 'bg-[#02180d] border-emerald-800 text-emerald-300 hover:bg-emerald-950'
+                    }`}
+                  >
+                    {h === 0 ? '0' : `+${h}h`}
+                  </button>
+                ))}
+                <input
+                  type="number"
+                  min="0"
+                  max="8"
+                  step="0.5"
+                  value={extraHoursInput}
+                  onChange={(e) => setExtraHoursInput(Math.max(0, Math.min(8, parseFloat(e.target.value) || 0)))}
+                  className="w-16 bg-[#02180d] border border-emerald-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 text-center"
+                  title="Horas personalizadas"
+                />
+              </div>
+              <p className="text-[10px] text-emerald-500 mt-2 leading-snug">
+                Solo se aplican si el turno es Mañana, Tarde o Noche.
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (
                 <button
                   key={code}
                   onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
-                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
+                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color} ${
+                    selectedCell.currentShift === code ? 'ring-2 ring-white/80' : ''
+                  }`}
                 >
                   {code}: {config.label}
+                  {['M','T','N'].includes(code) && extraHoursInput > 0 && (
+                    <span className="block text-[9px] opacity-80 mt-0.5">+{extraHoursInput}h extra</span>
+                  )}
                 </button>
               ))}
             </div>

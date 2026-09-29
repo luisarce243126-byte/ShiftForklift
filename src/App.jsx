@@ -47,8 +47,7 @@ import {
   CalendarDays,
   Users2,
   ShieldCheck,
-  Share2,
-  Timer
+  Share2
 } from 'lucide-react';
 
 const MOCK_USERS = [
@@ -321,9 +320,6 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
 };
 
 export default function App() {
-  // ═══════════════════════════════════════════════════════
-  // TODOS LOS useState PRIMERO (el orden evita ReferenceErrors)
-  // ═══════════════════════════════════════════════════════
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPass, setLoginPass] = useState('');
@@ -334,80 +330,11 @@ export default function App() {
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
 
   const [syncStatus, setSyncStatus] = useState('idle');
-  const [toasts, setToasts] = useState([]);
-  const [flashCells, setFlashCells] = useState(new Set());
-
-  const [showLicenseAlerts, setShowLicenseAlerts] = useState(true);
-  const [vacDateError, setVacDateError] = useState('');
-  const [activeTab, setActiveTab] = useState('scheduler');
-
-  const [operators, setOperators] = useState([]);
-  const [scheduleData, setScheduleData] = useState({});
-  const [vacationRequests, setVacationRequests] = useState([]);
-  const [extraHoursData, setExtraHoursData] = useState({});
-  const [extraHoursInput, setExtraHoursInput] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [loadError, setLoadError] = useState('');
-
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
-  const [applyToFullWeek, setApplyToFullWeek] = useState(false);
-
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportPreview, setExportPreview] = useState(null);
-
-  const [now, setNow] = useState(() => new Date());
-  const [reassignModal, setReassignModal] = useState(null);
-  const [reassignShift, setReassignShift] = useState('M');
-  const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
-
-  const [showIndicators, setShowIndicators] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sf_showIndicators');
-      return saved === null ? false : saved === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  // Estados de modales / formularios
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedZone, setSelectedZone] = useState('Todas las zonas');
-  const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
-  const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
-
-  const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
-  const [editingOperator, setEditingOperator] = useState(null);
-  const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
-  // ⚠️ selectedCell debe estar declarado ANTES del useEffect que lo usa
-  const [selectedCell, setSelectedCell] = useState(null);
-
-  const [newOp, setNewOp] = useState({
-    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
-    shiftPattern: 'Mañana', licenseExpiry: '2027-12-31'
-  });
-
-  const [newVac, setNewVac] = useState({
-    operatorId: '',
-    startDate: formatDateLocal(new Date()),
-    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
-    type: 'Vacaciones',
-    reason: ''
-  });
-
-  // ═══════════════════════════════════════════════════════
-  // Refs
-  // ═══════════════════════════════════════════════════════
   const syncStatusTimeoutRef = useRef(null);
-  const toastIdRef = useRef(0);
-  const flashCellsTimeoutRef = useRef(null);
-  const isUpdatingRef = useRef(false);
-  const scheduleRef = useRef(null);
-  const exportMenuRef = useRef(null);
 
-  // ═══════════════════════════════════════════════════════
-  // Callbacks / helpers
-  // ═══════════════════════════════════════════════════════
+  const [toasts, setToasts] = useState([]);
+  const toastIdRef = useRef(0);
+
   const pushToast = useCallback((type, message, options = {}) => {
     const id = ++toastIdRef.current;
     const duration = options.duration ?? (options.undoAction ? UNDO_WINDOW_MS : 3000);
@@ -423,6 +350,8 @@ export default function App() {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
+  const [flashCells, setFlashCells] = useState(new Set());
+  const flashCellsTimeoutRef = useRef(null);
   const triggerFlash = useCallback((keys) => {
     setFlashCells(new Set(keys));
     if (flashCellsTimeoutRef.current) clearTimeout(flashCellsTimeoutRef.current);
@@ -435,34 +364,56 @@ export default function App() {
     syncStatusTimeoutRef.current = setTimeout(() => setSyncStatus('idle'), ok ? 2000 : 4000);
   };
 
-  // ═══════════════════════════════════════════════════════
-  // useEffects
-  // ═══════════════════════════════════════════════════════
+  const [showLicenseAlerts, setShowLicenseAlerts] = useState(true);
+  const [vacDateError, setVacDateError] = useState('');
 
-  // Reloj en vivo (30s)
+  const [activeTab, setActiveTab] = useState('scheduler');
+
+  const [operators, setOperators] = useState([]);
+  const [scheduleData, setScheduleData] = useState({});
+  const [vacationRequests, setVacationRequests] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const isUpdatingRef = useRef(false);
+  const scheduleRef = useRef(null);
+
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
+  const [applyToFullWeek, setApplyToFullWeek] = useState(false);
+
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportMenuRef = useRef(null);
+
+  const [exportPreview, setExportPreview] = useState(null);
+
+  const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(tick);
   }, []);
 
-  // Guardar preferencia de indicadores
+  const [reassignModal, setReassignModal] = useState(null);
+  const [reassignShift, setReassignShift] = useState('M');
+  const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
+
+  // ✅ Indicadores arrancan OCULTOS y se recuerda la preferencia en localStorage
+  const [showIndicators, setShowIndicators] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sf_showIndicators');
+      return saved === null ? false : saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // ✅ Persistir preferencia cada vez que cambia
   useEffect(() => {
     try {
       localStorage.setItem('sf_showIndicators', String(showIndicators));
     } catch (err) { /* no-op */ }
   }, [showIndicators]);
 
-  // Al abrir el modal de cambio de turno, cargar las horas extra actuales
-  useEffect(() => {
-    if (selectedCell) {
-      const key = `${selectedCell.operatorId}_${selectedCell.dateStr}`;
-      setExtraHoursInput(extraHoursData[key] || 0);
-    } else {
-      setExtraHoursInput(0);
-    }
-  }, [selectedCell, extraHoursData]);
-
-  // Countdown del lockout
   useEffect(() => {
     if (!lockoutUntil) return;
     const tick = () => {
@@ -478,7 +429,6 @@ export default function App() {
     return () => clearInterval(id);
   }, [lockoutUntil]);
 
-  // Cerrar menú de exportación al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
@@ -488,286 +438,6 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  // Auto-avanzar semana si cambia
-  useEffect(() => {
-    const checkWeekChange = () => {
-      const actualMonday = getMondayOfCurrentWeek();
-      if (actualMonday !== currentWeekStart) {
-        setCurrentWeekStart(actualMonday);
-      }
-    };
-    const interval = setInterval(checkWeekChange, 60000);
-    window.addEventListener('focus', checkWeekChange);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', checkWeekChange);
-    };
-  }, [currentWeekStart]);
-
-  // Reset día móvil si sale de la semana actual
-  useEffect(() => {
-    const isInCurrentView = weekDays.some(d => d.dateStr === selectedMobileDay);
-    if (!isInCurrentView) {
-      setSelectedMobileDay(weekDays[0].dateStr);
-    }
-  }, [currentWeekStart, weekDays, selectedMobileDay]);
-
-  // Carga inicial
-  const loadCloudData = async () => {
-    setIsLoaded(false);
-    setLoadError('');
-    try {
-      const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
-        redis.get('sf_operators'),
-        redis.get('sf_scheduleData'),
-        redis.get('sf_vacations'),
-        redis.get('sf_extraHours'),
-      ]);
-      setOperators(Array.isArray(savedOps) ? savedOps : []);
-      setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
-      setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
-      setExtraHoursData(savedExtra && typeof savedExtra === 'object' ? savedExtra : {});
-    } catch (error) {
-      console.error('Error al cargar datos:', error);
-      setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
-    } finally {
-      setIsLoaded(true);
-    }
-  };
-
-  useEffect(() => {
-    loadCloudData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Polling cada 3s
-  useEffect(() => {
-    if (!isLoaded || loadError) return;
-    const interval = setInterval(async () => {
-      if (isUpdatingRef.current) return;
-      try {
-        const [savedOps, savedSchedule, savedVac, savedExtra] = await Promise.all([
-          redis.get('sf_operators'),
-          redis.get('sf_scheduleData'),
-          redis.get('sf_vacations'),
-          redis.get('sf_extraHours'),
-        ]);
-        if (!isUpdatingRef.current) {
-          if (Array.isArray(savedOps)) setOperators(savedOps);
-          if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
-          if (Array.isArray(savedVac)) setVacationRequests(savedVac);
-          if (savedExtra && typeof savedExtra === 'object') setExtraHoursData(savedExtra);
-        }
-      } catch (err) {
-        console.error('Error en sincronización continua:', err);
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [isLoaded, loadError]);
-
-  // Restaurar sesión
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem('sf_session');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const stillValid = MOCK_USERS.some(u => u.id === parsed.id && u.email === parsed.email);
-        if (stillValid) setCurrentUser(parsed);
-      }
-    } catch (err) { /* no-op */ }
-  }, []);
-
-  // ═══════════════════════════════════════════════════════
-  // Cómputos (useMemo)
-  // ═══════════════════════════════════════════════════════
-  const weekDays = useMemo(() => {
-    const days = [];
-    const [year, month, day] = currentWeekStart.split('-').map(Number);
-    const start = new Date(year, month - 1, day);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-      days.push({
-        dateStr: formatDateLocal(d),
-        dayName: dayNames[d.getDay()],
-        dayNumber: d.getDate(),
-        monthName: d.toLocaleDateString('es-ES', { month: 'short' }),
-        isWeekend: d.getDay() === 0 || d.getDay() === 6
-      });
-    }
-    return days;
-  }, [currentWeekStart]);
-
-  const isHistoricalWeek = useMemo(() => {
-    const currentMonday = getMondayOfCurrentWeek();
-    return currentWeekStart < currentMonday;
-  }, [currentWeekStart]);
-
-  const isCurrentWeek = useMemo(() => {
-    return currentWeekStart === getMondayOfCurrentWeek();
-  }, [currentWeekStart]);
-
-  const activeShiftCode = useMemo(() => getShiftCodeForDate(now), [now]);
-
-  const statsDateStr = useMemo(() => {
-    if (isCurrentWeek) return formatDateLocal(now);
-    return weekDays[0]?.dateStr || formatDateLocal(now);
-  }, [isCurrentWeek, now, weekDays]);
-
-  const statsDateLabel = useMemo(() => {
-    if (isCurrentWeek) return 'HOY';
-    return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
-  }, [isCurrentWeek, weekDays]);
-
-  const shiftStats = useMemo(() => {
-    const stats = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0, total: operators.length };
-    operators.forEach(op => {
-      const code = scheduleData[`${op.id}_${statsDateStr}`] || 'DES';
-      if (stats[code] !== undefined) stats[code]++;
-    });
-    stats.active = stats.M + stats.T + stats.N;
-    stats.absent = stats.VAC + stats.INC;
-    return stats;
-  }, [operators, scheduleData, statsDateStr]);
-
-  const lockedCells = useMemo(() => {
-    const locked = new Set();
-    vacationRequests
-      .filter(r => r.status === 'Aprobado')
-      .forEach(req => {
-        const [sY, sM, sD] = req.startDate.split('-').map(Number);
-        const [eY, eM, eD] = req.endDate.split('-').map(Number);
-        let curr = new Date(sY, sM - 1, sD);
-        const end = new Date(eY, eM - 1, eD);
-        while (curr <= end) {
-          locked.add(`${req.operatorId}_${formatDateLocal(curr)}`);
-          curr.setDate(curr.getDate() + 1);
-        }
-      });
-    return locked;
-  }, [vacationRequests]);
-
-  const lockedCellsInView = useMemo(() => {
-    let count = 0;
-    operators.forEach(op => {
-      weekDays.forEach(day => {
-        if (lockedCells.has(`${op.id}_${day.dateStr}`)) count++;
-      });
-    });
-    return count;
-  }, [operators, weekDays, lockedCells]);
-
-  const licenseAlerts = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return operators
-      .map(op => {
-        if (!op.licenseExpiry) return null;
-        const expiry = new Date(op.licenseExpiry + 'T00:00:00');
-        const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays > 30) return null;
-        return { ...op, diffDays, expired: diffDays < 0 };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.diffDays - b.diffDays);
-  }, [operators]);
-
-  const filteredOperators = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return operators.filter(op => {
-      const matchesSearch = op.name.toLowerCase().includes(searchQuery.toLowerCase()) || op.id.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesZone = selectedZone === 'Todas las zonas' || op.zone === selectedZone;
-      const matchesEquipment = selectedEquipment === 'Todos los equipos' || op.equipment === selectedEquipment;
-      let matchesExpiring = true;
-      if (onlyExpiringLicenses) {
-        if (!op.licenseExpiry) matchesExpiring = false;
-        else {
-          const expiry = new Date(op.licenseExpiry + 'T00:00:00');
-          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          matchesExpiring = diffDays <= 30;
-        }
-      }
-      return matchesSearch && matchesZone && matchesEquipment && matchesExpiring;
-    });
-  }, [operators, searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
-
-  const activeFiltersCount = useMemo(() => {
-    let count = 0;
-    if (searchQuery.trim()) count++;
-    if (selectedZone !== 'Todas las zonas') count++;
-    if (selectedEquipment !== 'Todos los equipos') count++;
-    if (onlyExpiringLicenses) count++;
-    return count;
-  }, [searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
-
-  // ═══════════════════════════════════════════════════════
-  // Permisos y helpers
-  // ═══════════════════════════════════════════════════════
-  const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
-  const canManageOperators = currentUser && currentUser.role === 'Admin';
-  const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
-  const canViewReports = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
-
-  const canEditCell = (operatorId, dateStr) => {
-    if (!canEditShifts) return false;
-    if (isHistoricalWeek) return false;
-    if (lockedCells.has(`${operatorId}_${dateStr}`)) return false;
-    return true;
-  };
-
-  const clearAllFilters = () => {
-    setSearchQuery('');
-    setSelectedZone('Todas las zonas');
-    setSelectedEquipment('Todos los equipos');
-    setOnlyExpiringLicenses(false);
-    pushToast('info', 'Filtros limpiados');
-  };
-
-  const detectConflicts = (operatorId, dateStr, newShiftCode, isFullWeek = false) => {
-    const conflicts = [];
-    const currentCode = scheduleData[`${operatorId}_${dateStr}`];
-    const op = operators.find(o => o.id === operatorId);
-    if (currentCode === newShiftCode && !isFullWeek) return conflicts;
-    if (lockedCells.has(`${operatorId}_${dateStr}`)) {
-      conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
-      return conflicts;
-    }
-    if (['M', 'T', 'N'].includes(newShiftCode)) {
-      const weekDates = weekDays.map(d => d.dateStr);
-      let weeklyHours = 0;
-      let newShiftHours = newShiftCode === 'N' ? 8.5 : 8;
-      weekDates.forEach(date => {
-        const key = `${operatorId}_${date}`;
-        const code = date === dateStr ? newShiftCode : scheduleData[key];
-        if (code === 'M' || code === 'T') weeklyHours += 8;
-        else if (code === 'N') weeklyHours += 8.5;
-      });
-      if (weeklyHours + newShiftHours > 48) {
-        conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
-      }
-    }
-    if (newShiftCode === 'N' && !isFullWeek) {
-      const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
-      if (currentIdx >= 0) {
-        let consecutiveN = 1;
-        for (let i = currentIdx - 1; i >= 0; i--) {
-          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
-          if (code === 'N') consecutiveN++; else break;
-        }
-        for (let i = currentIdx + 1; i < 7; i++) {
-          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
-          if (code === 'N') consecutiveN++; else break;
-        }
-        if (consecutiveN > 5) {
-          conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
-        }
-      }
-    }
-    return conflicts;
-  };
 
   const loadExportLibraries = async () => {
     if (!window.html2canvas) {
@@ -788,71 +458,6 @@ export default function App() {
         document.head.appendChild(script);
       });
     }
-  };
-
-  // Auto-llenado de celdas vacías
-  useEffect(() => {
-    if (!isLoaded || isUpdatingRef.current) return;
-    if (operators.length === 0) return;
-    if (isHistoricalWeek) return;
-
-    const newSchedule = { ...scheduleData };
-    let changed = false;
-
-    operators.forEach((op) => {
-      weekDays.forEach((day, idx) => {
-        const key = `${op.id}_${day.dateStr}`;
-        if (lockedCells.has(key)) return;
-        if (!newSchedule[key]) {
-          if (idx === 5 || idx === 6) {
-            newSchedule[key] = 'DES';
-          } else {
-            if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
-            else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
-            else newSchedule[key] = 'N';
-          }
-          changed = true;
-        }
-      });
-    });
-
-    if (changed) {
-      setScheduleData(newSchedule);
-      redis.set('sf_scheduleData', newSchedule).catch(console.error);
-    }
-  }, [operators, weekDays, isLoaded, isHistoricalWeek, lockedCells]);
-
-  // ═══════════════════════════════════════════════════════
-  // Handlers
-  // ═══════════════════════════════════════════════════════
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (lockoutUntil && Date.now() < lockoutUntil) return;
-    const email = loginEmail.trim().toLowerCase();
-    const user = MOCK_USERS.find(u => u.email.toLowerCase() === email && u.pass === loginPass);
-    if (user) {
-      setCurrentUser(user);
-      setLoginError('');
-      setLoginAttempts(0);
-      setLoginPass('');
-      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* no-op */ }
-      pushToast('success', `Bienvenido, ${user.name}`);
-    } else {
-      const attempts = loginAttempts + 1;
-      setLoginAttempts(attempts);
-      if (attempts >= MAX_LOGIN_ATTEMPTS) {
-        setLockoutUntil(Date.now() + LOCKOUT_MS);
-        setLoginError(`Demasiados intentos fallidos. Espera ${LOCKOUT_MS / 1000}s para volver a intentar.`);
-      } else {
-        setLoginError(`Correo o contraseña incorrectos. (${MAX_LOGIN_ATTEMPTS - attempts} intento(s) restante(s))`);
-      }
-    }
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* no-op */ }
   };
 
   const handleExport = async (format) => {
@@ -937,6 +542,354 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    const checkWeekChange = () => {
+      const actualMonday = getMondayOfCurrentWeek();
+      if (actualMonday !== currentWeekStart) {
+        setCurrentWeekStart(actualMonday);
+      }
+    };
+    const interval = setInterval(checkWeekChange, 60000);
+    window.addEventListener('focus', checkWeekChange);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkWeekChange);
+    };
+  }, [currentWeekStart]);
+
+  const loadCloudData = async () => {
+    setIsLoaded(false);
+    setLoadError('');
+    try {
+      const [savedOps, savedSchedule, savedVac] = await Promise.all([
+        redis.get('sf_operators'),
+        redis.get('sf_scheduleData'),
+        redis.get('sf_vacations'),
+      ]);
+      setOperators(Array.isArray(savedOps) ? savedOps : []);
+      setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
+      setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
+    } catch (error) {
+      console.error('Error al cargar datos:', error);
+      setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
+    } finally {
+      setIsLoaded(true);
+    }
+  };
+
+  useEffect(() => {
+    loadCloudData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded || loadError) return;
+    const interval = setInterval(async () => {
+      if (isUpdatingRef.current) return;
+      try {
+        const [savedOps, savedSchedule, savedVac] = await Promise.all([
+          redis.get('sf_operators'),
+          redis.get('sf_scheduleData'),
+          redis.get('sf_vacations'),
+        ]);
+        if (!isUpdatingRef.current) {
+          if (Array.isArray(savedOps)) setOperators(savedOps);
+          if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
+          if (Array.isArray(savedVac)) setVacationRequests(savedVac);
+        }
+      } catch (err) {
+        console.error('Error en sincronización continua:', err);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isLoaded, loadError]);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedZone, setSelectedZone] = useState('Todas las zonas');
+  const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
+  const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
+
+  const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
+  const [editingOperator, setEditingOperator] = useState(null);
+  const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
+  const [selectedCell, setSelectedCell] = useState(null);
+
+  const [newOp, setNewOp] = useState({
+    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
+    shiftPattern: 'Mañana', licenseExpiry: '2027-12-31'
+  });
+
+  const [newVac, setNewVac] = useState({
+    operatorId: '',
+    startDate: formatDateLocal(new Date()),
+    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
+    type: 'Vacaciones',
+    reason: ''
+  });
+
+  const weekDays = useMemo(() => {
+    const days = [];
+    const [year, month, day] = currentWeekStart.split('-').map(Number);
+    const start = new Date(year, month - 1, day);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+      days.push({
+        dateStr: formatDateLocal(d),
+        dayName: dayNames[d.getDay()],
+        dayNumber: d.getDate(),
+        monthName: d.toLocaleDateString('es-ES', { month: 'short' }),
+        isWeekend: d.getDay() === 0 || d.getDay() === 6
+      });
+    }
+    return days;
+  }, [currentWeekStart]);
+
+  useEffect(() => {
+    const isInCurrentView = weekDays.some(d => d.dateStr === selectedMobileDay);
+    if (!isInCurrentView) {
+      setSelectedMobileDay(weekDays[0].dateStr);
+    }
+  }, [currentWeekStart, weekDays, selectedMobileDay]);
+
+  const isHistoricalWeek = useMemo(() => {
+    const currentMonday = getMondayOfCurrentWeek();
+    return currentWeekStart < currentMonday;
+  }, [currentWeekStart]);
+
+  const isCurrentWeek = useMemo(() => {
+    return currentWeekStart === getMondayOfCurrentWeek();
+  }, [currentWeekStart]);
+
+  const activeShiftCode = useMemo(() => getShiftCodeForDate(now), [now]);
+
+  const statsDateStr = useMemo(() => {
+    if (isCurrentWeek) return formatDateLocal(now);
+    return weekDays[0]?.dateStr || formatDateLocal(now);
+  }, [isCurrentWeek, now, weekDays]);
+
+  const statsDateLabel = useMemo(() => {
+    if (isCurrentWeek) return 'HOY';
+    return `Lun ${weekDays[0]?.dayNumber} ${weekDays[0]?.monthName}`;
+  }, [isCurrentWeek, weekDays]);
+
+  const shiftStats = useMemo(() => {
+    const stats = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0, total: operators.length };
+    operators.forEach(op => {
+      const code = scheduleData[`${op.id}_${statsDateStr}`] || 'DES';
+      if (stats[code] !== undefined) stats[code]++;
+    });
+    stats.active = stats.M + stats.T + stats.N;
+    stats.absent = stats.VAC + stats.INC;
+    return stats;
+  }, [operators, scheduleData, statsDateStr]);
+
+  const lockedCells = useMemo(() => {
+    const locked = new Set();
+    vacationRequests
+      .filter(r => r.status === 'Aprobado')
+      .forEach(req => {
+        const [sY, sM, sD] = req.startDate.split('-').map(Number);
+        const [eY, eM, eD] = req.endDate.split('-').map(Number);
+        let curr = new Date(sY, sM - 1, sD);
+        const end = new Date(eY, eM - 1, eD);
+        while (curr <= end) {
+          locked.add(`${req.operatorId}_${formatDateLocal(curr)}`);
+          curr.setDate(curr.getDate() + 1);
+        }
+      });
+    return locked;
+  }, [vacationRequests]);
+
+  const lockedCellsInView = useMemo(() => {
+    let count = 0;
+    operators.forEach(op => {
+      weekDays.forEach(day => {
+        if (lockedCells.has(`${op.id}_${day.dateStr}`)) count++;
+      });
+    });
+    return count;
+  }, [operators, weekDays, lockedCells]);
+
+  const canEditCell = (operatorId, dateStr) => {
+    if (!canEditShifts) return false;
+    if (isHistoricalWeek) return false;
+    if (lockedCells.has(`${operatorId}_${dateStr}`)) return false;
+    return true;
+  };
+
+  const detectConflicts = (operatorId, dateStr, newShiftCode, isFullWeek = false) => {
+    const conflicts = [];
+    const currentCode = scheduleData[`${operatorId}_${dateStr}`];
+    const op = operators.find(o => o.id === operatorId);
+    if (currentCode === newShiftCode && !isFullWeek) return conflicts;
+    if (lockedCells.has(`${operatorId}_${dateStr}`)) {
+      conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
+      return conflicts;
+    }
+    if (['M', 'T', 'N'].includes(newShiftCode)) {
+      const weekDates = weekDays.map(d => d.dateStr);
+      let weeklyHours = 0;
+      let newShiftHours = newShiftCode === 'N' ? 8.5 : 8;
+      weekDates.forEach(date => {
+        const key = `${operatorId}_${date}`;
+        const code = date === dateStr ? newShiftCode : scheduleData[key];
+        if (code === 'M' || code === 'T') weeklyHours += 8;
+        else if (code === 'N') weeklyHours += 8.5;
+      });
+      if (weeklyHours + newShiftHours > 48) {
+        conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
+      }
+    }
+    if (newShiftCode === 'N' && !isFullWeek) {
+      const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
+      if (currentIdx >= 0) {
+        let consecutiveN = 1;
+        for (let i = currentIdx - 1; i >= 0; i--) {
+          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
+          if (code === 'N') consecutiveN++; else break;
+        }
+        for (let i = currentIdx + 1; i < 7; i++) {
+          const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
+          if (code === 'N') consecutiveN++; else break;
+        }
+        if (consecutiveN > 5) {
+          conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
+        }
+      }
+    }
+    return conflicts;
+  };
+
+  useEffect(() => {
+    if (!isLoaded || isUpdatingRef.current) return;
+    if (operators.length === 0) return;
+    if (isHistoricalWeek) return;
+
+    const newSchedule = { ...scheduleData };
+    let changed = false;
+
+    operators.forEach((op) => {
+      weekDays.forEach((day, idx) => {
+        const key = `${op.id}_${day.dateStr}`;
+        if (lockedCells.has(key)) return;
+        if (!newSchedule[key]) {
+          if (idx === 5 || idx === 6) {
+            newSchedule[key] = 'DES';
+          } else {
+            if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
+            else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
+            else newSchedule[key] = 'N';
+          }
+          changed = true;
+        }
+      });
+    });
+
+    if (changed) {
+      setScheduleData(newSchedule);
+      redis.set('sf_scheduleData', newSchedule).catch(console.error);
+    }
+  }, [operators, weekDays, isLoaded, isHistoricalWeek, lockedCells]);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (lockoutUntil && Date.now() < lockoutUntil) return;
+    const email = loginEmail.trim().toLowerCase();
+    const user = MOCK_USERS.find(u => u.email.toLowerCase() === email && u.pass === loginPass);
+    if (user) {
+      setCurrentUser(user);
+      setLoginError('');
+      setLoginAttempts(0);
+      setLoginPass('');
+      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* no-op */ }
+      pushToast('success', `Bienvenido, ${user.name}`);
+    } else {
+      const attempts = loginAttempts + 1;
+      setLoginAttempts(attempts);
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        setLockoutUntil(Date.now() + LOCKOUT_MS);
+        setLoginError(`Demasiados intentos fallidos. Espera ${LOCKOUT_MS / 1000}s para volver a intentar.`);
+      } else {
+        setLoginError(`Correo o contraseña incorrectos. (${MAX_LOGIN_ATTEMPTS - attempts} intento(s) restante(s))`);
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* no-op */ }
+  };
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('sf_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const stillValid = MOCK_USERS.some(u => u.id === parsed.id && u.email === parsed.email);
+        if (stillValid) setCurrentUser(parsed);
+      }
+    } catch (err) { /* no-op */ }
+  }, []);
+
+  const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+  const canManageOperators = currentUser && currentUser.role === 'Admin';
+  const canApproveVacations = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+  const canViewReports = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
+
+  const licenseAlerts = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return operators
+      .map(op => {
+        if (!op.licenseExpiry) return null;
+        const expiry = new Date(op.licenseExpiry + 'T00:00:00');
+        const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 30) return null;
+        return { ...op, diffDays, expired: diffDays < 0 };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.diffDays - b.diffDays);
+  }, [operators]);
+
+  const filteredOperators = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return operators.filter(op => {
+      const matchesSearch = op.name.toLowerCase().includes(searchQuery.toLowerCase()) || op.id.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesZone = selectedZone === 'Todas las zonas' || op.zone === selectedZone;
+      const matchesEquipment = selectedEquipment === 'Todos los equipos' || op.equipment === selectedEquipment;
+      let matchesExpiring = true;
+      if (onlyExpiringLicenses) {
+        if (!op.licenseExpiry) matchesExpiring = false;
+        else {
+          const expiry = new Date(op.licenseExpiry + 'T00:00:00');
+          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          matchesExpiring = diffDays <= 30;
+        }
+      }
+      return matchesSearch && matchesZone && matchesEquipment && matchesExpiring;
+    });
+  }, [operators, searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery.trim()) count++;
+    if (selectedZone !== 'Todas las zonas') count++;
+    if (selectedEquipment !== 'Todos los equipos') count++;
+    if (onlyExpiringLicenses) count++;
+    return count;
+  }, [searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
+
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setSelectedZone('Todas las zonas');
+    setSelectedEquipment('Todos los equipos');
+    setOnlyExpiringLicenses(false);
+    pushToast('info', 'Filtros limpiados');
+  };
+
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
     if (!canEditShifts) return;
     if (isHistoricalWeek) return;
@@ -950,14 +903,10 @@ export default function App() {
     }
 
     const previousSchedule = { ...scheduleData };
-    const previousExtra = { ...extraHoursData };
     const previousValue = scheduleData[clickedKey];
     const newValue = shiftCode;
 
-    const isWorkShift = ['M', 'T', 'N'].includes(shiftCode);
-    const extraToSave = isWorkShift ? (Number(extraHoursInput) || 0) : 0;
-
-    if (previousValue === newValue && !isFullWeek && (previousExtra[clickedKey] || 0) === extraToSave) {
+    if (previousValue === newValue && !isFullWeek) {
       setSelectedCell(null);
       setApplyToFullWeek(false);
       return;
@@ -967,7 +916,6 @@ export default function App() {
     setSyncStatus('saving');
 
     const updatedSchedule = { ...scheduleData };
-    const updatedExtra = { ...extraHoursData };
     const affectedKeys = [];
 
     if (isFullWeek) {
@@ -976,46 +924,27 @@ export default function App() {
         if (!lockedCells.has(key)) {
           updatedSchedule[key] = shiftCode;
           affectedKeys.push(key);
-          if (extraToSave > 0) {
-            updatedExtra[key] = extraToSave;
-          } else {
-            delete updatedExtra[key];
-          }
         }
       });
     } else {
       updatedSchedule[clickedKey] = shiftCode;
       affectedKeys.push(clickedKey);
-      if (extraToSave > 0) {
-        updatedExtra[clickedKey] = extraToSave;
-      } else {
-        delete updatedExtra[clickedKey];
-      }
     }
 
     setScheduleData(updatedSchedule);
-    setExtraHoursData(updatedExtra);
     setSelectedCell(null);
     setApplyToFullWeek(false);
     triggerFlash(affectedKeys);
 
     try {
-      await Promise.all([
-        redis.set('sf_scheduleData', updatedSchedule),
-        redis.set('sf_extraHours', updatedExtra),
-      ]);
+      await redis.set('sf_scheduleData', updatedSchedule);
       reportSyncResult(true);
       const op = operators.find(o => o.id === operatorId);
       const dayLabel = isFullWeek ? 'toda la semana' : dateStr;
-      const extraLabel = extraToSave > 0 ? ` (+${extraToSave}h extra)` : '';
-      pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label}${extraLabel} (${dayLabel})`, {
+      pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label} (${dayLabel})`, {
         undoAction: () => {
           setScheduleData(previousSchedule);
-          setExtraHoursData(previousExtra);
-          Promise.all([
-            redis.set('sf_scheduleData', previousSchedule),
-            redis.set('sf_extraHours', previousExtra),
-          ]).then(() => {
+          redis.set('sf_scheduleData', previousSchedule).then(() => {
             pushToast('info', 'Cambio deshecho');
           }).catch(() => {
             pushToast('error', 'No se pudo deshacer');
@@ -1025,7 +954,6 @@ export default function App() {
     } catch (error) {
       console.error('Error al guardar turno:', error);
       setScheduleData(previousSchedule);
-      setExtraHoursData(previousExtra);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar. Cambio revertido.');
     } finally {
@@ -1038,7 +966,6 @@ export default function App() {
     const shiftCode = reassignShift;
     const newKey = `${targetOperatorId}_${reassignModal.dateStr}`;
     const previousSchedule = { ...scheduleData };
-    const previousExtra = { ...extraHoursData };
 
     const conflicts = detectConflicts(targetOperatorId, reassignModal.dateStr, shiftCode, false);
     if (conflicts.length > 0) {
@@ -1050,30 +977,19 @@ export default function App() {
     setSyncStatus('saving');
 
     const updatedSchedule = { ...scheduleData, [newKey]: shiftCode };
-    const updatedExtra = { ...extraHoursData };
-    delete updatedExtra[newKey];
-
     setScheduleData(updatedSchedule);
-    setExtraHoursData(updatedExtra);
     setReassignModal(null);
     triggerFlash([newKey]);
 
     try {
-      await Promise.all([
-        redis.set('sf_scheduleData', updatedSchedule),
-        redis.set('sf_extraHours', updatedExtra),
-      ]);
+      await redis.set('sf_scheduleData', updatedSchedule);
       reportSyncResult(true);
       const target = operators.find(o => o.id === targetOperatorId);
       const absent = operators.find(o => o.id === reassignModal.operatorId);
       pushToast('success', `${target?.name} cubrirá ${SHIFT_TYPES[shiftCode].label} de ${absent?.name} (${reassignModal.dateStr})`, {
         undoAction: () => {
           setScheduleData(previousSchedule);
-          setExtraHoursData(previousExtra);
-          Promise.all([
-            redis.set('sf_scheduleData', previousSchedule),
-            redis.set('sf_extraHours', previousExtra),
-          ]).then(() => {
+          redis.set('sf_scheduleData', previousSchedule).then(() => {
             pushToast('info', 'Reasignación deshecha');
           }).catch(() => {
             pushToast('error', 'No se pudo deshacer');
@@ -1083,7 +999,6 @@ export default function App() {
     } catch (error) {
       console.error('Error al reasignar:', error);
       setScheduleData(previousSchedule);
-      setExtraHoursData(previousExtra);
       reportSyncResult(false);
       pushToast('error', 'Error al reasignar. Cambio revertido.');
     } finally {
@@ -1224,12 +1139,10 @@ export default function App() {
     const req = vacationRequests.find(r => r.id === id);
     const previousVac = vacationRequests;
     const previousSchedule = scheduleData;
-    const previousExtra = extraHoursData;
     const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
     setVacationRequests(updatedVac);
 
     let updatedSchedule = { ...scheduleData };
-    let updatedExtra = { ...extraHoursData };
     if (newStatus === 'Aprobado' && req) {
       let shiftCode = 'DES';
       if (req.type === 'Vacaciones') shiftCode = 'VAC';
@@ -1242,22 +1155,16 @@ export default function App() {
       const end = new Date(eY, eM - 1, eD);
       while (curr <= end) {
         const dateStr = formatDateLocal(curr);
-        const key = `${req.operatorId}_${dateStr}`;
-        updatedSchedule[key] = shiftCode;
-        delete updatedExtra[key];
+        updatedSchedule[`${req.operatorId}_${dateStr}`] = shiftCode;
         curr.setDate(curr.getDate() + 1);
       }
       setScheduleData(updatedSchedule);
-      setExtraHoursData(updatedExtra);
     }
 
     try {
       await redis.set('sf_vacations', updatedVac);
       if (newStatus === 'Aprobado' && req) {
-        await Promise.all([
-          redis.set('sf_scheduleData', updatedSchedule),
-          redis.set('sf_extraHours', updatedExtra),
-        ]);
+        await redis.set('sf_scheduleData', updatedSchedule);
       }
       reportSyncResult(true);
       pushToast('success', `Solicitud marcada como ${newStatus}`);
@@ -1265,7 +1172,6 @@ export default function App() {
       console.error('Error al actualizar estado del permiso:', error);
       setVacationRequests(previousVac);
       setScheduleData(previousSchedule);
-      setExtraHoursData(previousExtra);
       reportSyncResult(false);
       pushToast('error', 'Error al actualizar. Cambio revertido.');
     } finally {
@@ -1303,17 +1209,13 @@ export default function App() {
         return exp >= today;
       }).length;
 
-      let totalWorked = 0, totalAbsent = 0, totalSlots = 0, totalExtra = 0;
+      let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
       weekDays.forEach(day => {
         operators.forEach(op => {
-          const key = `${op.id}_${day.dateStr}`;
-          const code = scheduleData[key] || 'DES';
+          const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
           totalSlots++;
           if (['M', 'T', 'N'].includes(code)) totalWorked++;
           if (['VAC', 'INC'].includes(code)) totalAbsent++;
-          if (extraHoursData[key] > 0 && ['M', 'T', 'N'].includes(code)) {
-            totalExtra += extraHoursData[key];
-          }
         });
       });
       const coveragePct = totalSlots > 0 ? Math.round((totalWorked / totalSlots) * 100) : 0;
@@ -1323,7 +1225,7 @@ export default function App() {
         { label: 'Cobertura', value: `${coveragePct}%`, color: [16, 185, 129] },
         { label: 'Ausentismo', value: `${absentPct}%`, color: [239, 68, 68] },
         { label: 'Licencias OK', value: `${licenseOk}/${totalOps}`, color: [59, 130, 246] },
-        { label: 'Horas extra', value: `${totalExtra.toFixed(1)}h`, color: [245, 158, 11] }
+        { label: 'Operadores', value: `${totalOps}`, color: [168, 85, 247] }
       ];
 
       const kpiY = 32;
@@ -1401,22 +1303,15 @@ export default function App() {
       const sortedByHours = [...operators].map(op => {
         const weekDates = weekDays.map(d => d.dateStr);
         let totalH = 0;
-        let totalExtras = 0;
         const c = { M: 0, T: 0, N: 0 };
         weekDates.forEach(date => {
-          const key = `${op.id}_${date}`;
-          const code = scheduleData[key];
+          const code = scheduleData[`${op.id}_${date}`];
           if (code && SHIFT_HOURS[code] !== undefined) {
             totalH += SHIFT_HOURS[code];
-            const extra = extraHoursData[key] || 0;
-            if (extra > 0 && ['M','T','N'].includes(code)) {
-              totalH += extra;
-              totalExtras += extra;
-            }
             if (['M', 'T', 'N'].includes(code)) c[code]++;
           }
         });
-        return { ...op, totalH, totalExtras, c };
+        return { ...op, totalH, c };
       }).sort((a, b) => b.totalH - a.totalH);
 
       sortedByHours.forEach(op => {
@@ -1430,7 +1325,7 @@ export default function App() {
         pdf.text(String(op.c.T), 148, y);
         pdf.text(String(op.c.N), 158, y);
         pdf.setTextColor(16, 185, 129);
-        pdf.text(`${op.totalH.toFixed(1)}h${op.totalExtras > 0 ? ` (+${op.totalExtras}h ex)` : ''}`, 175, y);
+        pdf.text(`${op.totalH.toFixed(1)}h`, 175, y);
         y += 5.5;
       });
 
@@ -1455,9 +1350,6 @@ export default function App() {
     }
   };
 
-  // ═══════════════════════════════════════════════════════
-  // Early returns
-  // ═══════════════════════════════════════════════════════
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#021f12] flex items-center justify-center p-4">
@@ -1836,7 +1728,6 @@ export default function App() {
                   const IconComp = shift.icon;
                   const isLockedByAbsence = lockedCells.has(cellKey);
                   const editable = canEditCell(op.id, selectedMobileDay);
-                  const extraH = extraHoursData[cellKey] || 0;
 
                   return (
                     <button
@@ -1869,11 +1760,6 @@ export default function App() {
                         <div className="font-bold text-[13px] break-words leading-tight">{op.name}</div>
                         <div className="text-[10px] opacity-80 break-words leading-tight">{op.id} · {op.zone}</div>
                       </div>
-                      {['M','T','N'].includes(shiftCode) && extraH > 0 && (
-                        <span className="shrink-0 text-[9px] font-extrabold bg-amber-500 text-black px-1.5 py-0.5 rounded">
-                          +{extraH}h
-                        </span>
-                      )}
                       <div className="shrink-0 flex items-center gap-1">
                         <span className="font-extrabold text-sm">{shift.code}</span>
                         {(isLockedByAbsence || isHistoricalWeek) && (
@@ -1947,7 +1833,6 @@ export default function App() {
                             const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                             const isCurrentShiftForMe = isToday && shiftCode === activeShiftCode;
                             const isFlashing = flashCells.has(cellKey);
-                            const extraH = extraHoursData[cellKey] || 0;
 
                             let tooltip = '';
                             if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
@@ -1977,11 +1862,6 @@ export default function App() {
                                 >
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
-                                  {['M','T','N'].includes(shiftCode) && extraH > 0 && (
-                                    <span className="absolute -bottom-1 -left-1 text-[8px] font-extrabold bg-amber-500 text-black px-1 rounded">
-                                      +{extraH}h
-                                    </span>
-                                  )}
                                   {(isLockedByAbsence || isHistoricalWeek) && (
                                     <Lock className={`w-2.5 h-2.5 absolute top-0.5 right-0.5 ${isLockedByAbsence ? 'text-purple-300' : 'text-slate-400'}`} />
                                   )}
@@ -2020,6 +1900,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* ✅ Indicadores con botón de mostrar/ocultar */}
             {showIndicators ? (
               <div className="relative flex items-center justify-center gap-1.5 flex-wrap pt-1">
                 <button
@@ -2294,15 +2175,13 @@ export default function App() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {(() => {
-                let totalWorked = 0, totalAbsent = 0, totalSlots = 0, totalExtra = 0;
+                let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
                 weekDays.forEach(day => {
                   operators.forEach(op => {
-                    const key = `${op.id}_${day.dateStr}`;
-                    const code = scheduleData[key] || 'DES';
+                    const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
                     totalSlots++;
                     if (['M', 'T', 'N'].includes(code)) totalWorked++;
                     if (['VAC', 'INC'].includes(code)) totalAbsent++;
-                    if (extraHoursData[key] > 0 && ['M', 'T', 'N'].includes(code)) totalExtra += extraHoursData[key];
                   });
                 });
                 const coverage = totalSlots > 0 ? Math.round((totalWorked / totalSlots) * 100) : 0;
@@ -2341,13 +2220,13 @@ export default function App() {
                       <div className="text-xl sm:text-2xl font-extrabold text-cyan-100">{licenseOk}/{operators.length}</div>
                       <div className="text-[10px] text-cyan-400/70 mt-0.5">{operators.length - licenseOk} críticas</div>
                     </div>
-                    <div className="rounded-2xl border border-amber-700/60 bg-amber-950/70 p-3 sm:p-4">
+                    <div className="rounded-2xl border border-purple-700/60 bg-purple-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
-                        <Timer className="w-3.5 h-3.5 text-amber-300" />
-                        <span className="text-[10px] font-bold uppercase text-amber-300">Horas extra</span>
+                        <Users2 className="w-3.5 h-3.5 text-purple-300" />
+                        <span className="text-[10px] font-bold uppercase text-purple-300">Plantilla</span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-extrabold text-amber-100">{totalExtra.toFixed(1)}h</div>
-                      <div className="text-[10px] text-amber-400/70 mt-0.5">semana actual</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{operators.length}</div>
+                      <div className="text-[10px] text-purple-400/70 mt-0.5">operadores</div>
                     </div>
                   </>
                 );
@@ -2408,7 +2287,7 @@ export default function App() {
                 Horas por operador
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs min-w-[500px]">
+                <table className="w-full text-left border-collapse text-xs min-w-[450px]">
                   <thead>
                     <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                       <th className="p-2">Operador</th>
@@ -2416,7 +2295,6 @@ export default function App() {
                       <th className="p-2 text-center">M</th>
                       <th className="p-2 text-center">T</th>
                       <th className="p-2 text-center">N</th>
-                      <th className="p-2 text-center">Extra</th>
                       <th className="p-2 text-right">Total</th>
                     </tr>
                   </thead>
@@ -2424,18 +2302,11 @@ export default function App() {
                     {operators.map(op => {
                       const weekDates = weekDays.map(d => d.dateStr);
                       let totalH = 0;
-                      let totalExtras = 0;
                       const c = { M: 0, T: 0, N: 0 };
                       weekDates.forEach(date => {
-                        const key = `${op.id}_${date}`;
-                        const code = scheduleData[key];
+                        const code = scheduleData[`${op.id}_${date}`];
                         if (code && SHIFT_HOURS[code] !== undefined) {
                           totalH += SHIFT_HOURS[code];
-                          const extra = extraHoursData[key] || 0;
-                          if (extra > 0 && ['M','T','N'].includes(code)) {
-                            totalH += extra;
-                            totalExtras += extra;
-                          }
                           if (['M', 'T', 'N'].includes(code)) c[code]++;
                         }
                       });
@@ -2447,19 +2318,13 @@ export default function App() {
                           <td className="p-2 text-center text-emerald-300">{c.M}</td>
                           <td className="p-2 text-center text-amber-300">{c.T}</td>
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
-                          <td className="p-2 text-center">
-                            {totalExtras > 0
-                              ? <span className="font-bold text-amber-300">+{totalExtras}h</span>
-                              : <span className="text-emerald-700">—</span>
-                            }
-                          </td>
                           <td className={`p-2 text-right font-extrabold ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{totalH.toFixed(1)}h</td>
                         </tr>
                       );
                     })}
                     {operators.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
+                        <td colSpan={6} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
                       </tr>
                     )}
                   </tbody>
@@ -2496,60 +2361,14 @@ export default function App() {
               />
             </div>
 
-            <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-amber-700/60">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <Timer className="w-4 h-4 text-amber-400" />
-                  <span className="text-xs font-bold text-amber-200">Horas extra (opcional)</span>
-                </div>
-                <span className="text-[11px] font-bold text-amber-300">
-                  {extraHoursInput > 0 ? `+${extraHoursInput}h` : 'Sin extras'}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {[0, 1, 2, 3, 4].map(h => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => setExtraHoursInput(h)}
-                    className={`flex-1 min-w-[40px] py-1.5 rounded-lg text-xs font-bold border transition ${
-                      extraHoursInput === h
-                        ? 'bg-amber-500 border-amber-400 text-black'
-                        : 'bg-[#02180d] border-emerald-800 text-emerald-300 hover:bg-emerald-950'
-                    }`}
-                  >
-                    {h === 0 ? '0' : `+${h}h`}
-                  </button>
-                ))}
-                <input
-                  type="number"
-                  min="0"
-                  max="8"
-                  step="0.5"
-                  value={extraHoursInput}
-                  onChange={(e) => setExtraHoursInput(Math.max(0, Math.min(8, parseFloat(e.target.value) || 0)))}
-                  className="w-16 bg-[#02180d] border border-emerald-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 text-center"
-                  title="Horas personalizadas"
-                />
-              </div>
-              <p className="text-[10px] text-emerald-500 mt-2 leading-snug">
-                Solo se aplican si el turno es Mañana, Tarde o Noche.
-              </p>
-            </div>
-
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (
                 <button
                   key={code}
                   onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
-                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color} ${
-                    selectedCell.currentShift === code ? 'ring-2 ring-white/80' : ''
-                  }`}
+                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
                 >
                   {code}: {config.label}
-                  {['M','T','N'].includes(code) && extraHoursInput > 0 && (
-                    <span className="block text-[9px] opacity-80 mt-0.5">+{extraHoursInput}h extra</span>
-                  )}
                 </button>
               ))}
             </div>

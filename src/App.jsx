@@ -397,8 +397,22 @@ export default function App() {
   const [reassignShift, setReassignShift] = useState('M');
   const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
 
-  // ✅ Estado para mostrar/ocultar los indicadores
-  const [showIndicators, setShowIndicators] = useState(true);
+  // ✅ Indicadores arrancan OCULTOS y se recuerda la preferencia en localStorage
+  const [showIndicators, setShowIndicators] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sf_showIndicators');
+      return saved === null ? false : saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // ✅ Persistir preferencia cada vez que cambia
+  useEffect(() => {
+    try {
+      localStorage.setItem('sf_showIndicators', String(showIndicators));
+    } catch (err) { /* no-op */ }
+  }, [showIndicators]);
 
   useEffect(() => {
     if (!lockoutUntil) return;

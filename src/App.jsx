@@ -397,6 +397,9 @@ export default function App() {
   const [reassignShift, setReassignShift] = useState('M');
   const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
 
+  // ✅ Estado para mostrar/ocultar los indicadores
+  const [showIndicators, setShowIndicators] = useState(true);
+
   useEffect(() => {
     if (!lockoutUntil) return;
     const tick = () => {
@@ -1678,7 +1681,6 @@ export default function App() {
               )}
             </div>
 
-            {/* ✅ VISTA MÓVIL — SIN truncate ni text-ellipsis para evitar el bug de GPU en Android */}
             <div className="md:hidden flex flex-col gap-2">
               <div className="flex gap-1.5 overflow-x-auto pb-1">
                 {weekDays.map(day => {
@@ -1884,38 +1886,60 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-1.5 flex-wrap">
-              {isCurrentWeek ? (
-                <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
-                  <span className="relative flex h-2 w-2 shrink-0">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <ActiveShiftIcon className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-300 leading-none">En vivo</div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-sm font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
-                      <span className="text-[9px] text-emerald-400 font-mono leading-none hidden sm:inline">{formatTimeLocal(now)}</span>
+            {/* ✅ Indicadores con botón de mostrar/ocultar */}
+            {showIndicators ? (
+              <div className="relative flex items-center justify-center gap-1.5 flex-wrap pt-1">
+                <button
+                  onClick={() => setShowIndicators(false)}
+                  className="absolute -top-1 right-0 z-10 p-1 bg-[#02180d] hover:bg-emerald-950 border border-emerald-900 rounded-md text-emerald-400 hover:text-emerald-200 transition"
+                  title="Ocultar indicadores"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+
+                {isCurrentWeek ? (
+                  <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <ActiveShiftIcon className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-300 leading-none">En vivo</div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-sm font-extrabold text-emerald-100 leading-none">{SHIFT_TYPES[activeShiftCode].label}</span>
+                        <span className="text-[9px] text-emerald-400 font-mono leading-none hidden sm:inline">{formatTimeLocal(now)}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/60 px-2.5 py-1.5">
-                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <div>
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none">Resumen</div>
-                    <div className="text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-700/60 bg-slate-900/60 px-2.5 py-1.5">
+                    <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <div>
+                      <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 leading-none">Resumen</div>
+                      <div className="text-xs font-extrabold text-slate-200 leading-none mt-0.5">{statsDateLabel}</div>
+                    </div>
                   </div>
-                </div>
-              )}
-              <MiniIndicator icon={Sunrise} label="Mañana" value={shiftStats.M} accent="emerald" />
-              <MiniIndicator icon={Sun} label="Tarde" value={shiftStats.T} accent="amber" />
-              <MiniIndicator icon={Moon} label="Noche" value={shiftStats.N} accent="indigo" />
-              <MiniIndicator icon={Coffee} label="Descanso" value={shiftStats.DES} accent="slate" />
-              <MiniIndicator icon={AlertTriangle} label="Ausentes" value={shiftStats.absent} accent={shiftStats.absent > 0 ? 'red' : 'slate'} />
-              <MiniIndicator icon={Users} label="Plantilla" value={shiftStats.total} accent="cyan" subtitle={`${shiftStats.active} act.`} />
-            </div>
+                )}
+                <MiniIndicator icon={Sunrise} label="Mañana" value={shiftStats.M} accent="emerald" />
+                <MiniIndicator icon={Sun} label="Tarde" value={shiftStats.T} accent="amber" />
+                <MiniIndicator icon={Moon} label="Noche" value={shiftStats.N} accent="indigo" />
+                <MiniIndicator icon={Coffee} label="Descanso" value={shiftStats.DES} accent="slate" />
+                <MiniIndicator icon={AlertTriangle} label="Ausentes" value={shiftStats.absent} accent={shiftStats.absent > 0 ? 'red' : 'slate'} />
+                <MiniIndicator icon={Users} label="Plantilla" value={shiftStats.total} accent="cyan" subtitle={`${shiftStats.active} act.`} />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center pt-1">
+                <button
+                  onClick={() => setShowIndicators(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 bg-[#02180d] hover:bg-emerald-950 border border-emerald-900 rounded-md text-emerald-400 hover:text-emerald-200 transition text-[11px] font-bold"
+                  title="Mostrar indicadores"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Mostrar indicadores</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 

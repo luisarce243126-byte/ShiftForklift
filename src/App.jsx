@@ -76,6 +76,32 @@ const ASSIGNMENTS = [
   'Embarque y Recepción'
 ];
 
+const TE_BASE_HOURS = 208;
+const TE_AREAS = WAREHOUSE_ZONES.slice(1);
+const AREA_COLORS = {
+  [WAREHOUSE_ZONES[1]]: '#3987e5',
+  [WAREHOUSE_ZONES[2]]: '#d95926'
+};
+const shortArea = (zone) => zone.replace('Almacén de ', '');
+
+const getMonthDates = (ym) => {
+  const [y, m] = ym.split('-').map(Number);
+  const total = new Date(y, m, 0).getDate();
+  return Array.from({ length: total }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`);
+};
+
+const shiftMonth = (ym, delta) => {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const formatMonthLabel = (ym) => {
+  const [y, m] = ym.split('-').map(Number);
+  const label = new Date(y, m - 1, 1).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+};
+
 const FORKLIFT_TYPES = [
   'Sencillo',
   'Doble'
@@ -212,6 +238,123 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
           {subtitle && <span className={`text-[9px] ${c.text} opacity-70 leading-none`}>{subtitle}</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+const TE_PLOT_H = 180;
+
+function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'Detalle' }) {
+  const [showTable, setShowTable] = useState(false);
+  const [hover, setHover] = useState(null);
+
+  const maxVal = Math.max(1, ...bars.map(b => b.value));
+  const step = maxVal <= 2 ? 0.2 : maxVal <= 5 ? 0.5 : 1;
+  const top = Math.ceil((maxVal * 1.05) / step) * step;
+  const ticks = [];
+  for (let i = 0; i * step <= top + 1e-9; i++) ticks.push(Number((i * step).toFixed(2)));
+  const hasData = bars.some(b => b.hours > 0);
+
+  const tooltipPos = (i) => {
+    if (bars.length < 3) return 'left-1/2 -translate-x-1/2';
+    if (i < bars.length / 3) return 'left-0';
+    if (i >= (bars.length * 2) / 3) return 'right-0';
+    return 'left-1/2 -translate-x-1/2';
+  };
+
+  return (
+    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            {color && <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />}
+            <span className="min-w-0">{title}</span>
+          </h3>
+          {subtitle && <p className="text-[11px] text-emerald-300 mt-0.5">{subtitle}</p>}
+        </div>
+        <button
+          onClick={() => setShowTable(v => !v)}
+          className="shrink-0 px-2 py-1 rounded-lg border border-emerald-800 bg-[#02180d] hover:bg-emerald-950 text-[10px] font-bold text-emerald-300 transition"
+        >
+          {showTable ? 'Ver gráfica' : 'Ver tabla'}
+        </button>
+      </div>
+
+      {showTable ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs min-w-[360px]">
+            <thead>
+              <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                <th className="p-2">{firstColumnLabel}</th>
+                <th className="p-2 text-right">Horas</th>
+                <th className="p-2 text-right">Operadores</th>
+                <th className="p-2 text-right">T.E</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-emerald-900/50">
+              {bars.map(b => (
+                <tr key={b.label}>
+                  <td className="p-2 font-bold text-white">{b.label}</td>
+                  <td className="p-2 text-right text-emerald-200">{b.hours.toFixed(1)}</td>
+                  <td className="p-2 text-right text-emerald-200">{b.ops}</td>
+                  <td className="p-2 text-right font-extrabold text-emerald-100">{b.value.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : !hasData ? (
+        <div className="py-10 text-center">
+          <BarChart3 className="w-9 h-9 text-emerald-700 mx-auto mb-2" />
+          <p className="text-emerald-300 font-bold text-sm">Sin horas registradas en este mes</p>
+        </div>
+      ) : (
+        <div className="relative pl-9 pt-5">
+          <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: TE_PLOT_H }}>
+            {ticks.map(t => (
+              <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
+                <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{t.toFixed(1)}</span>
+                <div className="absolute left-9 right-0 top-0 border-t border-emerald-900/70" />
+              </div>
+            ))}
+            <div className="absolute left-9 right-0 h-0 border-t border-dashed border-emerald-200/60" style={{ bottom: `${(1 / top) * 100}%` }}>
+              <span className="absolute right-0 -top-3.5 text-[9px] text-emerald-200">208 h = 1.00</span>
+            </div>
+          </div>
+
+          <div className="relative flex gap-1 sm:gap-2">
+            {bars.map((b, i) => {
+              const h = (b.value / top) * 100;
+              return (
+                <div
+                  key={b.label}
+                  className="flex-1 min-w-0 flex flex-col items-center cursor-default"
+                  onMouseEnter={() => setHover(i)}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => setHover(hover === i ? null : i)}
+                >
+                  <div className="relative w-full flex flex-col items-center justify-end" style={{ height: TE_PLOT_H }}>
+                    {hover === i && (
+                      <div className={`absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none ${tooltipPos(i)}`}>
+                        <div className="font-bold text-white">{b.fullLabel || b.label}</div>
+                        <div>T.E <span className="font-extrabold">{b.value.toFixed(2)}</span></div>
+                        <div className="text-emerald-300">{b.hours.toFixed(1)} h ÷ (208 × {b.ops} op.)</div>
+                      </div>
+                    )}
+                    <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">{b.value.toFixed(2)}</span>
+                    <div
+                      className="w-6 rounded-t-[4px]"
+                      style={{ height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color || color || '#3987e5' }}
+                    />
+                  </div>
+                  <div className="mt-1.5 text-[10px] font-semibold text-emerald-100 text-center leading-tight break-words w-full">{b.label}</div>
+                  <div className="text-[9px] text-emerald-500 text-center leading-tight">{b.hours.toFixed(0)} h · {b.ops} op.</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -422,6 +565,8 @@ export default function App() {
   const [vacationRequests, setVacationRequests] = useState([]);
   const [overtimeRequests, setOvertimeRequests] = useState([]);
   const [assignments, setAssignments] = useState({});
+  const [reportsView, setReportsView] = useState('summary');
+  const [teMonth, setTeMonth] = useState(() => formatDateLocal(new Date()).slice(0, 7));
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadSeconds, setLoadSeconds] = useState(0);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
@@ -873,6 +1018,75 @@ export default function App() {
     });
     return set;
   }, [operators, scheduleData, weekDays, isHistoricalWeek]);
+
+  const teStats = useMemo(() => {
+    const dates = getMonthDates(teMonth);
+    const otMap = {};
+    overtimeRequests.forEach(r => {
+      if (r.status !== 'Aprobado' || typeof r.date !== 'string' || !r.date.startsWith(teMonth)) return;
+      const key = `${r.operatorId}_${r.date}`;
+      otMap[key] = (otMap[key] || 0) + (Number(r.hours) || 0);
+    });
+
+    const areaAgg = {};
+    const lineAgg = {};
+    const unassigned = {};
+    TE_AREAS.forEach(z => {
+      areaAgg[z] = { ops: 0, hours: 0 };
+      unassigned[z] = 0;
+      lineAgg[z] = {};
+      ASSIGNMENTS.forEach(a => { lineAgg[z][a] = { hours: 0, ops: new Set() }; });
+    });
+
+    const perOp = {};
+    let totalHours = 0;
+    let outsideAreas = 0;
+
+    operators.forEach(op => {
+      let hours = 0;
+      const zoneOk = areaAgg[op.zone] !== undefined;
+      dates.forEach(d => {
+        const key = `${op.id}_${d}`;
+        const dayHours = (SHIFT_HOURS[scheduleData[key]] || 0) + (otMap[key] || 0);
+        if (!dayHours) return;
+        hours += dayHours;
+        if (zoneOk) {
+          const a = assignments[key];
+          if (a && lineAgg[op.zone][a]) {
+            lineAgg[op.zone][a].hours += dayHours;
+            lineAgg[op.zone][a].ops.add(op.id);
+          } else {
+            unassigned[op.zone] += dayHours;
+          }
+        }
+      });
+      perOp[op.id] = { hours, te: hours / TE_BASE_HOURS };
+      totalHours += hours;
+      if (zoneOk) {
+        areaAgg[op.zone].ops += 1;
+        areaAgg[op.zone].hours += hours;
+      } else {
+        outsideAreas += 1;
+      }
+    });
+
+    const areas = TE_AREAS.map(z => ({
+      zone: z,
+      ops: areaAgg[z].ops,
+      hours: areaAgg[z].hours,
+      te: areaAgg[z].ops > 0 ? areaAgg[z].hours / (TE_BASE_HOURS * areaAgg[z].ops) : 0
+    }));
+    const lines = {};
+    TE_AREAS.forEach(z => {
+      lines[z] = ASSIGNMENTS.map(a => {
+        const l = lineAgg[z][a];
+        const n = l.ops.size;
+        return { assignment: a, hours: l.hours, ops: n, te: n > 0 ? l.hours / (TE_BASE_HOURS * n) : 0 };
+      });
+    });
+    const avg = operators.length > 0 ? totalHours / (TE_BASE_HOURS * operators.length) : 0;
+    return { perOp, areas, lines, unassigned, outsideAreas, avg };
+  }, [teMonth, operators, scheduleData, assignments, overtimeRequests]);
 
   const canEditCell = (operatorId, dateStr) => {
     if (!canEditShifts) return false;
@@ -1578,18 +1792,19 @@ export default function App() {
       y += 6;
       pdf.setTextColor(167, 243, 208);
       pdf.setFontSize(11);
-      pdf.text('Horas por operador (semana actual)', 14, y);
+      pdf.text(`Horas por operador (semana actual) · T.E de ${formatMonthLabel(teMonth)}`, 14, y);
       y += 6;
 
       pdf.setFontSize(8);
       pdf.setTextColor(148, 163, 184);
       pdf.text('Operador', 16, y);
       pdf.text('Área', 80, y);
-      pdf.text('M', 138, y);
-      pdf.text('T', 148, y);
-      pdf.text('N', 158, y);
-      pdf.text('Ext', 166, y);
-      pdf.text('Total', 180, y);
+      pdf.text('M', 130, y);
+      pdf.text('T', 139, y);
+      pdf.text('N', 148, y);
+      pdf.text('Ext', 156, y);
+      pdf.text('Total', 168, y);
+      pdf.text('T.E', 185, y);
       y += 4;
       pdf.line(14, y, W - 14, y);
       y += 5;
@@ -1616,15 +1831,17 @@ export default function App() {
         pdf.setTextColor(148, 163, 184);
         pdf.text(op.zone.substring(0, 25), 80, y);
         pdf.setTextColor(255, 255, 255);
-        pdf.text(String(op.c.M), 138, y);
-        pdf.text(String(op.c.T), 148, y);
-        pdf.text(String(op.c.N), 158, y);
+        pdf.text(String(op.c.M), 130, y);
+        pdf.text(String(op.c.T), 139, y);
+        pdf.text(String(op.c.N), 148, y);
         if (op.otH >= OT_ALERT_HOURS) pdf.setTextColor(239, 68, 68);
         else if (op.otH >= OT_WARN_HOURS) pdf.setTextColor(251, 191, 36);
         else pdf.setTextColor(16, 185, 129);
-        pdf.text(op.otH > 0 ? `${op.otH.toFixed(1)}h` : '-', 166, y);
+        pdf.text(op.otH > 0 ? `${op.otH.toFixed(1)}h` : '-', 156, y);
         pdf.setTextColor(16, 185, 129);
-        pdf.text(`${op.totalH.toFixed(1)}h`, 180, y);
+        pdf.text(`${op.totalH.toFixed(1)}h`, 168, y);
+        pdf.setTextColor(255, 255, 255);
+        pdf.text((teStats.perOp[op.id]?.te ?? 0).toFixed(2), 185, y);
         y += 5.5;
       });
 
@@ -2685,7 +2902,14 @@ export default function App() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="flex gap-1.5">
+              <button onClick={() => setReportsView('summary')} className={`px-3 py-2 text-xs font-bold rounded-lg transition ${reportsView === 'summary' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Resumen semanal</button>
+              <button onClick={() => setReportsView('te')} className={`px-3 py-2 text-xs font-bold rounded-lg transition ${reportsView === 'te' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Tiempo extra (T.E)</button>
+            </div>
+
+            {reportsView === 'summary' && (
+            <>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {(() => {
                 let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
                 weekDays.forEach(day => {
@@ -2739,6 +2963,14 @@ export default function App() {
                       </div>
                       <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{operators.length}</div>
                       <div className="text-[10px] text-purple-400/70 mt-0.5">operadores</div>
+                    </div>
+                    <div className="col-span-2 md:col-span-1 rounded-2xl border border-indigo-700/60 bg-indigo-950/70 p-3 sm:p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Clock className="w-3.5 h-3.5 text-indigo-300" />
+                        <span className="text-[10px] font-bold uppercase text-indigo-300">T.E promedio</span>
+                      </div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-indigo-100">{teStats.avg.toFixed(2)}</div>
+                      <div className="text-[10px] text-indigo-400/70 mt-0.5">horas ÷ 208 · {formatMonthLabel(teMonth)}</div>
                     </div>
                   </>
                 );
@@ -2810,7 +3042,7 @@ export default function App() {
                 );
               })()}
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs min-w-[450px]">
+                <table className="w-full text-left border-collapse text-xs min-w-[520px]">
                   <thead>
                     <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                       <th className="p-2">Operador</th>
@@ -2820,6 +3052,7 @@ export default function App() {
                       <th className="p-2 text-center">N</th>
                       <th className="p-2 text-right">Extras</th>
                       <th className="p-2 text-right">Total</th>
+                      <th className="p-2 text-right">T.E mes</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-900/50">
@@ -2846,18 +3079,77 @@ export default function App() {
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
                           <td className={`p-2 text-right font-bold ${otLevel === 'danger' ? 'text-red-400' : otLevel === 'warning' ? 'text-amber-300' : otH > 0 ? 'text-emerald-300' : 'text-emerald-700'}`}>{otLevel && <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />}{otH > 0 ? `+${otH.toFixed(1)}h` : '-'}</td>
                           <td className="p-2 text-right font-extrabold text-emerald-300">{grandH.toFixed(1)}h</td>
+                          <td className="p-2 text-right font-extrabold text-indigo-300">{(teStats.perOp[op.id]?.te ?? 0).toFixed(2)}</td>
                         </tr>
                       );
                     })}
                     {operators.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
+                        <td colSpan={8} className="p-8 text-center text-emerald-400/70">Sin operadores</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
+            </>
+            )}
+
+            {reportsView === 'te' && (
+              <div className="space-y-5">
+                <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setTeMonth(m => shiftMonth(m, -1))} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
+                    <div className="text-xs font-bold text-white bg-[#02180d] px-3 py-1.5 rounded-lg border border-emerald-900 min-w-[140px] text-center">{formatMonthLabel(teMonth)}</div>
+                    <button onClick={() => setTeMonth(m => shiftMonth(m, 1))} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
+                    {teMonth !== formatDateLocal(new Date()).slice(0, 7) && (
+                      <button onClick={() => setTeMonth(formatDateLocal(new Date()).slice(0, 7))} className="px-2 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition">Mes actual</button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-emerald-300">
+                    T.E = horas del mes ÷ 208 · incluye turnos programados y horas extra aprobadas
+                  </p>
+                </div>
+
+                <TEBarChart
+                  title="T.E por área"
+                  subtitle="Promedio por operador de cada almacén"
+                  firstColumnLabel="Área"
+                  bars={teStats.areas.map(a => ({
+                    label: shortArea(a.zone),
+                    fullLabel: a.zone,
+                    value: a.te,
+                    hours: a.hours,
+                    ops: a.ops,
+                    color: AREA_COLORS[a.zone]
+                  }))}
+                />
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                  {[WAREHOUSE_ZONES[2], WAREHOUSE_ZONES[1]].map(zone => (
+                    <TEBarChart
+                      key={zone}
+                      title={`${zone} · T.E por línea`}
+                      subtitle="Horas trabajadas en cada asignación ÷ (208 × operadores que pasaron por ahí)"
+                      color={AREA_COLORS[zone]}
+                      firstColumnLabel="Asignación"
+                      bars={teStats.lines[zone].map(l => ({
+                        label: l.assignment,
+                        fullLabel: `${shortArea(zone)} · ${l.assignment}`,
+                        value: l.te,
+                        hours: l.hours,
+                        ops: l.ops
+                      }))}
+                    />
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-emerald-400/80">
+                  Horas sin línea asignada (no salen en las gráficas por línea): {TE_AREAS.map(z => `${shortArea(z)} ${teStats.unassigned[z].toFixed(0)} h`).join(' · ')}.
+                  {teStats.outsideAreas > 0 && ` ${teStats.outsideAreas} operador(es) con un área anterior no se incluyen en las gráficas; edítalos para asignarles un área.`}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </main>

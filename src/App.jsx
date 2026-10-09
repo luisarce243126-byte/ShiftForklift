@@ -72,21 +72,9 @@ const WAREHOUSE_ZONES = [
 ];
 
 const ASSIGNMENTS = [
-  'Línea 10', 'Línea 20', 'Línea 40', 'Línea 60',
-  'Embarque'
+  'Línea 10', 'Línea 20', 'Línea 30', 'Línea 40', 'Línea 50', 'Línea 60',
+  'Embarque y Recepción'
 ];
-
-// Nombres anteriores que se convierten automáticamente al nombre nuevo
-const LEGACY_ASSIGNMENT_MAP = { 'Embarque y Recepción': 'Embarque' };
-const normalizeAssignments = (obj) => {
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
-  const out = {};
-  Object.keys(obj).forEach(k => {
-    const v = obj[k];
-    out[k] = LEGACY_ASSIGNMENT_MAP[v] || v;
-  });
-  return out;
-};
 
 const TE_BASE_HOURS = 208;
 const TE_AREAS = WAREHOUSE_ZONES.slice(1);
@@ -204,7 +192,7 @@ const withTimeout = (promise, ms) => {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 };
 
-const OVERTIME_TYPES = ['Hora extra', 'Día festivo'];
+const OVERTIME_TYPES = ['Hora extra', 'Descanso trabajado', 'Día festivo'];
 const OT_MAX_HOURS_PER_DAY = 3;
 const OT_MAX_DAYS_PER_WEEK = 3;
 const OT_WARN_HOURS = 3;
@@ -492,6 +480,90 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
   );
 }
 
+
+/**
+ * Comparativo de Headcount (H.C) y Full-Time Equivalent (F.T.E).
+ * F.T.E = personas registradas + horas extra aprobadas / 208.
+ */
+function HeadcountFteChart({ title = 'H.C vs F.T.E', subtitle, headcount, overtimeHours }) {
+  const [showTable, setShowTable] = useState(false);
+  const hc = Math.max(0, Number(headcount) || 0);
+  const teEquivalent = Math.max(0, Number(overtimeHours) || 0) / TE_BASE_HOURS;
+  const fte = hc + teEquivalent;
+  const maxValue = Math.max(1, hc, fte);
+  const bars = [
+    { label: 'H.C', value: hc, color: '#3987e5', description: 'Personas registradas en la aplicación' },
+    { label: 'F.T.E', value: fte, color: '#d9a441', description: `H.C + ${teEquivalent.toFixed(2)} equivalente(s) de T.E` }
+  ];
+
+  return (
+    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5 h-full">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-white"> {title} </h3>
+          <p className="text-[11px] text-emerald-300 mt-0.5">
+            {subtitle || 'H.C = personas registradas · F.T.E = H.C + (T.E aprobado ÷ 208)'}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowTable(v => !v)}
+          className="shrink-0 px-2 py-1 rounded-lg border border-emerald-800 bg-[#02180d] hover:bg-emerald-950 text-[10px] font-bold text-emerald-300 transition"
+        >
+          {showTable ? 'Ver gráfica' : 'Ver tabla'}
+        </button>
+      </div>
+
+      {showTable ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-emerald-300 uppercase border-b border-emerald-800/80">
+                <th className="p-2 text-left">Indicador</th>
+                <th className="p-2 text-right">Valor</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-emerald-900/50">
+              {bars.map(bar => (
+                <tr key={bar.label}>
+                  <td className="p-2">
+                    <div className="font-bold text-white">{bar.label}</div>
+                    <div className="text-[10px] text-emerald-400">{bar.description}</div>
+                  </td>
+                  <td className="p-2 text-right font-extrabold text-white">{bar.value.toFixed(2)}</td>
+                </tr>
+              ))}
+              <tr>
+                <td className="p-2 text-emerald-300">Horas extra aprobadas</td>
+                <td className="p-2 text-right text-emerald-200">{(Number(overtimeHours) || 0).toFixed(1)} h</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="pt-3">
+          <div className="flex items-end justify-around gap-8 h-[180px] border-b border-emerald-800/80 px-4">
+            {bars.map(bar => (
+              <div key={bar.label} className="flex-1 h-full flex flex-col items-center justify-end min-w-0">
+                <span className="text-sm font-extrabold text-white mb-1">{bar.value.toFixed(2)}</span>
+                <div
+                  className="w-16 max-w-full rounded-t-md transition-all"
+                  title={bar.description}
+                  style={{ height: `${Math.max(bar.value > 0 ? 3 : 0, (bar.value / maxValue) * 78)}%`, backgroundColor: bar.color }}
+                />
+                <span className="text-xs font-bold text-emerald-100 mt-2">{bar.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-3 text-[10px] text-emerald-300">
+            <span><span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: '#3987e5' }} />H.C: {hc} personas</span>
+            <span><span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: '#d9a441' }} />T.E: {teEquivalent.toFixed(2)} FTE</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TOAST_STYLES = {
   success: { bg: 'bg-emerald-900 border-emerald-500/60', text: 'text-emerald-100', icon: CheckCircle2, iconColor: 'text-emerald-400' },
   error:   { bg: 'bg-red-900 border-red-500/60',         text: 'text-red-100',     icon: AlertCircle,   iconColor: 'text-red-400' },
@@ -693,11 +765,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('scheduler');
 
-  // personnel = TODO el personal (operadores + staff). Se guarda en Redis (sf_operators).
-  const [personnel, setOperators] = useState([]);
-  // operators = solo montacargistas. El staff NO aparece en matriz, reportes ni T.E.
-  const operators = useMemo(() => personnel.filter(p => p.category !== 'Staff'), [personnel]);
-  const [personnelFilter, setPersonnelFilter] = useState('all');
+  const [operators, setOperators] = useState([]);
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState([]);
   const [overtimeRequests, setOvertimeRequests] = useState([]);
@@ -907,7 +975,7 @@ export default function App() {
         redis.get('sf_assignments'),
       ]), LOAD_TIMEOUT_MS);
       setPollFailed(false);
-      setAssignments(normalizeAssignments(savedAssign));
+      setAssignments(savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign) ? savedAssign : {});
       setOvertimeRequests(Array.isArray(savedOt) ? savedOt : []);
       setOperators(Array.isArray(savedOps) ? savedOps : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
@@ -964,7 +1032,7 @@ export default function App() {
         ]), POLL_TIMEOUT_MS);
         setPollFailed(false);
         if (!isUpdatingRef.current) {
-          if (savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign)) setAssignments(normalizeAssignments(savedAssign));
+          if (savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign)) setAssignments(savedAssign);
           if (Array.isArray(savedOt)) setOvertimeRequests(savedOt);
           if (Array.isArray(savedOps)) setOperators(savedOps);
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
@@ -994,15 +1062,14 @@ export default function App() {
   const [cellAssignment, setCellAssignment] = useState('');
   useEffect(() => {
     if (selectedCell) {
-      const savedAssign = assignments[`${selectedCell.operatorId}_${selectedCell.dateStr}`] || '';
-      setCellAssignment(ASSIGNMENTS.includes(savedAssign) ? savedAssign : '');
+      setCellAssignment(assignments[`${selectedCell.operatorId}_${selectedCell.dateStr}`] || '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCell]);
 
   const [newOp, setNewOp] = useState({
     name: '', socioNumber: '', zone: '', equipment: '',
-    licenseExpiry: '2027-12-31', category: 'Operador', position: ''
+    licenseExpiry: '2027-12-31'
   });
 
   const [newVac, setNewVac] = useState({
@@ -1138,15 +1205,6 @@ export default function App() {
     }
     return warnings;
   }, [isOvertimeOpen, newOt, overtimeRequests]);
-
-  const otRestBlock = useMemo(() => {
-    if (!isOvertimeOpen || !newOt.operatorId || !newOt.date) return '';
-    const op = operators.find(o => o.id === newOt.operatorId);
-    if (!op) return '';
-    const code = scheduleData[`${op.id}_${newOt.date}`] || 'DES';
-    if (WORK_CODES.includes(code)) return '';
-    return `${op.name} tiene ${code === 'DES' ? 'descanso (o no tiene turno asignado)' : SHIFT_TYPES[code]?.label || 'ausencia'} el ${newOt.date}. No se pueden registrar horas extras en días de descanso.`;
-  }, [isOvertimeOpen, newOt.operatorId, newOt.date, operators, scheduleData]);
 
   const lockedCellsInView = useMemo(() => {
     let count = 0;
@@ -1488,17 +1546,13 @@ export default function App() {
   const handleSaveOperator = async (e) => {
     e.preventDefault();
     if (!newOp.name || !canManageOperators) return;
-    const isStaff = newOp.category === 'Staff';
-
-    if (!isStaff) {
-      if (!TE_AREAS.includes(newOp.zone)) {
-        pushToast('warning', 'Selecciona el área de trabajo.');
-        return;
-      }
-      if (!FORKLIFT_TYPES.includes(newOp.equipment)) {
-        pushToast('warning', 'Selecciona el tipo de equipo.');
-        return;
-      }
+    if (!TE_AREAS.includes(newOp.zone)) {
+      pushToast('warning', 'Selecciona el área de trabajo.');
+      return;
+    }
+    if (!FORKLIFT_TYPES.includes(newOp.equipment)) {
+      pushToast('warning', 'Selecciona el tipo de equipo.');
+      return;
     }
 
     const socioNumber = String(newOp.socioNumber || '').trim();
@@ -1506,7 +1560,7 @@ export default function App() {
       pushToast('warning', 'Escribe el # de socio.');
       return;
     }
-    const socioDuplicado = personnel.find(op =>
+    const socioDuplicado = operators.find(op =>
       String(op.socioNumber || '').trim().toLowerCase() === socioNumber.toLowerCase() &&
       (!editingOperator || op.id !== editingOperator.id)
     );
@@ -1516,34 +1570,18 @@ export default function App() {
     }
 
     isUpdatingRef.current = true;
-    const previousOps = personnel;
+    const previousOps = operators;
     let updatedOps;
 
-    let data;
-    if (isStaff) {
-      data = {
-        name: newOp.name.trim(),
-        socioNumber,
-        category: 'Staff',
-        position: (newOp.position || '').trim(),
-        zone: '',
-        equipment: '',
-        licenseExpiry: ''
-      };
-    } else {
-      const { position, ...rest } = newOp;
-      data = { ...rest, socioNumber, category: 'Operador' };
-    }
-
     if (editingOperator) {
-      updatedOps = personnel.map(op => op.id === editingOperator.id ? { ...op, ...data } : op);
+      updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp, socioNumber } : op);
     } else {
-      const maxIdNum = personnel.reduce((max, op) => {
-        const num = parseInt(String(op.id).replace(/\D/g, ''), 10);
+      const maxIdNum = operators.reduce((max, op) => {
+        const num = parseInt(op.id.replace(/\D/g, ''), 10);
         return !isNaN(num) && num > max ? num : max;
       }, 100);
-      const newId = `${isStaff ? 'S' : 'M'}-${maxIdNum + 1}`;
-      updatedOps = [...personnel, { id: newId, ...data, status: 'Activo' }];
+      const newId = `M-${maxIdNum + 1}`;
+      updatedOps = [...operators, { id: newId, ...newOp, socioNumber, status: 'Activo' }];
     }
 
     setOperators(updatedOps);
@@ -1554,12 +1592,12 @@ export default function App() {
     try {
       await withTimeout(redis.set('sf_operators', updatedOps), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
-      pushToast('success', editingOperator ? (isStaff ? 'Staff actualizado' : 'Operador actualizado') : (isStaff ? 'Staff registrado' : 'Operador registrado'));
+      pushToast('success', editingOperator ? 'Operador actualizado' : 'Operador registrado');
     } catch (error) {
       console.error('Error al guardar operador:', error);
       setOperators(previousOps);
       reportSyncResult(false);
-      pushToast('error', 'Error al guardar. Cambio revertido.');
+      pushToast('error', 'Error al guardar operador. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -1567,11 +1605,11 @@ export default function App() {
 
   const handleDeleteOperator = async (operatorId) => {
     if (!canManageOperators) return;
-    if (window.confirm('¿Estás seguro de que deseas eliminar a esta persona?')) {
+    if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
       isUpdatingRef.current = true;
       setSyncStatus('saving');
-      const previousOps = personnel;
-      const updatedOps = personnel.filter(op => op.id !== operatorId);
+      const previousOps = operators;
+      const updatedOps = operators.filter(op => op.id !== operatorId);
       setOperators(updatedOps);
       try {
         await withTimeout(redis.set('sf_operators', updatedOps), LOAD_TIMEOUT_MS);
@@ -1711,11 +1749,6 @@ export default function App() {
       setOtError(`${op.name} tiene una ausencia aprobada ese día.`);
       return;
     }
-    const otDayCode = scheduleData[`${op.id}_${newOt.date}`] || 'DES';
-    if (!WORK_CODES.includes(otDayCode)) {
-      setOtError(`${op.name} tiene descanso (o no tiene turno asignado) el ${newOt.date}. No se pueden registrar horas extras en días de descanso.`);
-      return;
-    }
     setOtError('');
 
     isUpdatingRef.current = true;
@@ -1756,10 +1789,6 @@ export default function App() {
     if (!canApproveVacations) return;
     const req = overtimeRequests.find(r => r.id === id);
     if (!req) return;
-    if (newStatus === 'Aprobado' && !WORK_CODES.includes(scheduleData[`${req.operatorId}_${req.date}`] || 'DES')) {
-      pushToast('warning', `${req.operatorName} tiene descanso el ${req.date}; no se pueden aprobar horas extras en día de descanso.`, { duration: 6000 });
-      return;
-    }
     isUpdatingRef.current = true;
     setSyncStatus('saving');
     const previousOt = overtimeRequests;
@@ -2166,7 +2195,7 @@ export default function App() {
 
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
-            <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({personnel.length})</button>
+            <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
             <button onClick={() => setActiveTab('vacations')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
             <button onClick={() => setActiveTab('overtime')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Horas extras</button>
             {canViewReports && (
@@ -2217,7 +2246,7 @@ export default function App() {
       <nav className="md:hidden sticky top-14 z-20 bg-[#021f12] border-b border-emerald-900/60">
         <div className="flex gap-1.5 overflow-x-auto px-2.5 py-2">
           <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
-          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({personnel.length})</button>
+          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
           <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
           <button onClick={() => setActiveTab('overtime')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Horas extras</button>
           {canViewReports && (
@@ -2452,7 +2481,7 @@ export default function App() {
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/50 text-amber-300 border border-amber-500/50">Falta día de descanso</span>
                         )}
                         {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                          <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/30 border border-white/20">{assignments[cellKey]}</span>
+                          <span className="inline-block mt-1 text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-black/40 border border-white/30">{assignments[cellKey]}</span>
                         )}
                       </div>
                       <div className="shrink-0 flex items-center gap-1">
@@ -2568,7 +2597,7 @@ export default function App() {
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
                                   {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                                    <span className="mt-0.5 text-[9px] leading-tight font-semibold text-center opacity-90 px-0.5">{assignments[cellKey]}</span>
+                                    <span className="mt-0.5 text-[10px] leading-tight font-bold text-center opacity-100 px-0.5">{assignments[cellKey]}</span>
                                   )}
                                   {overtimeByCell[cellKey] && (
                                     <span
@@ -2701,36 +2730,17 @@ export default function App() {
                 <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
               </div>
               {canManageOperators && (
-                <div className="flex gap-2 flex-wrap">
                 <button onClick={() => {
                   setEditingOperator(null);
-                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: '', category: 'Staff', position: '' });
-                  setIsAddOperatorOpen(true);
-                }} className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-500/50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
-                  <Plus className="w-4 h-4"/><span>Nuevo Staff</span>
-                </button>
-                <button onClick={() => {
-                  setEditingOperator(null);
-                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: formatDateLocal(new Date()), category: 'Operador', position: '' });
+                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: formatDateLocal(new Date()) });
                   setIsAddOperatorOpen(true);
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
                 </button>
-                </div>
               )}
             </div>
 
-            <div className="flex gap-1.5 flex-wrap">
-              {[
-                { id: 'all', label: `Todos (${personnel.length})` },
-                { id: 'ops', label: `Operadores (${operators.length})` },
-                { id: 'staff', label: `Staff (${personnel.length - operators.length})` }
-              ].map(f => (
-                <button key={f.id} onClick={() => setPersonnelFilter(f.id)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${personnelFilter === f.id ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>{f.label}</button>
-              ))}
-            </div>
-
-            {personnel.length === 0 ? (
+            {operators.length === 0 ? (
               <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
                 <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
                 <h3 className="text-base font-bold text-white mb-1">Sin personal registrado</h3>
@@ -2738,45 +2748,33 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {personnel.filter(p => personnelFilter === 'all' || (personnelFilter === 'staff' ? p.category === 'Staff' : p.category !== 'Staff')).map(op => {
-                  const isStaffCard = op.category === 'Staff';
-                  return (
+                {operators.map(op => (
                   <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
                     <div>
                       <div className="flex justify-between items-start mb-2">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
-                            {isStaffCard && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/60">STAFF</span>}
-                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
                           <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
                         </div>
                         {canManageOperators && (
                           <div className="flex space-x-1 shrink-0">
-                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', category: isStaffCard ? 'Staff' : 'Operador', position: op.position || '', zone: TE_AREAS.includes(op.zone) ? op.zone : '', equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : '', licenseExpiry: op.licenseExpiry || '' }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
+                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', zone: TE_AREAS.includes(op.zone) ? op.zone : '', equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : '' }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
                             <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
                           </div>
                         )}
                       </div>
                       <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
                         <div className="flex justify-between gap-2"><span># Socio:</span><span className="font-semibold text-white text-right">{op.socioNumber || 'N/A'}</span></div>
-                        {isStaffCard ? (
-                          <div className="flex justify-between gap-2"><span>Puesto:</span><span className="font-semibold text-white text-right">{op.position || 'Sin registrar'}</span></div>
-                        ) : (
-                          <>
-                            <div className="flex justify-between gap-2"><span>Área:</span><span className={`font-semibold text-right ${TE_AREAS.includes(op.zone) ? 'text-white' : 'text-amber-300'}`}>{areaLabel(op)}</span></div>
-                            <div className="flex justify-between gap-2"><span>Equipo:</span><span className={`font-semibold text-right ${FORKLIFT_TYPES.includes(op.equipment) ? 'text-white' : 'text-amber-300'}`}>{FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : 'Sin registrar'}</span></div>
-                            <div className="flex justify-between items-center pt-1 gap-2">
-                              <span>Licencia DC3:</span>
-                              <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
-                            </div>
-                          </>
-                        )}
+                        <div className="flex justify-between gap-2"><span>Área:</span><span className={`font-semibold text-right ${TE_AREAS.includes(op.zone) ? 'text-white' : 'text-amber-300'}`}>{areaLabel(op)}</span></div>
+                        <div className="flex justify-between gap-2"><span>Equipo:</span><span className={`font-semibold text-right ${FORKLIFT_TYPES.includes(op.equipment) ? 'text-white' : 'text-amber-300'}`}>{FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : 'Sin registrar'}</span></div>
+                        <div className="flex justify-between items-center pt-1 gap-2">
+                          <span>Licencia DC3:</span>
+                          <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  );
-                })}
+                ))}
               </div>
             )}
           </div>
@@ -3164,6 +3162,17 @@ export default function App() {
               })()}
             </div>
 
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+              <HeadcountFteChart
+                title="H.C y F.T.E · Reporte semanal"
+                subtitle="F.T.E = personas registradas + horas extra aprobadas de la semana ÷ 208"
+                headcount={operators.length}
+                overtimeHours={overtimeRequests
+                  .filter(r => r.status === 'Aprobado' && reportWeekDays.some(day => day.dateStr === r.date))
+                  .reduce((sum, r) => sum + (Number(r.hours) || 0), 0)}
+              />
+            </div>
+
             <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
               <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-emerald-400" />
@@ -3300,7 +3309,8 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="max-w-xl">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
+                <div className="min-w-0">
                   <TEBarChart
                     title="T.E por área"
                     subtitle="Horas extra promedio por operador de cada almacén"
@@ -3315,6 +3325,17 @@ export default function App() {
                       color: AREA_COLORS[a.zone]
                     }))}
                   />
+                </div>
+                <div className="min-w-0">
+                  <HeadcountFteChart
+                    title="H.C y F.T.E · Mes"
+                    subtitle="F.T.E = H.C + (horas extra aprobadas ÷ 208)"
+                    headcount={operators.length}
+                    overtimeHours={overtimeRequests
+                      .filter(r => r.status === 'Aprobado' && typeof r.date === 'string' && r.date.startsWith(teMonth))
+                      .reduce((sum, r) => sum + (Number(r.hours) || 0), 0)}
+                  />
+                </div>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
@@ -3496,14 +3517,6 @@ export default function App() {
             <h3 className="text-base font-bold text-white mb-4">{editingOperator ? 'Editar Operador' : 'Registrar Operador'}</h3>
             <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
               <div>
-                <label className="block text-emerald-300 font-bold mb-1">Tipo de personal</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[{ v: 'Operador', l: 'Operador (aparece en matriz)' }, { v: 'Staff', l: 'Staff (fuera de la matriz)' }].map(o => (
-                    <button key={o.v} type="button" onClick={() => setNewOp({ ...newOp, category: o.v })} className={`px-3 py-2 rounded-xl border font-bold transition ${newOp.category === o.v ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-[#011a0d] border-emerald-800 text-emerald-300 hover:bg-emerald-950'}`}>{o.l}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
                 <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
                 <input type="text" required placeholder="Ej. Juan Pérez" value={newOp.name} onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
               </div>
@@ -3511,33 +3524,24 @@ export default function App() {
                 <label className="block text-emerald-300 font-bold mb-1"># de Socio</label>
                 <input type="text" inputMode="numeric" required placeholder="Ej. 12345" value={newOp.socioNumber || ''} onChange={(e) => setNewOp({ ...newOp, socioNumber: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
               </div>
-              {newOp.category === 'Staff' ? (
-                <div>
-                  <label className="block text-emerald-300 font-bold mb-1">Puesto (opcional)</label>
-                  <input type="text" placeholder="Ej. Supervisor, Coordinador" value={newOp.position || ''} onChange={(e) => setNewOp({ ...newOp, position: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-emerald-300 font-bold mb-1">Área de Trabajo</label>
-                    <select required value={newOp.zone || ''} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
-                      <option value="" disabled>Selecciona un área</option>
-                      {TE_AREAS.map(z => <option key={z} value={z}>{z}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
-                    <select required value={newOp.equipment || ''} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
-                      <option value="" disabled>Selecciona el tipo</option>
-                      {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
-                    <input type="date" required value={newOp.licenseExpiry || ''} onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
-                  </div>
-                </>
-              )}
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Área de Trabajo</label>
+                <select required value={newOp.zone || ''} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                  <option value="" disabled>Selecciona un área</option>
+                  {TE_AREAS.map(z => <option key={z} value={z}>{z}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
+                <select required value={newOp.equipment || ''} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                  <option value="" disabled>Selecciona el tipo</option>
+                  {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
+                <input type="date" required value={newOp.licenseExpiry} onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
+              </div>
               <div className="flex justify-end space-x-2 pt-3">
                 <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
@@ -3556,12 +3560,6 @@ export default function App() {
                 <div className="p-2.5 bg-red-950/80 border border-red-800 rounded-xl text-red-200 font-bold flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{otError}</span>
-                </div>
-              )}
-              {otRestBlock && (
-                <div className="p-2.5 bg-red-950/80 border border-red-700 rounded-xl text-red-200 font-bold flex items-start gap-2">
-                  <Lock className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{otRestBlock}</span>
                 </div>
               )}
               {otWarnings.length > 0 && (() => {
@@ -3606,7 +3604,7 @@ export default function App() {
               </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button type="button" onClick={() => { setIsOvertimeOpen(false); setOtError(''); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
-                <button type="submit" disabled={!!otRestBlock} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl font-bold transition">Registrar</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Registrar</button>
               </div>
             </form>
           </div>

@@ -251,30 +251,19 @@ const INDICATOR_ACCENTS = {
   cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-300',    value: 'text-cyan-100' }
 };
 
-/**
- * ✅ Formateador dinámico: para números tipo 5.009615 muestra "5.0096",
- * para 0.0096 muestra "0.0096", para 208 muestra "208.00".
- */
 const fmtTE = (v, maxDecimals = 4) => {
   if (!isFinite(v)) return '0';
   if (v === 0) return '0.0000';
   const fixed = Number(v).toFixed(maxDecimals);
-  // Recorta ceros sobrantes solo si sobran, manteniendo al menos 2 decimales
   const trimmed = fixed.replace(/(\.\d{2}\d*?)0+$/, '$1').replace(/\.$/, '.00');
   const [intPart, decPart = ''] = trimmed.split('.');
   return `${intPart}.${decPart.padEnd(2, '0')}`;
 };
 
-/**
- * ✅ Formateador con mínimo de decimales para valores que pueden tener
- * 4 cifras significativas después del punto (ej. 5.0096).
- */
 const fmtFTE = (v) => {
   if (!isFinite(v)) return '0.00';
   const s = Number(v).toFixed(4);
-  // Si los últimos 2 dígitos son 0, mostramos solo 2 decimales
   if (s.endsWith('00')) return Number(v).toFixed(2);
-  // Si solo el último es 0, mostramos 3
   if (s.endsWith('0')) return Number(v).toFixed(3);
   return s;
 };
@@ -295,9 +284,6 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
   );
 }
 
-/**
- * ✅ T.E = SOLO horas extras aprobadas ÷ 208 (sin importar el nivel: operador, área, línea, global)
- */
 const computeTeStats = (ym, operators, scheduleData, assignments, overtimeRequests) => {
   const dates = getMonthDates(ym);
   const otMap = {};
@@ -326,7 +312,7 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     const zoneOk = areaAgg[op.zone] !== undefined;
     dates.forEach(d => {
       const key = `${op.id}_${d}`;
-      const dayHours = otMap[key] || 0;   // ✅ SOLO horas extra
+      const dayHours = otMap[key] || 0;
       if (!dayHours) return;
       hours += dayHours;
       if (zoneOk) {
@@ -349,7 +335,6 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     }
   });
 
-  // ✅ T.E de área = horas extra del área ÷ 208 (sin dividir entre operadores)
   const areas = TE_AREAS.map(z => ({
     zone: z,
     ops: areaAgg[z].ops,
@@ -357,7 +342,6 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     te: areaAgg[z].hours / TE_BASE_HOURS
   }));
 
-  // ✅ T.E de línea = horas extra en la línea ÷ 208
   const lines = {};
   TE_AREAS.forEach(z => {
     lines[z] = ASSIGNMENTS.map(a => {
@@ -367,7 +351,6 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     });
   });
 
-  // ✅ T.E promedio global = total horas extra ÷ 208
   const avg = totalHours / TE_BASE_HOURS;
 
   return { perOp, areas, lines, unassigned, outsideAreas, avg, totalHours };
@@ -375,9 +358,6 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
 
 const TE_PLOT_H = 180;
 
-/**
- * Gráfica de barras genérica con eje auto-escalable.
- */
 function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'Detalle', barWidth = 24 }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
@@ -414,7 +394,7 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
   };
 
   return (
-    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
+    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5 flex flex-col">
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -431,93 +411,94 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
         </button>
       </div>
 
-      {showTable ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs min-w-[360px]">
-            <thead>
-              <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
-                <th className="p-2">{firstColumnLabel}</th>
-                <th className="p-2 text-right">H. extra</th>
-                <th className="p-2 text-right">Operadores</th>
-                <th className="p-2 text-right">T.E</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-emerald-900/50">
-              {bars.map(b => (
-                <tr key={b.label}>
-                  <td className="p-2 font-bold text-white">{b.label}</td>
-                  <td className="p-2 text-right text-emerald-200">{b.hours.toFixed(1)}</td>
-                  <td className="p-2 text-right text-emerald-200">{b.ops}</td>
-                  <td className="p-2 text-right font-extrabold text-emerald-100">{fmt(b.value)}</td>
+      {/* ✅ contenedor flexible para igualar alturas */}
+      <div className="flex-1 flex flex-col">
+        {showTable ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs min-w-[360px]">
+              <thead>
+                <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                  <th className="p-2">{firstColumnLabel}</th>
+                  <th className="p-2 text-right">H. extra</th>
+                  <th className="p-2 text-right">Operadores</th>
+                  <th className="p-2 text-right">T.E</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : !hasData ? (
-        <div className="py-10 text-center">
-          <BarChart3 className="w-9 h-9 text-emerald-700 mx-auto mb-2" />
-          <p className="text-emerald-300 font-bold text-sm">Sin horas extra registradas en este mes</p>
-        </div>
-      ) : (
-        <div className="relative pl-9 pt-5">
-          <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: TE_PLOT_H }}>
-            {ticks.map(t => (
-              <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
-                <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{fmt(t)}</span>
-                <div className="absolute left-9 right-0 top-0 border-t border-emerald-900/70" />
-              </div>
-            ))}
-            {showRefLine && (
-              <div className="absolute left-9 right-0 h-0 border-t border-dashed border-emerald-200/60" style={{ bottom: `${(1 / top) * 100}%` }}>
-                <span className="absolute right-0 -top-3.5 text-[9px] text-emerald-200">208 h = 1.00</span>
-              </div>
-            )}
+              </thead>
+              <tbody className="divide-y divide-emerald-900/50">
+                {bars.map(b => (
+                  <tr key={b.label}>
+                    <td className="p-2 font-bold text-white">{b.label}</td>
+                    <td className="p-2 text-right text-emerald-200">{b.hours.toFixed(1)}</td>
+                    <td className="p-2 text-right text-emerald-200">{b.ops}</td>
+                    <td className="p-2 text-right font-extrabold text-emerald-100">{fmt(b.value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          <div className="relative flex gap-1 sm:gap-2">
-            {bars.map((b, i) => {
-              const h = (b.value / top) * 100;
-              return (
-                <div
-                  key={b.label}
-                  className="flex-1 min-w-0 flex flex-col items-center cursor-default"
-                  onMouseEnter={() => setHover(i)}
-                  onMouseLeave={() => setHover(null)}
-                  onClick={() => setHover(hover === i ? null : i)}
-                >
-                  <div className="relative w-full flex flex-col items-center justify-end" style={{ height: TE_PLOT_H }}>
-                    {hover === i && (
-                      <div className={`absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none ${tooltipPos(i)}`}>
-                        <div className="font-bold text-white">{b.fullLabel || b.label}</div>
-                        <div>T.E <span className="font-extrabold">{fmt(b.value)}</span></div>
-                        <div className="text-emerald-300">{b.hours.toFixed(1)} h extra ÷ 208</div>
-                      </div>
-                    )}
-                    <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">{fmt(b.value)}</span>
-                    <div
-                      className="rounded-t-[4px]"
-                      style={{ width: barWidth, height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color || color || '#3987e5' }}
-                    />
-                  </div>
-                  <div className="mt-1.5 text-[10px] font-semibold text-emerald-100 text-center leading-tight break-words w-full">{b.label}</div>
-                  <div className="text-[9px] text-emerald-500 text-center leading-tight">{b.hours.toFixed(1)} h OT · {b.ops} op.</div>
+        ) : !hasData ? (
+          // ✅ altura mínima igual a la gráfica con datos para alinear el grid
+          <div
+            className="flex flex-col items-center justify-center text-center"
+            style={{ minHeight: TE_PLOT_H + 60 }}
+          >
+            <BarChart3 className="w-9 h-9 text-emerald-700 mb-2" />
+            <p className="text-emerald-300 font-bold text-sm">Sin horas extra registradas en este mes</p>
+          </div>
+        ) : (
+          <div className="relative pl-9 pt-5">
+            <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: TE_PLOT_H }}>
+              {ticks.map(t => (
+                <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
+                  <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{fmt(t)}</span>
+                  <div className="absolute left-9 right-0 top-0 border-t border-emerald-900/70" />
                 </div>
-              );
-            })}
+              ))}
+              {showRefLine && (
+                <div className="absolute left-9 right-0 h-0 border-t border-dashed border-emerald-200/60" style={{ bottom: `${(1 / top) * 100}%` }}>
+                  <span className="absolute right-0 -top-3.5 text-[9px] text-emerald-200">208 h = 1.00</span>
+                </div>
+              )}
+            </div>
+
+            <div className="relative flex gap-1 sm:gap-2">
+              {bars.map((b, i) => {
+                const h = (b.value / top) * 100;
+                return (
+                  <div
+                    key={b.label}
+                    className="flex-1 min-w-0 flex flex-col items-center cursor-default"
+                    onMouseEnter={() => setHover(i)}
+                    onMouseLeave={() => setHover(null)}
+                    onClick={() => setHover(hover === i ? null : i)}
+                  >
+                    <div className="relative w-full flex flex-col items-center justify-end" style={{ height: TE_PLOT_H }}>
+                      {hover === i && (
+                        <div className={`absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none ${tooltipPos(i)}`}>
+                          <div className="font-bold text-white">{b.fullLabel || b.label}</div>
+                          <div>T.E <span className="font-extrabold">{fmt(b.value)}</span></div>
+                          <div className="text-emerald-300">{b.hours.toFixed(1)} h extra ÷ 208</div>
+                        </div>
+                      )}
+                      <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">{fmt(b.value)}</span>
+                      <div
+                        className="rounded-t-[4px]"
+                        style={{ width: barWidth, height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color || color || '#3987e5' }}
+                      />
+                    </div>
+                    <div className="mt-1.5 text-[10px] font-semibold text-emerald-100 text-center leading-tight break-words w-full">{b.label}</div>
+                    <div className="text-[9px] text-emerald-500 text-center leading-tight">{b.hours.toFixed(1)} h OT · {b.ops} op.</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
 
-/**
- * ✅ NUEVA: Gráfica H.C vs F.T.E
- *   H.C  = personas registradas (headcount)
- *   F.T.E = H.C + (horas extra aprobadas de la semana ÷ 208)
- *   Ejemplo: 5 + (2/208) = 5.0096
- */
 function HCvsFTEChart({ hc, fte, otWeek, subtitle = null }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
@@ -527,7 +508,6 @@ function HCvsFTEChart({ hc, fte, otWeek, subtitle = null }) {
     { key: 'fte', label: 'F.T.E', fullLabel: 'Full Time Equivalent',             value: fte, color: '#d95926' }
   ];
 
-  // Escala: usamos 0..max*1.15 para que se vean las diferencias
   const maxVal = Math.max(0.0001, ...bars.map(b => b.value));
   const top = Math.ceil(maxVal * 1.15);
   const step = top <= 5 ? 1 : top <= 20 ? 2 : top <= 50 ? 5 : 10;
@@ -535,7 +515,7 @@ function HCvsFTEChart({ hc, fte, otWeek, subtitle = null }) {
   for (let i = 0; i * step <= top + 1e-9; i++) ticks.push(i * step);
 
   return (
-    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
+    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5 flex flex-col">
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -554,84 +534,86 @@ function HCvsFTEChart({ hc, fte, otWeek, subtitle = null }) {
         </button>
       </div>
 
-      {showTable ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs min-w-[300px]">
-            <thead>
-              <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
-                <th className="p-2">Métrica</th>
-                <th className="p-2 text-right">Valor</th>
-                <th className="p-2 text-right">Detalle</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-emerald-900/50">
-              <tr>
-                <td className="p-2 font-bold text-white">H.C</td>
-                <td className="p-2 text-right font-extrabold text-blue-300">{fmtFTE(hc)}</td>
-                <td className="p-2 text-right text-emerald-300">{hc} persona{hc === 1 ? '' : 's'}</td>
-              </tr>
-              <tr>
-                <td className="p-2 font-bold text-white">F.T.E</td>
-                <td className="p-2 text-right font-extrabold text-orange-300">{fmtFTE(fte)}</td>
-                <td className="p-2 text-right text-emerald-300">{otWeek.toFixed(1)} h OT ÷ 208</td>
-              </tr>
-              <tr>
-                <td className="p-2 font-bold text-emerald-200">Δ (F.T.E − H.C)</td>
-                <td className="p-2 text-right font-extrabold text-amber-300">{fmtFTE(fte - hc)}</td>
-                <td className="p-2 text-right text-emerald-400">T.E de la semana</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="relative pl-9 pt-5">
-          <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: TE_PLOT_H }}>
-            {ticks.map(t => (
-              <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
-                <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{t}</span>
-                <div className="absolute left-9 right-0 top-0 border-t border-emerald-900/70" />
-              </div>
-            ))}
+      <div className="flex-1 flex flex-col">
+        {showTable ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs min-w-[300px]">
+              <thead>
+                <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                  <th className="p-2">Métrica</th>
+                  <th className="p-2 text-right">Valor</th>
+                  <th className="p-2 text-right">Detalle</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-emerald-900/50">
+                <tr>
+                  <td className="p-2 font-bold text-white">H.C</td>
+                  <td className="p-2 text-right font-extrabold text-blue-300">{fmtFTE(hc)}</td>
+                  <td className="p-2 text-right text-emerald-300">{hc} persona{hc === 1 ? '' : 's'}</td>
+                </tr>
+                <tr>
+                  <td className="p-2 font-bold text-white">F.T.E</td>
+                  <td className="p-2 text-right font-extrabold text-orange-300">{fmtFTE(fte)}</td>
+                  <td className="p-2 text-right text-emerald-300">{otWeek.toFixed(1)} h OT ÷ 208</td>
+                </tr>
+                <tr>
+                  <td className="p-2 font-bold text-emerald-200">Δ (F.T.E − H.C)</td>
+                  <td className="p-2 text-right font-extrabold text-amber-300">{fmtFTE(fte - hc)}</td>
+                  <td className="p-2 text-right text-emerald-400">T.E de la semana</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-
-          <div className="relative flex gap-3">
-            {bars.map((b, i) => {
-              const h = (b.value / top) * 100;
-              return (
-                <div
-                  key={b.key}
-                  className="flex-1 min-w-0 flex flex-col items-center cursor-default"
-                  onMouseEnter={() => setHover(i)}
-                  onMouseLeave={() => setHover(null)}
-                  onClick={() => setHover(hover === i ? null : i)}
-                >
-                  <div className="relative w-full flex flex-col items-center justify-end" style={{ height: TE_PLOT_H }}>
-                    {hover === i && (
-                      <div className="absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none left-1/2 -translate-x-1/2">
-                        <div className="font-bold text-white">{b.fullLabel}</div>
-                        <div>Valor <span className="font-extrabold">{fmtFTE(b.value)}</span></div>
-                        {b.key === 'fte' && <div className="text-emerald-300">{otWeek.toFixed(1)} h OT ÷ 208 = {fmtFTE(fte - hc)}</div>}
-                      </div>
-                    )}
-                    <span className="text-[12px] font-extrabold text-white mb-0.5 leading-none">{fmtFTE(b.value)}</span>
-                    <div
-                      className="rounded-t-[4px]"
-                      style={{ width: 88, height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color }}
-                    />
-                  </div>
-                  <div className="mt-1.5 text-[11px] font-semibold text-emerald-100 text-center leading-tight">{b.label}</div>
-                  {b.key === 'fte' && (
-                    <div className="text-[9px] text-emerald-500 text-center leading-tight">{otWeek.toFixed(1)} h OT · Δ {fmtFTE(fte - hc)}</div>
-                  )}
-                  {b.key === 'hc' && (
-                    <div className="text-[9px] text-emerald-500 text-center leading-tight">{hc} personas</div>
-                  )}
+        ) : (
+          <div className="relative pl-9 pt-5">
+            <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: TE_PLOT_H }}>
+              {ticks.map(t => (
+                <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
+                  <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{t}</span>
+                  <div className="absolute left-9 right-0 top-0 border-t border-emerald-900/70" />
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            <div className="relative flex gap-3">
+              {bars.map((b, i) => {
+                const h = (b.value / top) * 100;
+                return (
+                  <div
+                    key={b.key}
+                    className="flex-1 min-w-0 flex flex-col items-center cursor-default"
+                    onMouseEnter={() => setHover(i)}
+                    onMouseLeave={() => setHover(null)}
+                    onClick={() => setHover(hover === i ? null : i)}
+                  >
+                    <div className="relative w-full flex flex-col items-center justify-end" style={{ height: TE_PLOT_H }}>
+                      {hover === i && (
+                        <div className="absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none left-1/2 -translate-x-1/2">
+                          <div className="font-bold text-white">{b.fullLabel}</div>
+                          <div>Valor <span className="font-extrabold">{fmtFTE(b.value)}</span></div>
+                          {b.key === 'fte' && <div className="text-emerald-300">{otWeek.toFixed(1)} h OT ÷ 208 = {fmtFTE(fte - hc)}</div>}
+                        </div>
+                      )}
+                      <span className="text-[12px] font-extrabold text-white mb-0.5 leading-none">{fmtFTE(b.value)}</span>
+                      <div
+                        className="rounded-t-[4px]"
+                        style={{ width: 88, height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color }}
+                      />
+                    </div>
+                    <div className="mt-1.5 text-[11px] font-semibold text-emerald-100 text-center leading-tight">{b.label}</div>
+                    {b.key === 'fte' && (
+                      <div className="text-[9px] text-emerald-500 text-center leading-tight">{otWeek.toFixed(1)} h OT · Δ {fmtFTE(fte - hc)}</div>
+                    )}
+                    {b.key === 'hc' && (
+                      <div className="text-[9px] text-emerald-500 text-center leading-tight">{hc} personas</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -674,7 +656,6 @@ const forceDownload = (blob, filename) => {
     navigator.msSaveBlob(blob, filename);
     return;
   }
-
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -684,19 +665,11 @@ const forceDownload = (blob, filename) => {
   link.style.left = '-9999px';
   link.style.top = '-9999px';
   document.body.appendChild(link);
-
   setTimeout(() => {
-    try {
-      link.click();
-    } catch (e) {
-      console.warn('link.click falló, intentando window.open:', e);
-      window.open(url, '_blank');
-    }
+    try { link.click(); }
+    catch (e) { window.open(url, '_blank'); }
     setTimeout(() => {
-      try {
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch (err) { /* no-op */ }
+      try { document.body.removeChild(link); URL.revokeObjectURL(url); } catch (err) {}
     }, 1500);
   }, 50);
 };
@@ -707,30 +680,25 @@ const dataURLtoBlob = (dataURL) => {
   const bstr = atob(arr[1]);
   let n = bstr.length;
   const u8arr = new Uint8Array(n);
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
   return new Blob([u8arr], { type: mime });
 };
 
 const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators, scheduleData, lockedCells, overtimeRequests = []) => {
   const target = operators.find(o => o.id === targetOperatorId);
   if (!target) return [];
-
   const [y, m, d] = dateStr.split('-').map(Number);
   const targetDate = new Date(y, m - 1, d);
   const dayOfWeek = targetDate.getDay();
   const monday = new Date(targetDate);
   const diff = monday.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
   monday.setDate(diff);
-
   const weekDates = [];
   for (let i = 0; i < 7; i++) {
     const dd = new Date(monday);
     dd.setDate(monday.getDate() + i);
     weekDates.push(formatDateLocal(dd));
   }
-
   return operators
     .filter(op => op.id !== targetOperatorId)
     .filter(op => {
@@ -743,45 +711,28 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
     .map(op => {
       let score = 0;
       const reasons = [];
-
       if (op.zone && op.zone === target.zone) { score += 50; reasons.push('Misma área'); }
       if (op.equipment && op.equipment === target.equipment) { score += 30; reasons.push('Mismo equipo'); }
-
       let weekHours = 0;
       weekDates.forEach(date => {
         const key = `${op.id}_${date}`;
-        if (date === dateStr) {
-          weekHours += SHIFT_HOURS[shiftCode] || 0;
-        } else {
+        if (date === dateStr) weekHours += SHIFT_HOURS[shiftCode] || 0;
+        else {
           const c = scheduleData[key];
           if (c && SHIFT_HOURS[c] !== undefined) weekHours += SHIFT_HOURS[c];
         }
       });
-
       weekHours += sumOvertime(overtimeRequests, op.id, weekDates);
-
       reasons.push(`${weekHours.toFixed(1)}h esta semana`);
-
       const wouldHaveRest = weekDates.some(date => date !== dateStr && !WORK_CODES.includes(scheduleData[`${op.id}_${date}`]));
-      if (!wouldHaveRest) {
-        score -= 40;
-        reasons.push('Sin día de descanso');
-      }
-
+      if (!wouldHaveRest) { score -= 40; reasons.push('Sin día de descanso'); }
       if (op.licenseExpiry) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = new Date(); today.setHours(0, 0, 0, 0);
         const exp = new Date(op.licenseExpiry + 'T00:00:00');
         const days = Math.ceil((exp - today) / 86400000);
-        if (days < 0) {
-          score -= 100;
-          reasons.push('Licencia vencida');
-        } else if (days <= 30) {
-          score -= 15;
-          reasons.push(`Licencia vence en ${days}d`);
-        }
+        if (days < 0) { score -= 100; reasons.push('Licencia vencida'); }
+        else if (days <= 30) { score -= 15; reasons.push(`Licencia vence en ${days}d`); }
       }
-
       return { ...op, score, reasons, weekHours };
     })
     .sort((a, b) => b.score - a.score);
@@ -796,10 +747,8 @@ export default function App() {
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState(null);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
-
   const [syncStatus, setSyncStatus] = useState('idle');
   const syncStatusTimeoutRef = useRef(null);
-
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
 
@@ -808,15 +757,11 @@ export default function App() {
     const duration = options.duration ?? (options.undoAction ? UNDO_WINDOW_MS : 3000);
     const toast = { id, type, message, undoAction: options.undoAction || null };
     setToasts(prev => [...prev, toast]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, duration);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
     return id;
   }, []);
 
-  const dismissToast = useCallback((id) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
+  const dismissToast = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
 
   const [flashCells, setFlashCells] = useState(new Set());
   const flashCellsTimeoutRef = useRef(null);
@@ -834,7 +779,6 @@ export default function App() {
 
   const [showLicenseAlerts, setShowLicenseAlerts] = useState(true);
   const [vacDateError, setVacDateError] = useState('');
-
   const [activeTab, setActiveTab] = useState('scheduler');
 
   const [operators, setOperators] = useState([]);
@@ -851,20 +795,17 @@ export default function App() {
   const [pollFailed, setPollFailed] = useState(false);
   const isPollingRef = useRef(false);
   const [loadError, setLoadError] = useState('');
-
   const isUpdatingRef = useRef(false);
   const scheduleRef = useRef(null);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
   const [applyToFullWeek, setApplyToFullWeek] = useState(false);
-
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const exportMenuRef = useRef(null);
-
   const [exportPreview, setExportPreview] = useState(null);
-
   const [now, setNow] = useState(() => new Date());
+
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(tick);
@@ -878,15 +819,11 @@ export default function App() {
     try {
       const saved = localStorage.getItem('sf_showIndicators');
       return saved === null ? false : saved === 'true';
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem('sf_showIndicators', String(showIndicators));
-    } catch (err) { /* no-op */ }
+    try { localStorage.setItem('sf_showIndicators', String(showIndicators)); } catch (err) {}
   }, [showIndicators]);
 
   useEffect(() => {
@@ -894,10 +831,7 @@ export default function App() {
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((lockoutUntil - Date.now()) / 1000));
       setLockoutRemaining(remaining);
-      if (remaining <= 0) {
-        setLockoutUntil(null);
-        setLoginAttempts(0);
-      }
+      if (remaining <= 0) { setLockoutUntil(null); setLoginAttempts(0); }
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -906,9 +840,7 @@ export default function App() {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
-        setShowExportMenu(false);
-      }
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) setShowExportMenu(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -919,8 +851,7 @@ export default function App() {
       await new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-        script.onload = resolve;
-        script.onerror = reject;
+        script.onload = resolve; script.onerror = reject;
         document.head.appendChild(script);
       });
     }
@@ -928,8 +859,7 @@ export default function App() {
       await new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        script.onload = resolve;
-        script.onerror = reject;
+        script.onload = resolve; script.onerror = reject;
         document.head.appendChild(script);
       });
     }
@@ -939,34 +869,22 @@ export default function App() {
     if (!scheduleRef.current) return;
     setIsExporting(true);
     setShowExportMenu(false);
-
     try {
       await loadExportLibraries();
       const element = scheduleRef.current;
       const canvas = await window.html2canvas(element, {
-        scale: 2,
-        backgroundColor: '#002812',
-        useCORS: true,
-        logging: false,
+        scale: 2, backgroundColor: '#002812', useCORS: true, logging: false,
         windowWidth: element.scrollWidth + 80
       });
       const baseName = `Horario_Semanal_${currentWeekStart}`;
       const mobile = isMobileDevice();
-
       if (format === 'png' || format === 'jpg') {
-        const dataUrl = format === 'png'
-          ? canvas.toDataURL('image/png')
-          : canvas.toDataURL('image/jpeg', 0.95);
+        const dataUrl = format === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.95);
         const blob = dataURLtoBlob(dataUrl);
         const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
         const filename = `${baseName}.${format}`;
-
-        if (mobile) {
-          setExportPreview({ format, blob, dataUrl, filename, mimeType, isPdf: false });
-        } else {
-          forceDownload(blob, filename);
-          pushToast('success', `Horario ${format.toUpperCase()} descargado`);
-        }
+        if (mobile) setExportPreview({ format, blob, dataUrl, filename, mimeType, isPdf: false });
+        else { forceDownload(blob, filename); pushToast('success', `Horario ${format.toUpperCase()} descargado`); }
       } else if (format === 'pdf') {
         const imgData = canvas.toDataURL('image/png');
         const { jsPDF } = window.jspdf;
@@ -986,9 +904,8 @@ export default function App() {
         const imgHeight = (canvas.height * imgWidth) / canvas.width;
         let positionY = 22;
         const maxHeight = pdfHeight - 32;
-        if (imgHeight <= maxHeight) {
-          pdf.addImage(imgData, 'PNG', 12, positionY, imgWidth, imgHeight);
-        } else {
+        if (imgHeight <= maxHeight) pdf.addImage(imgData, 'PNG', 12, positionY, imgWidth, imgHeight);
+        else {
           const scaleFactor = maxHeight / imgHeight;
           const adjustedWidth = imgWidth * scaleFactor;
           const adjustedHeight = imgHeight * scaleFactor;
@@ -998,23 +915,15 @@ export default function App() {
         pdf.setFontSize(8);
         pdf.setTextColor(100, 116, 139);
         pdf.text(`Exportado el: ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 12, pdfHeight - 5);
-
         const pdfBlob = pdf.output('blob');
         const filename = `${baseName}.pdf`;
-
-        if (mobile) {
-          setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
-        } else {
-          forceDownload(pdfBlob, filename);
-          pushToast('success', 'PDF descargado');
-        }
+        if (mobile) setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
+        else { forceDownload(pdfBlob, filename); pushToast('success', 'PDF descargado'); }
       }
     } catch (error) {
       console.error('Error al exportar horario:', error);
       pushToast('error', 'No se pudo generar el archivo.');
-    } finally {
-      setIsExporting(false);
-    }
+    } finally { setIsExporting(false); }
   };
 
   const lastActualMondayRef = useRef(getMondayOfCurrentWeek());
@@ -1029,10 +938,7 @@ export default function App() {
     };
     const interval = setInterval(checkWeekChange, 60000);
     window.addEventListener('focus', checkWeekChange);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', checkWeekChange);
-    };
+    return () => { clearInterval(interval); window.removeEventListener('focus', checkWeekChange); };
   }, []);
 
   const loadCloudData = async () => {
@@ -1040,11 +946,8 @@ export default function App() {
     setLoadError('');
     try {
       const [savedOps, savedSchedule, savedVac, savedOt, savedAssign] = await withTimeout(Promise.all([
-        redis.get('sf_operators'),
-        redis.get('sf_scheduleData'),
-        redis.get('sf_vacations'),
-        redis.get('sf_overtime'),
-        redis.get('sf_assignments'),
+        redis.get('sf_operators'), redis.get('sf_scheduleData'), redis.get('sf_vacations'),
+        redis.get('sf_overtime'), redis.get('sf_assignments'),
       ]), LOAD_TIMEOUT_MS);
       setPollFailed(false);
       setAssignments(savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign) ? savedAssign : {});
@@ -1054,22 +957,13 @@ export default function App() {
       setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
     } catch (error) {
       console.error('Error al cargar datos:', error);
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        setLoadError('Sin conexión a internet. Conéctate a una red e intenta de nuevo.');
-      } else if (error && error.message === 'timeout') {
-        setLoadError('El servidor tardó demasiado en responder. Puede ser tu conexión o el servicio; intenta de nuevo en unos segundos.');
-      } else {
-        setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
-      }
-    } finally {
-      setIsLoaded(true);
-    }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) setLoadError('Sin conexión a internet. Conéctate a una red e intenta de nuevo.');
+      else if (error && error.message === 'timeout') setLoadError('El servidor tardó demasiado en responder. Puede ser tu conexión o el servicio; intenta de nuevo en unos segundos.');
+      else setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
+    } finally { setIsLoaded(true); }
   };
 
-  useEffect(() => {
-    loadCloudData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { loadCloudData(); }, []);
 
   useEffect(() => {
     if (isLoaded) { setLoadSeconds(0); return; }
@@ -1082,10 +976,7 @@ export default function App() {
     const goOnline = () => { setIsOffline(false); setPollFailed(false); };
     window.addEventListener('offline', goOffline);
     window.addEventListener('online', goOnline);
-    return () => {
-      window.removeEventListener('offline', goOffline);
-      window.removeEventListener('online', goOnline);
-    };
+    return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline); };
   }, []);
 
   useEffect(() => {
@@ -1096,11 +987,8 @@ export default function App() {
       isPollingRef.current = true;
       try {
         const [savedOps, savedSchedule, savedVac, savedOt, savedAssign] = await withTimeout(Promise.all([
-          redis.get('sf_operators'),
-          redis.get('sf_scheduleData'),
-          redis.get('sf_vacations'),
-          redis.get('sf_overtime'),
-          redis.get('sf_assignments'),
+          redis.get('sf_operators'), redis.get('sf_scheduleData'), redis.get('sf_vacations'),
+          redis.get('sf_overtime'), redis.get('sf_assignments'),
         ]), POLL_TIMEOUT_MS);
         setPollFailed(false);
         if (!isUpdatingRef.current) {
@@ -1110,12 +998,8 @@ export default function App() {
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
           if (Array.isArray(savedVac)) setVacationRequests(savedVac);
         }
-      } catch (err) {
-        console.error('Error en sincronización continua:', err);
-        setPollFailed(true);
-      } finally {
-        isPollingRef.current = false;
-      }
+      } catch (err) { console.error('Error en sincronización continua:', err); setPollFailed(true); }
+      finally { isPollingRef.current = false; }
     }, 3000);
     return () => clearInterval(interval);
   }, [isLoaded, loadError]);
@@ -1124,7 +1008,6 @@ export default function App() {
   const [selectedZone, setSelectedZone] = useState('Todas las áreas');
   const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
   const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
-
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
@@ -1132,32 +1015,18 @@ export default function App() {
   const [otError, setOtError] = useState('');
   const [selectedCell, setSelectedCell] = useState(null);
   const [cellAssignment, setCellAssignment] = useState('');
+
   useEffect(() => {
-    if (selectedCell) {
-      setCellAssignment(assignments[`${selectedCell.operatorId}_${selectedCell.dateStr}`] || '');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (selectedCell) setCellAssignment(assignments[`${selectedCell.operatorId}_${selectedCell.dateStr}`] || '');
   }, [selectedCell]);
 
-  const [newOp, setNewOp] = useState({
-    name: '', socioNumber: '', zone: '', equipment: '',
-    licenseExpiry: '2027-12-31'
-  });
-
+  const [newOp, setNewOp] = useState({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: '2027-12-31' });
   const [newVac, setNewVac] = useState({
-    operatorId: '',
-    startDate: formatDateLocal(new Date()),
-    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)),
-    type: 'Vacaciones',
-    reason: ''
+    operatorId: '', startDate: formatDateLocal(new Date()),
+    endDate: formatDateLocal(new Date(Date.now() + 86400000 * 5)), type: 'Vacaciones', reason: ''
   });
-
   const [newOt, setNewOt] = useState({
-    operatorId: '',
-    date: formatDateLocal(new Date()),
-    hours: 2,
-    type: OVERTIME_TYPES[0],
-    reason: ''
+    operatorId: '', date: formatDateLocal(new Date()), hours: 2, type: OVERTIME_TYPES[0], reason: ''
   });
 
   const weekDays = useMemo(() => {
@@ -1169,8 +1038,7 @@ export default function App() {
       d.setDate(start.getDate() + i);
       const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
       days.push({
-        dateStr: formatDateLocal(d),
-        dayName: dayNames[d.getDay()],
+        dateStr: formatDateLocal(d), dayName: dayNames[d.getDay()],
         dayNumber: d.getDate(),
         monthName: d.toLocaleDateString('es-ES', { month: 'short' }),
         isWeekend: d.getDay() === 0 || d.getDay() === 6
@@ -1181,20 +1049,11 @@ export default function App() {
 
   useEffect(() => {
     const isInCurrentView = weekDays.some(d => d.dateStr === selectedMobileDay);
-    if (!isInCurrentView) {
-      setSelectedMobileDay(weekDays[0].dateStr);
-    }
+    if (!isInCurrentView) setSelectedMobileDay(weekDays[0].dateStr);
   }, [currentWeekStart, weekDays, selectedMobileDay]);
 
-  const isHistoricalWeek = useMemo(() => {
-    const currentMonday = getMondayOfCurrentWeek();
-    return currentWeekStart < currentMonday;
-  }, [currentWeekStart]);
-
-  const isCurrentWeek = useMemo(() => {
-    return currentWeekStart === getMondayOfCurrentWeek();
-  }, [currentWeekStart]);
-
+  const isHistoricalWeek = useMemo(() => currentWeekStart < getMondayOfCurrentWeek(), [currentWeekStart]);
+  const isCurrentWeek = useMemo(() => currentWeekStart === getMondayOfCurrentWeek(), [currentWeekStart]);
   const activeShiftCode = useMemo(() => getShiftCodeForDate(now), [now]);
 
   const statsDateStr = useMemo(() => {
@@ -1220,18 +1079,13 @@ export default function App() {
 
   const lockedCells = useMemo(() => {
     const locked = new Set();
-    vacationRequests
-      .filter(r => r.status === 'Aprobado')
-      .forEach(req => {
-        const [sY, sM, sD] = req.startDate.split('-').map(Number);
-        const [eY, eM, eD] = req.endDate.split('-').map(Number);
-        let curr = new Date(sY, sM - 1, sD);
-        const end = new Date(eY, eM - 1, eD);
-        while (curr <= end) {
-          locked.add(`${req.operatorId}_${formatDateLocal(curr)}`);
-          curr.setDate(curr.getDate() + 1);
-        }
-      });
+    vacationRequests.filter(r => r.status === 'Aprobado').forEach(req => {
+      const [sY, sM, sD] = req.startDate.split('-').map(Number);
+      const [eY, eM, eD] = req.endDate.split('-').map(Number);
+      let curr = new Date(sY, sM - 1, sD);
+      const end = new Date(eY, eM - 1, eD);
+      while (curr <= end) { locked.add(`${req.operatorId}_${formatDateLocal(curr)}`); curr.setDate(curr.getDate() + 1); }
+    });
     return locked;
   }, [vacationRequests]);
 
@@ -1255,36 +1109,23 @@ export default function App() {
     const active = ['Pendiente', 'Aprobado'];
     const mine = overtimeRequests.filter(r => r.operatorId === newOt.operatorId && active.includes(r.status));
     const weekDates = getWeekDatesFromDate(newOt.date);
-
     if (newOt.type === 'Hora extra') {
       const dayTotal = mine.filter(r => r.date === newOt.date).reduce((a, r) => a + (Number(r.hours) || 0), 0) + hours;
-      if (dayTotal > OT_MAX_HOURS_PER_DAY) {
-        warnings.push({ level: 'warning', text: `Ese día sumaría ${dayTotal}h extra (máximo legal: ${OT_MAX_HOURS_PER_DAY}h por día).` });
-      }
+      if (dayTotal > OT_MAX_HOURS_PER_DAY) warnings.push({ level: 'warning', text: `Ese día sumaría ${dayTotal}h extra (máximo legal: ${OT_MAX_HOURS_PER_DAY}h por día).` });
       const days = new Set(mine.filter(r => r.type === 'Hora extra' && weekDates.includes(r.date)).map(r => r.date));
       days.add(newOt.date);
-      if (days.size > OT_MAX_DAYS_PER_WEEK) {
-        warnings.push({ level: 'warning', text: `Serían ${days.size} días con horas extra en la semana (máximo legal: ${OT_MAX_DAYS_PER_WEEK}).` });
-      }
+      if (days.size > OT_MAX_DAYS_PER_WEEK) warnings.push({ level: 'warning', text: `Serían ${days.size} días con horas extra en la semana (máximo legal: ${OT_MAX_DAYS_PER_WEEK}).` });
     }
-
     const weekOt = mine.filter(r => weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0) + hours;
     const level = getOvertimeLevel(weekOt);
-    if (level === 'danger') {
-      warnings.push({ level, text: `ALERTA: la semana quedaría en ${weekOt}h extra (alerta desde ${OT_ALERT_HOURS}h).` });
-    } else if (level === 'warning') {
-      warnings.push({ level, text: `La semana quedaría en ${weekOt}h extra (señal desde ${OT_WARN_HOURS}h).` });
-    }
+    if (level === 'danger') warnings.push({ level, text: `ALERTA: la semana quedaría en ${weekOt}h extra (alerta desde ${OT_ALERT_HOURS}h).` });
+    else if (level === 'warning') warnings.push({ level, text: `La semana quedaría en ${weekOt}h extra (señal desde ${OT_WARN_HOURS}h).` });
     return warnings;
   }, [isOvertimeOpen, newOt, overtimeRequests]);
 
   const lockedCellsInView = useMemo(() => {
     let count = 0;
-    operators.forEach(op => {
-      weekDays.forEach(day => {
-        if (lockedCells.has(`${op.id}_${day.dateStr}`)) count++;
-      });
-    });
+    operators.forEach(op => { weekDays.forEach(day => { if (lockedCells.has(`${op.id}_${day.dateStr}`)) count++; }); });
     return count;
   }, [operators, weekDays, lockedCells]);
 
@@ -1292,9 +1133,7 @@ export default function App() {
     const set = new Set();
     if (isHistoricalWeek) return set;
     const dates = weekDays.map(d => d.dateStr);
-    operators.forEach(op => {
-      if (!hasRestDay(scheduleData, op.id, dates)) set.add(op.id);
-    });
+    operators.forEach(op => { if (!hasRestDay(scheduleData, op.id, dates)) set.add(op.id); });
     return set;
   }, [operators, scheduleData, weekDays, isHistoricalWeek]);
 
@@ -1309,7 +1148,6 @@ export default function App() {
     [reportTeMonth, operators, scheduleData, assignments, overtimeRequests]
   );
 
-  // ✅ H.C y F.T.E de la semana seleccionada en Reportes
   const hcVsFte = useMemo(() => {
     const weekDates = reportWeekDays.map(d => d.dateStr);
     const hc = operators.length;
@@ -1346,9 +1184,7 @@ export default function App() {
           const code = scheduleData[`${operatorId}_${weekDays[i].dateStr}`];
           if (code === 'N') consecutiveN++; else break;
         }
-        if (consecutiveN > 5) {
-          conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
-        }
+        if (consecutiveN > 5) conflicts.push(`${op?.name || operatorId} tendría ${consecutiveN} noches consecutivas (máximo recomendado: 5).`);
       }
     }
     return conflicts;
@@ -1358,18 +1194,15 @@ export default function App() {
     if (!isLoaded || isUpdatingRef.current) return;
     if (operators.length === 0) return;
     if (isHistoricalWeek) return;
-
     const newSchedule = { ...scheduleData };
     let changed = false;
-
     operators.forEach((op) => {
       weekDays.forEach((day, idx) => {
         const key = `${op.id}_${day.dateStr}`;
         if (lockedCells.has(key)) return;
         if (!newSchedule[key]) {
-          if (idx === 5 || idx === 6) {
-            newSchedule[key] = 'DES';
-          } else {
+          if (idx === 5 || idx === 6) newSchedule[key] = 'DES';
+          else {
             if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
             else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
             else if (op.shiftPattern === 'Noche') newSchedule[key] = 'N';
@@ -1379,11 +1212,7 @@ export default function App() {
         }
       });
     });
-
-    if (changed) {
-      setScheduleData(newSchedule);
-      redis.set('sf_scheduleData', newSchedule).catch(console.error);
-    }
+    if (changed) { setScheduleData(newSchedule); redis.set('sf_scheduleData', newSchedule).catch(console.error); }
   }, [operators, weekDays, isLoaded, isHistoricalWeek, lockedCells]);
 
   const handleLogin = (e) => {
@@ -1392,11 +1221,8 @@ export default function App() {
     const email = loginEmail.trim().toLowerCase();
     const user = MOCK_USERS.find(u => u.email.toLowerCase() === email && u.pass === loginPass);
     if (user) {
-      setCurrentUser(user);
-      setLoginError('');
-      setLoginAttempts(0);
-      setLoginPass('');
-      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) { /* no-op */ }
+      setCurrentUser(user); setLoginError(''); setLoginAttempts(0); setLoginPass('');
+      try { sessionStorage.setItem('sf_session', JSON.stringify(user)); } catch (err) {}
       pushToast('success', `Bienvenido, ${user.name}`);
     } else {
       const attempts = loginAttempts + 1;
@@ -1412,7 +1238,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    try { sessionStorage.removeItem('sf_session'); } catch (err) { /* no-op */ }
+    try { sessionStorage.removeItem('sf_session'); } catch (err) {}
   };
 
   useEffect(() => {
@@ -1423,7 +1249,7 @@ export default function App() {
         const stillValid = MOCK_USERS.some(u => u.id === parsed.id && u.email === parsed.email);
         if (stillValid) setCurrentUser(parsed);
       }
-    } catch (err) { /* no-op */ }
+    } catch (err) {}
   }, []);
 
   const canEditShifts = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
@@ -1432,23 +1258,18 @@ export default function App() {
   const canViewReports = currentUser && ['Admin', 'Supervisor'].includes(currentUser.role);
 
   const licenseAlerts = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return operators
-      .map(op => {
-        if (!op.licenseExpiry) return null;
-        const expiry = new Date(op.licenseExpiry + 'T00:00:00');
-        const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays > 30) return null;
-        return { ...op, diffDays, expired: diffDays < 0 };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.diffDays - b.diffDays);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return operators.map(op => {
+      if (!op.licenseExpiry) return null;
+      const expiry = new Date(op.licenseExpiry + 'T00:00:00');
+      const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays > 30) return null;
+      return { ...op, diffDays, expired: diffDays < 0 };
+    }).filter(Boolean).sort((a, b) => a.diffDays - b.diffDays);
   }, [operators]);
 
   const filteredOperators = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     return operators.filter(op => {
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch = op.name.toLowerCase().includes(q) || op.id.toLowerCase().includes(q) || String(op.socioNumber || '').toLowerCase().includes(q);
@@ -1477,10 +1298,8 @@ export default function App() {
   }, [searchQuery, selectedZone, selectedEquipment, onlyExpiringLicenses]);
 
   const clearAllFilters = () => {
-    setSearchQuery('');
-    setSelectedZone('Todas las áreas');
-    setSelectedEquipment('Todos los equipos');
-    setOnlyExpiringLicenses(false);
+    setSearchQuery(''); setSelectedZone('Todas las áreas');
+    setSelectedEquipment('Todos los equipos'); setOnlyExpiringLicenses(false);
     pushToast('info', 'Filtros limpiados');
   };
 
@@ -1489,56 +1308,38 @@ export default function App() {
     if (isHistoricalWeek) return;
     const clickedKey = `${operatorId}_${dateStr}`;
     if (lockedCells.has(clickedKey)) return;
-
     const conflicts = detectConflicts(operatorId, dateStr, shiftCode, isFullWeek);
-    if (conflicts.length > 0) {
-      pushToast('warning', conflicts[0], { duration: 5000 });
-      return;
-    }
-
+    if (conflicts.length > 0) { pushToast('warning', conflicts[0], { duration: 5000 }); return; }
     const previousSchedule = { ...scheduleData };
     const previousAssignments = { ...assignments };
     const previousValue = scheduleData[clickedKey];
     const newValue = shiftCode;
     const newAssignment = ['M', 'T', 'N'].includes(shiftCode) ? assignment : '';
-
     if (previousValue === newValue && !isFullWeek && (assignments[clickedKey] || '') === newAssignment) {
-      setSelectedCell(null);
-      setApplyToFullWeek(false);
-      return;
+      setSelectedCell(null); setApplyToFullWeek(false); return;
     }
-
     isUpdatingRef.current = true;
     setSyncStatus('saving');
-
     const updatedSchedule = { ...scheduleData };
     const affectedKeys = [];
-
     if (isFullWeek) {
       weekDays.forEach(day => {
         const key = `${operatorId}_${day.dateStr}`;
-        if (!lockedCells.has(key)) {
-          updatedSchedule[key] = shiftCode;
-          affectedKeys.push(key);
-        }
+        if (!lockedCells.has(key)) { updatedSchedule[key] = shiftCode; affectedKeys.push(key); }
       });
     } else {
-      updatedSchedule[clickedKey] = shiftCode;
-      affectedKeys.push(clickedKey);
+      updatedSchedule[clickedKey] = shiftCode; affectedKeys.push(clickedKey);
     }
-
     const updatedAssignments = { ...assignments };
     affectedKeys.forEach(key => {
       if (newAssignment) updatedAssignments[key] = newAssignment;
       else delete updatedAssignments[key];
     });
-
     setScheduleData(updatedSchedule);
     setAssignments(updatedAssignments);
     setSelectedCell(null);
     setApplyToFullWeek(false);
     triggerFlash(affectedKeys);
-
     try {
       await withTimeout(Promise.all([
         redis.set('sf_scheduleData', updatedSchedule),
@@ -1553,27 +1354,20 @@ export default function App() {
       }
       pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label}${assignLabel} (${dayLabel})`, {
         undoAction: () => {
-          setScheduleData(previousSchedule);
-          setAssignments(previousAssignments);
+          setScheduleData(previousSchedule); setAssignments(previousAssignments);
           Promise.all([
             redis.set('sf_scheduleData', previousSchedule),
             redis.set('sf_assignments', previousAssignments)
-          ]).then(() => {
-            pushToast('info', 'Cambio deshecho');
-          }).catch(() => {
-            pushToast('error', 'No se pudo deshacer');
-          });
+          ]).then(() => pushToast('info', 'Cambio deshecho'))
+            .catch(() => pushToast('error', 'No se pudo deshacer'));
         }
       });
     } catch (error) {
       console.error('Error al guardar turno:', error);
-      setScheduleData(previousSchedule);
-      setAssignments(previousAssignments);
+      setScheduleData(previousSchedule); setAssignments(previousAssignments);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleReassign = async (targetOperatorId) => {
@@ -1581,21 +1375,14 @@ export default function App() {
     const shiftCode = reassignShift;
     const newKey = `${targetOperatorId}_${reassignModal.dateStr}`;
     const previousSchedule = { ...scheduleData };
-
     const conflicts = detectConflicts(targetOperatorId, reassignModal.dateStr, shiftCode, false);
-    if (conflicts.length > 0) {
-      pushToast('warning', conflicts[0], { duration: 5000 });
-      return;
-    }
-
+    if (conflicts.length > 0) { pushToast('warning', conflicts[0], { duration: 5000 }); return; }
     isUpdatingRef.current = true;
     setSyncStatus('saving');
-
     const updatedSchedule = { ...scheduleData, [newKey]: shiftCode };
     setScheduleData(updatedSchedule);
     setReassignModal(null);
     triggerFlash([newKey]);
-
     try {
       await withTimeout(redis.set('sf_scheduleData', updatedSchedule), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
@@ -1604,11 +1391,9 @@ export default function App() {
       pushToast('success', `${target?.name} cubrirá ${SHIFT_TYPES[shiftCode].label} de ${absent?.name} (${reassignModal.dateStr})`, {
         undoAction: () => {
           setScheduleData(previousSchedule);
-          redis.set('sf_scheduleData', previousSchedule).then(() => {
-            pushToast('info', 'Reasignación deshecha');
-          }).catch(() => {
-            pushToast('error', 'No se pudo deshacer');
-          });
+          redis.set('sf_scheduleData', previousSchedule)
+            .then(() => pushToast('info', 'Reasignación deshecha'))
+            .catch(() => pushToast('error', 'No se pudo deshacer'));
         }
       });
       if (WORK_CODES.includes(shiftCode) && !hasRestDay(updatedSchedule, targetOperatorId, weekDays.map(d => d.dateStr))) {
@@ -1619,44 +1404,26 @@ export default function App() {
       setScheduleData(previousSchedule);
       reportSyncResult(false);
       pushToast('error', 'Error al reasignar. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleSaveOperator = async (e) => {
     e.preventDefault();
     if (!newOp.name || !canManageOperators) return;
-    if (!TE_AREAS.includes(newOp.zone)) {
-      pushToast('warning', 'Selecciona el área de trabajo.');
-      return;
-    }
-    if (!FORKLIFT_TYPES.includes(newOp.equipment)) {
-      pushToast('warning', 'Selecciona el tipo de equipo.');
-      return;
-    }
-
+    if (!TE_AREAS.includes(newOp.zone)) { pushToast('warning', 'Selecciona el área de trabajo.'); return; }
+    if (!FORKLIFT_TYPES.includes(newOp.equipment)) { pushToast('warning', 'Selecciona el tipo de equipo.'); return; }
     const socioNumber = String(newOp.socioNumber || '').trim();
-    if (!socioNumber) {
-      pushToast('warning', 'Escribe el # de socio.');
-      return;
-    }
+    if (!socioNumber) { pushToast('warning', 'Escribe el # de socio.'); return; }
     const socioDuplicado = operators.find(op =>
       String(op.socioNumber || '').trim().toLowerCase() === socioNumber.toLowerCase() &&
       (!editingOperator || op.id !== editingOperator.id)
     );
-    if (socioDuplicado) {
-      pushToast('warning', `El # de socio ${socioNumber} ya pertenece a ${socioDuplicado.name}.`, { duration: 5000 });
-      return;
-    }
-
+    if (socioDuplicado) { pushToast('warning', `El # de socio ${socioNumber} ya pertenece a ${socioDuplicado.name}.`, { duration: 5000 }); return; }
     isUpdatingRef.current = true;
     const previousOps = operators;
     let updatedOps;
-
-    if (editingOperator) {
-      updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp, socioNumber } : op);
-    } else {
+    if (editingOperator) updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp, socioNumber } : op);
+    else {
       const maxIdNum = operators.reduce((max, op) => {
         const num = parseInt(op.id.replace(/\D/g, ''), 10);
         return !isNaN(num) && num > max ? num : max;
@@ -1664,12 +1431,9 @@ export default function App() {
       const newId = `M-${maxIdNum + 1}`;
       updatedOps = [...operators, { id: newId, ...newOp, socioNumber, status: 'Activo' }];
     }
-
     setOperators(updatedOps);
-    setIsAddOperatorOpen(false);
-    setEditingOperator(null);
+    setIsAddOperatorOpen(false); setEditingOperator(null);
     setSyncStatus('saving');
-
     try {
       await withTimeout(redis.set('sf_operators', updatedOps), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
@@ -1679,9 +1443,7 @@ export default function App() {
       setOperators(previousOps);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar operador. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleDeleteOperator = async (operatorId) => {
@@ -1701,9 +1463,7 @@ export default function App() {
         setOperators(previousOps);
         reportSyncResult(false);
         pushToast('error', 'Error al eliminar. Cambio revertido.');
-      } finally {
-        setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-      }
+      } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
     }
   };
 
@@ -1712,30 +1472,20 @@ export default function App() {
     const op = operators.find(o => o.id === newVac.operatorId);
     if (!op) { setVacDateError('Selecciona un operador válido.'); return; }
     if (!newVac.startDate || !newVac.endDate) { setVacDateError('Selecciona ambas fechas.'); return; }
-    if (newVac.endDate < newVac.startDate) {
-      setVacDateError('La fecha de fin no puede ser anterior a la fecha de inicio.');
-      return;
-    }
+    if (newVac.endDate < newVac.startDate) { setVacDateError('La fecha de fin no puede ser anterior a la fecha de inicio.'); return; }
     setVacDateError('');
-
     isUpdatingRef.current = true;
     setSyncStatus('saving');
     const newReq = {
-      id: generateId(),
-      operatorId: op.id,
-      operatorName: op.name,
-      startDate: newVac.startDate,
-      endDate: newVac.endDate,
-      type: newVac.type,
-      status: 'Pendiente',
+      id: generateId(), operatorId: op.id, operatorName: op.name,
+      startDate: newVac.startDate, endDate: newVac.endDate,
+      type: newVac.type, status: 'Pendiente',
       reason: newVac.reason || 'Sin motivo especificado'
     };
-
     const previousVac = vacationRequests;
     const updatedVac = [newReq, ...vacationRequests];
     setVacationRequests(updatedVac);
     setIsRequestVacationOpen(false);
-
     try {
       await withTimeout(redis.set('sf_vacations', updatedVac), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
@@ -1745,9 +1495,7 @@ export default function App() {
       setVacationRequests(previousVac);
       reportSyncResult(false);
       pushToast('error', 'Error al registrar solicitud. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleCancelVacationRequest = async (id) => {
@@ -1767,9 +1515,7 @@ export default function App() {
       setVacationRequests(previousVac);
       reportSyncResult(false);
       pushToast('error', 'Error al cancelar. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleVacationStatus = async (id, newStatus) => {
@@ -1781,14 +1527,12 @@ export default function App() {
     const previousSchedule = scheduleData;
     const updatedVac = vacationRequests.map(r => r.id === id ? { ...r, status: newStatus } : r);
     setVacationRequests(updatedVac);
-
     let updatedSchedule = { ...scheduleData };
     if (newStatus === 'Aprobado' && req) {
       let shiftCode = 'DES';
       if (req.type === 'Vacaciones') shiftCode = 'VAC';
       else if (req.type === 'Incapacidad') shiftCode = 'INC';
       else if (req.type === 'Día de Descanso Especial' || req.type === 'Permiso Personal') shiftCode = 'DES';
-
       const [sY, sM, sD] = req.startDate.split('-').map(Number);
       const [eY, eM, eD] = req.endDate.split('-').map(Number);
       let curr = new Date(sY, sM - 1, sD);
@@ -1800,23 +1544,17 @@ export default function App() {
       }
       setScheduleData(updatedSchedule);
     }
-
     try {
       await withTimeout(redis.set('sf_vacations', updatedVac), LOAD_TIMEOUT_MS);
-      if (newStatus === 'Aprobado' && req) {
-        await withTimeout(redis.set('sf_scheduleData', updatedSchedule), LOAD_TIMEOUT_MS);
-      }
+      if (newStatus === 'Aprobado' && req) await withTimeout(redis.set('sf_scheduleData', updatedSchedule), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       pushToast('success', `Solicitud marcada como ${newStatus}`);
     } catch (error) {
       console.error('Error al actualizar estado del permiso:', error);
-      setVacationRequests(previousVac);
-      setScheduleData(previousSchedule);
+      setVacationRequests(previousVac); setScheduleData(previousSchedule);
       reportSyncResult(false);
       pushToast('error', 'Error al actualizar. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleCreateOvertime = async (e) => {
@@ -1826,32 +1564,22 @@ export default function App() {
     if (!op) { setOtError('Selecciona un operador válido.'); return; }
     if (!newOt.date) { setOtError('Selecciona la fecha.'); return; }
     if (!hours || hours <= 0 || hours > 12) { setOtError('Las horas deben estar entre 0.5 y 12.'); return; }
-    if (lockedCells.has(`${op.id}_${newOt.date}`)) {
-      setOtError(`${op.name} tiene una ausencia aprobada ese día.`);
-      return;
-    }
+    if (lockedCells.has(`${op.id}_${newOt.date}`)) { setOtError(`${op.name} tiene una ausencia aprobada ese día.`); return; }
     setOtError('');
-
     isUpdatingRef.current = true;
     setSyncStatus('saving');
     const newReq = {
-      id: generateId(),
-      operatorId: op.id,
-      operatorName: op.name,
-      date: newOt.date,
-      hours,
-      type: newOt.type,
+      id: generateId(), operatorId: op.id, operatorName: op.name,
+      date: newOt.date, hours, type: newOt.type,
       reason: newOt.reason.trim() || 'Sin motivo especificado',
       status: 'Pendiente',
       createdBy: currentUser?.name || '',
       createdAt: new Date().toISOString()
     };
-
     const previousOt = overtimeRequests;
     const updatedOt = [newReq, ...overtimeRequests];
     setOvertimeRequests(updatedOt);
     setIsOvertimeOpen(false);
-
     try {
       await withTimeout(redis.set('sf_overtime', updatedOt), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
@@ -1861,9 +1589,7 @@ export default function App() {
       setOvertimeRequests(previousOt);
       reportSyncResult(false);
       pushToast('error', 'Error al registrar horas extras. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleOvertimeStatus = async (id, newStatus) => {
@@ -1877,7 +1603,6 @@ export default function App() {
       ? { ...r, status: newStatus, reviewedBy: currentUser?.name || '', reviewedAt: new Date().toISOString() }
       : r);
     setOvertimeRequests(updatedOt);
-
     try {
       await withTimeout(redis.set('sf_overtime', updatedOt), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
@@ -1886,20 +1611,15 @@ export default function App() {
         const weekDates = getWeekDatesFromDate(req.date);
         const total = sumOvertime(updatedOt, req.operatorId, weekDates);
         const level = getOvertimeLevel(total);
-        if (level === 'danger') {
-          pushToast('error', `ALERTA: ${req.operatorName} llega a ${total.toFixed(1)}h extra en esa semana (alerta desde ${OT_ALERT_HOURS}h).`, { duration: 8000 });
-        } else if (level === 'warning') {
-          pushToast('warning', `${req.operatorName} llega a ${total.toFixed(1)}h extra en esa semana (señal desde ${OT_WARN_HOURS}h).`, { duration: 7000 });
-        }
+        if (level === 'danger') pushToast('error', `ALERTA: ${req.operatorName} llega a ${total.toFixed(1)}h extra en esa semana (alerta desde ${OT_ALERT_HOURS}h).`, { duration: 8000 });
+        else if (level === 'warning') pushToast('warning', `${req.operatorName} llega a ${total.toFixed(1)}h extra en esa semana (señal desde ${OT_WARN_HOURS}h).`, { duration: 7000 });
       }
     } catch (error) {
       console.error('Error al actualizar horas extras:', error);
       setOvertimeRequests(previousOt);
       reportSyncResult(false);
       pushToast('error', 'Error al actualizar. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleDeleteOvertime = async (id) => {
@@ -1919,9 +1639,7 @@ export default function App() {
       setOvertimeRequests(previousOt);
       reportSyncResult(false);
       pushToast('error', 'Error al eliminar. Cambio revertido.');
-    } finally {
-      setTimeout(() => { isUpdatingRef.current = false; }, 2500);
-    }
+    } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
   };
 
   const handleExportExecutivePDF = async () => {
@@ -1932,10 +1650,8 @@ export default function App() {
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const W = pdf.internal.pageSize.getWidth();
       const H = pdf.internal.pageSize.getHeight();
-
       pdf.setFillColor(2, 31, 18);
       pdf.rect(0, 0, W, H, 'F');
-
       pdf.setFillColor(0, 71, 31);
       pdf.rect(0, 0, W, 25, 'F');
       pdf.setTextColor(255, 255, 255);
@@ -1944,16 +1660,13 @@ export default function App() {
       pdf.setFontSize(9);
       pdf.setTextColor(167, 243, 208);
       pdf.text(`Semana del ${reportWeekDays[0].dayNumber} ${reportWeekDays[0].monthName} al ${reportWeekDays[6].dayNumber} ${reportWeekDays[6].monthName}`, 14, 19);
-
       const totalOps = operators.length;
       const licenseOk = operators.filter(op => {
         if (!op.licenseExpiry) return false;
         const exp = new Date(op.licenseExpiry + 'T00:00:00');
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = new Date(); today.setHours(0, 0, 0, 0);
         return exp >= today;
       }).length;
-
       let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
       reportWeekDays.forEach(day => {
         operators.forEach(op => {
@@ -1965,14 +1678,12 @@ export default function App() {
       });
       const coveragePct = totalSlots > 0 ? Math.round((totalWorked / totalSlots) * 100) : 0;
       const absentPct = totalSlots > 0 ? Math.round((totalAbsent / totalSlots) * 100) : 0;
-
       const kpis = [
         { label: 'Cobertura', value: `${coveragePct}%`, color: [16, 185, 129] },
         { label: 'Ausentismo', value: `${absentPct}%`, color: [239, 68, 68] },
         { label: 'Licencias OK', value: `${licenseOk}/${totalOps}`, color: [59, 130, 246] },
         { label: 'Operadores', value: `${totalOps}`, color: [168, 85, 247] }
       ];
-
       const kpiY = 32;
       const kpiH = 20;
       const kpiW = (W - 28 - 9) / 4;
@@ -1990,13 +1701,11 @@ export default function App() {
         pdf.setFontSize(14);
         pdf.text(kpi.value, x + 3, kpiY + 15);
       });
-
       let y = kpiY + kpiH + 10;
       pdf.setTextColor(167, 243, 208);
       pdf.setFontSize(11);
       pdf.text('Cobertura por día', 14, y);
       y += 6;
-
       pdf.setFontSize(8);
       pdf.setTextColor(148, 163, 184);
       pdf.text('Día', 16, y);
@@ -2009,7 +1718,6 @@ export default function App() {
       pdf.setDrawColor(30, 100, 60);
       pdf.line(14, y, W - 14, y);
       y += 5;
-
       reportWeekDays.forEach(day => {
         const counts = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
         operators.forEach(op => {
@@ -2026,13 +1734,11 @@ export default function App() {
         pdf.text(String(counts.VAC + counts.INC), 165, y);
         y += 6;
       });
-
       y += 6;
       pdf.setTextColor(167, 243, 208);
       pdf.setFontSize(11);
       pdf.text(`Horas extra por operador (semana actual) · T.E de ${formatMonthLabel(reportTeMonth)}`, 14, y);
       y += 6;
-
       pdf.setFontSize(8);
       pdf.setTextColor(148, 163, 184);
       pdf.text('Operador', 16, y);
@@ -2046,7 +1752,6 @@ export default function App() {
       y += 4;
       pdf.line(14, y, W - 14, y);
       y += 5;
-
       const sortedByHours = [...operators].map(op => {
         const weekDates = reportWeekDays.map(d => d.dateStr);
         let totalH = 0;
@@ -2061,7 +1766,6 @@ export default function App() {
         const otH = sumOvertime(overtimeRequests, op.id, weekDates);
         return { ...op, totalH: totalH + otH, otH, c };
       }).sort((a, b) => b.totalH - a.totalH);
-
       sortedByHours.forEach(op => {
         if (y > H - 25) return;
         pdf.setTextColor(255, 255, 255);
@@ -2079,30 +1783,20 @@ export default function App() {
         pdf.setTextColor(16, 185, 129);
         pdf.text(`${op.totalH.toFixed(1)}h`, 168, y);
         pdf.setTextColor(255, 255, 255);
-        const teVal = weekTeStats.perOp[op.id]?.te ?? 0;
-        pdf.text(fmtTE(teVal), 185, y);
+        pdf.text(fmtTE(weekTeStats.perOp[op.id]?.te ?? 0), 185, y);
         y += 5.5;
       });
-
       pdf.setFontSize(7);
       pdf.setTextColor(100, 116, 139);
       pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
-
       const pdfBlob = pdf.output('blob');
       const filename = `Reporte_Ejecutivo_${reportWeekStart}.pdf`;
-
-      if (isMobileDevice()) {
-        setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
-      } else {
-        forceDownload(pdfBlob, filename);
-        pushToast('success', 'Reporte descargado');
-      }
+      if (isMobileDevice()) setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
+      else { forceDownload(pdfBlob, filename); pushToast('success', 'Reporte descargado'); }
     } catch (error) {
       console.error('Error al generar reporte:', error);
       pushToast('error', 'No se pudo generar el reporte');
-    } finally {
-      setIsExporting(false);
-    }
+    } finally { setIsExporting(false); }
   };
 
   if (!currentUser) {
@@ -2117,49 +1811,22 @@ export default function App() {
             <h2 className="text-2xl font-bold text-white tracking-wide">ShiftForklift</h2>
             <p className="text-xs text-emerald-300/80 mt-1">Iniciar Sesión para acceder al control de turnos</p>
           </div>
-
           <form onSubmit={handleLogin} className="space-y-4 text-xs">
-            {loginError && (
-              <div className="p-3 bg-red-950/80 border border-red-800 rounded-xl text-red-200 text-center font-bold">
-                {loginError}
-              </div>
-            )}
+            {loginError && <div className="p-3 bg-red-950/80 border border-red-800 rounded-xl text-red-200 text-center font-bold">{loginError}</div>}
             <div>
               <label className="block text-emerald-300 font-bold mb-1">Correo Electrónico</label>
-              <input
-                type="email"
-                required
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm"
-              />
+              <input type="email" required value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm" />
             </div>
             <div>
               <label className="block text-emerald-300 font-bold mb-1">Contraseña</label>
               <div className="relative">
-                <input
-                  type={showLoginPass ? 'text' : 'password'}
-                  required
-                  value={loginPass}
-                  onChange={(e) => setLoginPass(e.target.value)}
-                  disabled={!!lockoutUntil}
-                  className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 pr-10 text-white focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowLoginPass(v => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-400 hover:text-emerald-200"
-                  tabIndex={-1}
-                >
+                <input type={showLoginPass ? 'text' : 'password'} required value={loginPass} onChange={(e) => setLoginPass(e.target.value)} disabled={!!lockoutUntil} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 pr-10 text-white focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50" />
+                <button type="button" onClick={() => setShowLoginPass(v => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-400 hover:text-emerald-200" tabIndex={-1}>
                   {showLoginPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
-            <button
-              type="submit"
-              disabled={!!lockoutUntil}
-              className="w-full py-3 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition shadow-lg text-sm mt-2"
-            >
+            <button type="submit" disabled={!!lockoutUntil} className="w-full py-3 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition shadow-lg text-sm mt-2">
               {lockoutUntil ? `Bloqueado (${lockoutRemaining}s)` : 'Ingresar al Sistema'}
             </button>
           </form>
@@ -2182,10 +1849,7 @@ export default function App() {
             <span className="text-sm font-bold tracking-wide">Cargando datos…</span>
           </div>
           <div className="w-full h-1.5 rounded-full bg-emerald-950 overflow-hidden border border-emerald-900">
-            <div
-              className={`h-full rounded-full transition-all duration-1000 ease-linear ${isSlow ? 'bg-amber-500' : 'bg-emerald-500'}`}
-              style={{ width: `${Math.max(progress, 6)}%` }}
-            />
+            <div className={`h-full rounded-full transition-all duration-1000 ease-linear ${isSlow ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.max(progress, 6)}%` }} />
           </div>
           {isOffline ? (
             <p className="text-xs text-red-300 font-semibold">Sin conexión a internet. Esperando a que vuelva la señal…</p>
@@ -2195,10 +1859,7 @@ export default function App() {
             <p className="text-[11px] text-emerald-500">Sincronizando con la base de datos</p>
           )}
           {(isSlow || isOffline) && (
-            <button
-              onClick={loadCloudData}
-              className="mt-1 px-4 py-2 bg-emerald-950 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 transition"
-            >
+            <button onClick={loadCloudData} className="mt-1 px-4 py-2 bg-emerald-950 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 transition">
               <RefreshCw className="w-3.5 h-3.5" /> Reintentar ahora
             </button>
           )}
@@ -2216,16 +1877,10 @@ export default function App() {
           </div>
           <h2 className="text-lg font-bold text-white mb-2">Error de conexión</h2>
           <p className="text-xs text-emerald-200/80 mb-5">{loadError}</p>
-          <button
-            onClick={loadCloudData}
-            className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-2"
-          >
+          <button onClick={loadCloudData} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition shadow-lg text-sm flex items-center justify-center gap-2">
             <RefreshCw className="w-4 h-4" /> Reintentar
           </button>
-          <button
-            onClick={handleLogout}
-            className="w-full mt-2 py-2 bg-transparent hover:bg-red-950/60 text-red-300 font-bold rounded-xl transition text-xs border border-red-900/60"
-          >
+          <button onClick={handleLogout} className="w-full mt-2 py-2 bg-transparent hover:bg-red-950/60 text-red-300 font-bold rounded-xl transition text-xs border border-red-900/60">
             Cerrar Sesión
           </button>
         </div>
@@ -2235,7 +1890,6 @@ export default function App() {
 
   const selectedOperator = selectedCell ? operators.find(o => o.id === selectedCell.operatorId) : null;
   const ActiveShiftIcon = SHIFT_TYPES[activeShiftCode].icon;
-
   const reassignTarget = reassignModal ? operators.find(o => o.id === reassignModal.operatorId) : null;
   const reassignCandidates = reassignModal
     ? getSuitableReplacements(reassignModal.operatorId, reassignModal.dateStr, reassignShift, operators, scheduleData, lockedCells, overtimeRequests)
@@ -2246,15 +1900,7 @@ export default function App() {
       <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
         <div className="pointer-events-auto flex flex-col gap-2">
           {toasts.map(t => (
-            <Toast
-              key={t.id}
-              toast={t}
-              onDismiss={() => dismissToast(t.id)}
-              onUndo={() => {
-                if (t.undoAction) t.undoAction();
-                dismissToast(t.id);
-              }}
-            />
+            <Toast key={t.id} toast={t} onDismiss={() => dismissToast(t.id)} onUndo={() => { if (t.undoAction) t.undoAction(); dismissToast(t.id); }} />
           ))}
         </div>
       </div>
@@ -2271,7 +1917,6 @@ export default function App() {
               <p className="text-[10px] sm:text-xs text-emerald-300/80">Gestión de Turnos y Personal</p>
             </div>
           </div>
-
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
             <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
@@ -2283,7 +1928,6 @@ export default function App() {
               </button>
             )}
           </nav>
-
           <div className="flex items-center space-x-2 sm:space-x-3">
             {syncStatus !== 'idle' && (
               <div className={`hidden sm:flex items-center space-x-1.5 text-[10px] font-bold px-2.5 py-1 rounded-lg border ${
@@ -2296,24 +1940,15 @@ export default function App() {
                 {syncStatus === 'error' && <><CloudOff className="w-3 h-3" /><span>Error</span></>}
               </div>
             )}
-
             {licenseAlerts.length > 0 && (
-              <button
-                onClick={() => { setActiveTab('operators'); setShowLicenseAlerts(true); }}
-                className="relative p-1.5 sm:p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-lg sm:rounded-xl transition"
-              >
+              <button onClick={() => { setActiveTab('operators'); setShowLicenseAlerts(true); }} className="relative p-1.5 sm:p-2 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 rounded-lg sm:rounded-xl transition">
                 <Bell className="w-4 h-4" />
-                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">
-                  {licenseAlerts.length}
-                </span>
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-extrabold w-4 h-4 rounded-full flex items-center justify-center">{licenseAlerts.length}</span>
               </button>
             )}
-
             <div className="text-right hidden sm:block">
               <div className="text-xs font-bold text-white truncate max-w-[100px]">{currentUser.name}</div>
-              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${currentUser.role === 'Admin' ? 'bg-red-900 text-red-200' : currentUser.role === 'Supervisor' ? 'bg-emerald-900 text-emerald-200' : 'bg-amber-950 text-amber-200'}`}>
-                {currentUser.role}
-              </span>
+              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${currentUser.role === 'Admin' ? 'bg-red-900 text-red-200' : currentUser.role === 'Supervisor' ? 'bg-emerald-900 text-emerald-200' : 'bg-amber-950 text-amber-200'}`}>{currentUser.role}</span>
             </div>
             <button onClick={handleLogout} className="p-1.5 sm:p-2 bg-red-950/80 hover:bg-red-800 border border-red-800 text-red-200 rounded-lg sm:rounded-xl transition" title="Cerrar Sesión">
               <LogOut className="w-4 h-4" />
@@ -2341,9 +1976,7 @@ export default function App() {
           <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${isOffline ? 'bg-red-950/80 border-red-800 text-red-200' : 'bg-amber-950/80 border-amber-700/70 text-amber-200'}`}>
             <CloudOff className="w-4 h-4 shrink-0" />
             <span className="flex-1">
-              {isOffline
-                ? 'Sin conexión a internet. Lo que ves puede estar desactualizado y los cambios no se guardarán hasta que vuelva la señal.'
-                : 'El servidor responde lento o no responde. Reintentando automáticamente; lo que ves puede estar desactualizado.'}
+              {isOffline ? 'Sin conexión a internet. Lo que ves puede estar desactualizado y los cambios no se guardarán hasta que vuelva la señal.' : 'El servidor responde lento o no responde. Reintentando automáticamente; lo que ves puede estar desactualizado.'}
             </span>
           </div>
         </div>
@@ -2364,7 +1997,6 @@ export default function App() {
                 <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 shrink-0" />
               </div>
             )}
-
             {!isHistoricalWeek && lockedCellsInView > 0 && (
               <div className="bg-purple-950/40 border border-purple-700/40 rounded-lg px-3 py-1.5 flex items-center justify-center gap-2">
                 <Lock className="w-3.5 h-3.5 text-purple-300 shrink-0" />
@@ -2373,45 +2005,31 @@ export default function App() {
                 </p>
               </div>
             )}
-
             <div className="bg-[#003818] border border-emerald-800/70 rounded-xl p-2.5 flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <button onClick={() => {
                     const [y, m, d] = currentWeekStart.split('-').map(Number);
-                    const prevWeek = new Date(y, m - 1, d - 7);
-                    setCurrentWeekStart(formatDateLocal(prevWeek));
+                    setCurrentWeekStart(formatDateLocal(new Date(y, m - 1, d - 7)));
                   }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
-
                   <div className="text-[11px] sm:text-xs font-bold text-white bg-[#02180d] px-2.5 py-1.5 rounded-lg border border-emerald-900 flex items-center gap-1.5">
                     {isHistoricalWeek && <History className="w-3 h-3 text-slate-400" />}
                     {isCurrentWeek && <Activity className="w-3 h-3 text-emerald-400" />}
                     <span className="whitespace-nowrap">{weekDays[0].dayNumber} {weekDays[0].monthName} - {weekDays[6].dayNumber} {weekDays[6].monthName}</span>
                   </div>
-
                   <button onClick={() => {
                     const [y, m, d] = currentWeekStart.split('-').map(Number);
-                    const nextWeek = new Date(y, m - 1, d + 7);
-                    setCurrentWeekStart(formatDateLocal(nextWeek));
+                    setCurrentWeekStart(formatDateLocal(new Date(y, m - 1, d + 7)));
                   }} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
                 </div>
-
                 <div className="flex items-center gap-1.5">
                   {!isCurrentWeek && (
-                    <button
-                      onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())}
-                      className="px-2 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1"
-                    >
+                    <button onClick={() => setCurrentWeekStart(getMondayOfCurrentWeek())} className="px-2 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1">
                       <Activity className="w-3 h-3" /> Hoy
                     </button>
                   )}
-
                   <div className="relative" ref={exportMenuRef}>
-                    <button
-                      disabled={isExporting}
-                      onClick={() => setShowExportMenu(!showExportMenu)}
-                      className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition border border-emerald-500/50 shadow"
-                    >
+                    <button disabled={isExporting} onClick={() => setShowExportMenu(!showExportMenu)} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition border border-emerald-500/50 shadow">
                       {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                       <span className="hidden sm:inline">Exportar</span>
                     </button>
@@ -2432,58 +2050,29 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
               <div className="flex items-center gap-2">
                 <div className="relative flex-1 sm:flex-none sm:w-56 lg:w-72">
                   <Search className="w-3.5 h-3.5 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    placeholder="Buscar nombre o # socio..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
-                  />
+                  <input type="text" placeholder="Buscar nombre o # socio..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700" />
                 </div>
-
-                <select
-                  value={selectedZone}
-                  onChange={(e) => setSelectedZone(e.target.value)}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[110px] sm:max-w-none"
-                >
+                <select value={selectedZone} onChange={(e) => setSelectedZone(e.target.value)} className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[110px] sm:max-w-none">
                   {WAREHOUSE_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
-
-                <select
-                  value={selectedEquipment}
-                  onChange={(e) => setSelectedEquipment(e.target.value)}
-                  className="hidden sm:block bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[160px]"
-                >
+                <select value={selectedEquipment} onChange={(e) => setSelectedEquipment(e.target.value)} className="hidden sm:block bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-[11px] text-emerald-200 focus:outline-none max-w-[160px]">
                   <option value="Todos los equipos">Todos los equipos</option>
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                 </select>
-
-                <button
-                  onClick={() => setOnlyExpiringLicenses(v => !v)}
-                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 shrink-0 ${
-                    onlyExpiringLicenses
-                      ? 'bg-amber-600 border-amber-400 text-white'
-                      : 'bg-[#02180d] border-emerald-900 text-emerald-300'
-                  }`}
-                  title="Solo licencias críticas (≤30 días)"
-                >
+                <button onClick={() => setOnlyExpiringLicenses(v => !v)} className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition flex items-center gap-1 shrink-0 ${
+                  onlyExpiringLicenses ? 'bg-amber-600 border-amber-400 text-white' : 'bg-[#02180d] border-emerald-900 text-emerald-300'
+                }`} title="Solo licencias críticas (≤30 días)">
                   <AlertCircle className="w-3.5 h-3.5" />
                 </button>
-
                 {activeFiltersCount > 0 && (
-                  <button
-                    onClick={clearAllFilters}
-                    className="px-2 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shrink-0"
-                  >
+                  <button onClick={clearAllFilters} className="px-2 py-1.5 bg-red-950 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shrink-0">
                     <FilterX className="w-3.5 h-3.5" /> {activeFiltersCount}
                   </button>
                 )}
               </div>
-
               {activeFiltersCount > 0 && (
                 <div className="bg-cyan-950/40 border border-cyan-700/40 rounded-lg px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-cyan-200">
                   <Filter className="w-3 h-3 text-cyan-300 shrink-0" />
@@ -2498,17 +2087,11 @@ export default function App() {
                   const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                   const isSelected = day.dateStr === selectedMobileDay;
                   return (
-                    <button
-                      key={day.dateStr}
-                      onClick={() => setSelectedMobileDay(day.dateStr)}
-                      className={`shrink-0 flex flex-col items-center justify-center px-2.5 py-1.5 rounded-lg border transition min-w-[50px] ${
-                        isSelected
-                          ? 'bg-emerald-600 border-emerald-400 text-white shadow-md'
-                          : isToday
-                          ? 'bg-emerald-950/60 border-emerald-700 text-emerald-200'
-                          : 'bg-[#02180d] border-emerald-900 text-emerald-300'
-                      }`}
-                    >
+                    <button key={day.dateStr} onClick={() => setSelectedMobileDay(day.dateStr)} className={`shrink-0 flex flex-col items-center justify-center px-2.5 py-1.5 rounded-lg border transition min-w-[50px] ${
+                      isSelected ? 'bg-emerald-600 border-emerald-400 text-white shadow-md'
+                      : isToday ? 'bg-emerald-950/60 border-emerald-700 text-emerald-200'
+                      : 'bg-[#02180d] border-emerald-900 text-emerald-300'
+                    }`}>
                       <span className="text-[10px] font-bold uppercase">{day.dayName}</span>
                       <span className={`text-base font-extrabold ${day.isWeekend && !isSelected ? 'text-red-400' : ''}`}>{day.dayNumber}</span>
                       {isToday && <span className="text-[8px] font-bold uppercase tracking-wider">Hoy</span>}
@@ -2516,7 +2099,6 @@ export default function App() {
                   );
                 })}
               </div>
-
               <div className="flex flex-col gap-1.5">
                 {filteredOperators.map(op => {
                   const cellKey = `${op.id}_${selectedMobileDay}`;
@@ -2525,32 +2107,12 @@ export default function App() {
                   const IconComp = shift.icon;
                   const isLockedByAbsence = lockedCells.has(cellKey);
                   const editable = canEditCell(op.id, selectedMobileDay);
-
                   return (
-                    <button
-                      key={op.id}
-                      disabled={!editable && !isLockedByAbsence}
-                      onClick={() => {
-                        if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) {
-                          setReassignModal({ operatorId: op.id, dateStr: selectedMobileDay });
-                          setReassignShift('M');
-                        } else if (editable) {
-                          setSelectedCell({ operatorId: op.id, dateStr: selectedMobileDay, currentShift: shiftCode });
-                        }
-                      }}
-                      className={`w-full flex items-center gap-2.5 p-2 rounded-lg border text-left ${shift.color} ${
-                        isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60' : ''
-                      } ${!editable && !isLockedByAbsence ? 'opacity-60' : ''}`}
-                      style={{
-                        transform: 'translateZ(0)',
-                        WebkitBackfaceVisibility: 'hidden',
-                        backfaceVisibility: 'hidden'
-                      }}
-                    >
-                      <div
-                        className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center border ${shift.color}`}
-                        style={{ transform: 'translateZ(0)' }}
-                      >
+                    <button key={op.id} disabled={!editable && !isLockedByAbsence} onClick={() => {
+                      if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) { setReassignModal({ operatorId: op.id, dateStr: selectedMobileDay }); setReassignShift('M'); }
+                      else if (editable) setSelectedCell({ operatorId: op.id, dateStr: selectedMobileDay, currentShift: shiftCode });
+                    }} className={`w-full flex items-center gap-2.5 p-2 rounded-lg border text-left ${shift.color} ${isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60' : ''} ${!editable && !isLockedByAbsence ? 'opacity-60' : ''}`} style={{ transform: 'translateZ(0)', WebkitBackfaceVisibility: 'hidden', backfaceVisibility: 'hidden' }}>
+                      <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center border ${shift.color}`} style={{ transform: 'translateZ(0)' }}>
                         <IconComp className="w-4 h-4" />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -2577,7 +2139,6 @@ export default function App() {
                     </button>
                   );
                 })}
-
                 {filteredOperators.length === 0 && (
                   <div className="bg-[#002812] border border-emerald-800/80 rounded-xl p-8 text-center">
                     {operators.length === 0 ? (
@@ -2589,10 +2150,7 @@ export default function App() {
                       <>
                         <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
                         <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide</p>
-                        <button
-                          onClick={clearAllFilters}
-                          className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
-                        >
+                        <button onClick={clearAllFilters} className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5">
                           <FilterX className="w-3.5 h-3.5" /> Limpiar
                         </button>
                       </>
@@ -2603,10 +2161,7 @@ export default function App() {
             </div>
 
             <div className="hidden md:block">
-              <div
-                ref={scheduleRef}
-                className={`bg-[#002812] border rounded-2xl overflow-hidden shadow-2xl p-1 ${isHistoricalWeek ? 'border-slate-700/70 opacity-[0.97]' : 'border-emerald-800/80'}`}
-              >
+              <div ref={scheduleRef} className={`bg-[#002812] border rounded-2xl overflow-hidden shadow-2xl p-1 ${isHistoricalWeek ? 'border-slate-700/70 opacity-[0.97]' : 'border-emerald-800/80'}`}>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse min-w-[900px]">
                     <thead>
@@ -2646,43 +2201,29 @@ export default function App() {
                             const isToday = day.dateStr === formatDateLocal(now) && isCurrentWeek;
                             const isCurrentShiftForMe = isToday && shiftCode === activeShiftCode;
                             const isFlashing = flashCells.has(cellKey);
-
                             let tooltip = '';
                             if (isHistoricalWeek) tooltip = 'Semana histórica — solo lectura';
                             else if (isLockedByAbsence) tooltip = 'Bloqueado por ausencia. Clic para buscar reemplazo.';
                             else if (!canEditShifts) tooltip = 'No tienes permisos para editar turnos';
-
                             return (
                               <td key={day.dateStr} className={`p-1.5 text-center border-l border-emerald-900/40 ${isToday ? 'bg-emerald-950/30' : ''}`}>
-                                <button
-                                  disabled={!editable && !isLockedByAbsence}
-                                  onClick={() => {
-                                    if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) {
-                                      setReassignModal({ operatorId: op.id, dateStr: day.dateStr });
-                                      setReassignShift('M');
-                                    } else if (editable) {
-                                      setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode });
-                                    }
-                                  }}
-                                  title={tooltip}
-                                  className={`relative w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${
-                                    !editable && !isLockedByAbsence ? 'cursor-not-allowed' : 'hover:scale-105 transition-transform'
-                                  } ${isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60 shadow-purple-900/40 cursor-pointer' : ''} ${
-                                    isHistoricalWeek ? 'grayscale-[0.35] opacity-90' : ''
-                                  } ${isCurrentShiftForMe ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg' : ''} ${
-                                    isFlashing ? 'ring-2 ring-white/80 shadow-white/40 shadow-lg animate-pulse' : ''
-                                  }`}
-                                >
+                                <button disabled={!editable && !isLockedByAbsence} onClick={() => {
+                                  if (isLockedByAbsence && !isHistoricalWeek && canEditShifts) { setReassignModal({ operatorId: op.id, dateStr: day.dateStr }); setReassignShift('M'); }
+                                  else if (editable) setSelectedCell({ operatorId: op.id, dateStr: day.dateStr, currentShift: shiftCode });
+                                }} title={tooltip} className={`relative w-full py-2 px-1 rounded-xl border text-xs font-bold flex flex-col items-center justify-center ${shift.color} ${
+                                  !editable && !isLockedByAbsence ? 'cursor-not-allowed' : 'hover:scale-105 transition-transform'
+                                } ${isLockedByAbsence && !isHistoricalWeek ? 'ring-2 ring-purple-400/60 shadow-purple-900/40 cursor-pointer' : ''} ${
+                                  isHistoricalWeek ? 'grayscale-[0.35] opacity-90' : ''
+                                } ${isCurrentShiftForMe ? 'ring-2 ring-emerald-400/80 shadow-emerald-500/30 shadow-lg' : ''} ${
+                                  isFlashing ? 'ring-2 ring-white/80 shadow-white/40 shadow-lg animate-pulse' : ''
+                                }`}>
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
                                   {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
                                     <span className="mt-0.5 text-[9px] leading-tight font-semibold text-center opacity-90 px-0.5">{assignments[cellKey]}</span>
                                   )}
                                   {overtimeByCell[cellKey] && (
-                                    <span
-                                      title={overtimeByCell[cellKey].approved > 0 ? 'Horas extras aprobadas' : 'Horas extras pendientes'}
-                                      className={`absolute -top-1 -left-1 text-[9px] leading-none font-extrabold px-1 py-0.5 rounded ${overtimeByCell[cellKey].approved > 0 ? 'bg-amber-500 text-black' : 'bg-[#011a0d] border border-dashed border-amber-400 text-amber-300'}`}
-                                    >
+                                    <span title={overtimeByCell[cellKey].approved > 0 ? 'Horas extras aprobadas' : 'Horas extras pendientes'} className={`absolute -top-1 -left-1 text-[9px] leading-none font-extrabold px-1 py-0.5 rounded ${overtimeByCell[cellKey].approved > 0 ? 'bg-amber-500 text-black' : 'bg-[#011a0d] border border-dashed border-amber-400 text-amber-300'}`}>
                                       +{overtimeByCell[cellKey].approved > 0 ? overtimeByCell[cellKey].approved : overtimeByCell[cellKey].pending}h
                                     </span>
                                   )}
@@ -2707,10 +2248,7 @@ export default function App() {
                               <>
                                 <FilterX className="w-10 h-10 text-cyan-700 mx-auto mb-2" />
                                 <p className="text-cyan-300 font-bold text-sm">Ningún operador coincide con los filtros</p>
-                                <button
-                                  onClick={clearAllFilters}
-                                  className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5"
-                                >
+                                <button onClick={clearAllFilters} className="mt-3 px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition inline-flex items-center gap-1.5">
                                   <FilterX className="w-3.5 h-3.5" /> Limpiar filtros
                                 </button>
                               </>
@@ -2726,14 +2264,9 @@ export default function App() {
 
             {showIndicators ? (
               <div className="relative flex items-center justify-center gap-1.5 flex-wrap pt-1">
-                <button
-                  onClick={() => setShowIndicators(false)}
-                  className="absolute -top-1 right-0 z-10 p-1 bg-[#02180d] hover:bg-emerald-950 border border-emerald-900 rounded-md text-emerald-400 hover:text-emerald-200 transition"
-                  title="Ocultar indicadores"
-                >
+                <button onClick={() => setShowIndicators(false)} className="absolute -top-1 right-0 z-10 p-1 bg-[#02180d] hover:bg-emerald-950 border border-emerald-900 rounded-md text-emerald-400 hover:text-emerald-200 transition" title="Ocultar indicadores">
                   <EyeOff className="w-3.5 h-3.5" />
                 </button>
-
                 {isCurrentWeek ? (
                   <div className="relative flex items-center gap-2 rounded-lg border border-emerald-500/60 bg-gradient-to-r from-emerald-950/90 to-[#003818] px-2.5 py-1.5 shadow-md">
                     <span className="relative flex h-2 w-2 shrink-0">
@@ -2767,11 +2300,7 @@ export default function App() {
               </div>
             ) : (
               <div className="flex items-center justify-center pt-1">
-                <button
-                  onClick={() => setShowIndicators(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 bg-[#02180d] hover:bg-emerald-950 border border-emerald-900 rounded-md text-emerald-400 hover:text-emerald-200 transition text-[11px] font-bold"
-                  title="Mostrar indicadores"
-                >
+                <button onClick={() => setShowIndicators(true)} className="flex items-center gap-1.5 px-2.5 py-1 bg-[#02180d] hover:bg-emerald-950 border border-emerald-900 rounded-md text-emerald-400 hover:text-emerald-200 transition text-[11px] font-bold" title="Mostrar indicadores">
                   <Eye className="w-3.5 h-3.5" />
                   <span>Mostrar indicadores</span>
                 </button>
@@ -2802,7 +2331,6 @@ export default function App() {
                 </div>
               </div>
             )}
-
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 gap-3">
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-white">Plantilla de Montacargistas</h2>
@@ -2818,7 +2346,6 @@ export default function App() {
                 </button>
               )}
             </div>
-
             {operators.length === 0 ? (
               <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
                 <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
@@ -2863,19 +2390,14 @@ export default function App() {
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 gap-3">
               <h2 className="text-base sm:text-lg font-bold text-white">Solicitudes de Ausencia</h2>
-              <button
-                disabled={operators.length === 0}
-                onClick={() => {
-                  setVacDateError('');
-                  setNewVac(prev => ({ ...prev, operatorId: operators[0]?.id || '' }));
-                  setIsRequestVacationOpen(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition"
-              >
+              <button disabled={operators.length === 0} onClick={() => {
+                setVacDateError('');
+                setNewVac(prev => ({ ...prev, operatorId: operators[0]?.id || '' }));
+                setIsRequestVacationOpen(true);
+              }} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
                 <Plus className="w-4 h-4"/><span>Registrar Solicitud</span>
               </button>
             </div>
-
             <div className="md:hidden space-y-2">
               {vacationRequests.map(req => (
                 <div key={req.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3.5">
@@ -2913,7 +2435,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
             <div className="hidden md:block bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -2991,19 +2512,14 @@ export default function App() {
                   );
                 })()}
               </div>
-              <button
-                disabled={operators.length === 0}
-                onClick={() => {
-                  setOtError('');
-                  setNewOt(prev => ({ ...prev, operatorId: operators[0]?.id || '', date: formatDateLocal(new Date()) }));
-                  setIsOvertimeOpen(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition"
-              >
+              <button disabled={operators.length === 0} onClick={() => {
+                setOtError('');
+                setNewOt(prev => ({ ...prev, operatorId: operators[0]?.id || '', date: formatDateLocal(new Date()) }));
+                setIsOvertimeOpen(true);
+              }} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
                 <Plus className="w-4 h-4"/><span>Registrar Horas Extras</span>
               </button>
             </div>
-
             <div className="md:hidden space-y-2">
               {overtimeRequests.map(req => (
                 <div key={req.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3.5">
@@ -3049,7 +2565,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
             <div className="hidden md:block bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -3130,11 +2645,7 @@ export default function App() {
                   <p className="text-xs text-emerald-300">KPIs de la semana seleccionada</p>
                 </div>
               </div>
-              <button
-                onClick={handleExportExecutivePDF}
-                disabled={isExporting}
-                className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition border border-emerald-500/50"
-              >
+              <button onClick={handleExportExecutivePDF} disabled={isExporting} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition border border-emerald-500/50">
                 {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                 Exportar PDF
               </button>
@@ -3160,17 +2671,11 @@ export default function App() {
               </div>
               <label className="flex items-center gap-2 text-[11px] text-emerald-300 font-bold">
                 Ir a un mes
-                <input
-                  type="month"
-                  max={formatDateLocal(new Date()).slice(0, 7)}
-                  value={reportTeMonth}
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    const [yy, mm] = e.target.value.split('-').map(Number);
-                    setReportWeekStart(getMondayOfCurrentWeek(new Date(yy, mm - 1, 1)));
-                  }}
-                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
-                />
+                <input type="month" max={formatDateLocal(new Date()).slice(0, 7)} value={reportTeMonth} onChange={(e) => {
+                  if (!e.target.value) return;
+                  const [yy, mm] = e.target.value.split('-').map(Number);
+                  setReportWeekStart(getMondayOfCurrentWeek(new Date(yy, mm - 1, 1)));
+                }} className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700" />
               </label>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -3189,11 +2694,9 @@ export default function App() {
                 const licenseOk = operators.filter(op => {
                   if (!op.licenseExpiry) return false;
                   const exp = new Date(op.licenseExpiry + 'T00:00:00');
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
                   return exp >= today;
                 }).length;
-
                 return (
                   <>
                     <div className="rounded-2xl border border-emerald-700/60 bg-emerald-950/70 p-3 sm:p-4">
@@ -3361,6 +2864,7 @@ export default function App() {
 
             {reportsView === 'te' && (
               <div className="space-y-5">
+                {/* Selector de mes */}
                 <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => setTeMonth(m => shiftMonth(m, -1))} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
@@ -3370,21 +2874,12 @@ export default function App() {
                       <button onClick={() => setTeMonth(formatDateLocal(new Date()).slice(0, 7))} className="px-2 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition">Mes actual</button>
                     )}
                   </div>
-                  <p className="text-[11px] text-emerald-300">
-                    T.E = horas extra aprobadas del mes ÷ 208
-                  </p>
+                  <p className="text-[11px] text-emerald-300">T.E = horas extra aprobadas del mes ÷ 208</p>
                 </div>
 
-                {/* ✅ H.C vs F.T.E — ahora solo en T.E */}
-                <div className="max-w-xl">
-                  <HCvsFTEChart
-                    hc={hcVsFte.hc}
-                    fte={hcVsFte.fte}
-                    otWeek={hcVsFte.otWeek}
-                  />
-                </div>
-
-                <div className="max-w-xl">
+                {/* ✅ FILA 1: H.C/F.T.E + T.E por área (lado a lado) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <HCvsFTEChart hc={hcVsFte.hc} fte={hcVsFte.fte} otWeek={hcVsFte.otWeek} />
                   <TEBarChart
                     title="T.E por área"
                     subtitle="Horas extra del almacén ÷ 208"
@@ -3401,7 +2896,8 @@ export default function App() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                {/* ✅ FILA 2: T.E por línea de ambos almacenes (lado a lado) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                   {[WAREHOUSE_ZONES[2], WAREHOUSE_ZONES[1]].map(zone => (
                     <TEBarChart
                       key={zone}
@@ -3441,41 +2937,24 @@ export default function App() {
               </div>
               <button onClick={() => { setSelectedCell(null); setApplyToFullWeek(false); }} className="text-emerald-400 hover:text-white p-1"><X className="w-5 h-5"/></button>
             </div>
-
             <div className="mb-4 bg-[#011a0d] p-3 rounded-xl border border-emerald-800 flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Layers className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs font-bold text-emerald-200">Aplicar a toda la semana</span>
               </div>
-              <input
-                type="checkbox"
-                id="applyWeekCheckbox"
-                checked={applyToFullWeek}
-                onChange={(e) => setApplyToFullWeek(e.target.checked)}
-                className="w-4 h-4 accent-emerald-500 cursor-pointer"
-              />
+              <input type="checkbox" id="applyWeekCheckbox" checked={applyToFullWeek} onChange={(e) => setApplyToFullWeek(e.target.checked)} className="w-4 h-4 accent-emerald-500 cursor-pointer" />
             </div>
-
             <div className="mb-4">
               <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1.5">Asignación (turnos M / T / N)</label>
-              <select
-                value={cellAssignment}
-                onChange={(e) => setCellAssignment(e.target.value)}
-                className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-              >
+              <select value={cellAssignment} onChange={(e) => setCellAssignment(e.target.value)} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500">
                 <option value="">Sin asignación</option>
                 {ASSIGNMENTS.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
               <p className="text-[10px] text-emerald-500 mt-1">Elige la asignación y luego toca el turno para guardar.</p>
             </div>
-
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (
-                <button
-                  key={code}
-                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek, cellAssignment)}
-                  className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
-                >
+                <button key={code} onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek, cellAssignment)} className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}>
                   {code}: {config.label}
                 </button>
               ))}
@@ -3497,31 +2976,23 @@ export default function App() {
               </div>
               <button onClick={() => setReassignModal(null)} className="text-emerald-400 hover:text-white p-1"><X className="w-5 h-5"/></button>
             </div>
-
             <div className="mb-3">
               <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1.5">Turno a cubrir</label>
               <div className="grid grid-cols-3 gap-2">
                 {['M', 'T', 'N'].map(code => (
-                  <button
-                    key={code}
-                    onClick={() => setReassignShift(code)}
-                    className={`p-2 rounded-lg border text-xs font-bold transition ${
-                      reassignShift === code
-                        ? SHIFT_TYPES[code].color + ' ring-2 ring-white/60'
-                        : 'bg-[#011a0d] border-emerald-800 text-emerald-300 hover:bg-emerald-950'
-                    }`}
-                  >
+                  <button key={code} onClick={() => setReassignShift(code)} className={`p-2 rounded-lg border text-xs font-bold transition ${
+                    reassignShift === code ? SHIFT_TYPES[code].color + ' ring-2 ring-white/60'
+                    : 'bg-[#011a0d] border-emerald-800 text-emerald-300 hover:bg-emerald-950'
+                  }`}>
                     {SHIFT_TYPES[code].label}
                   </button>
                 ))}
               </div>
             </div>
-
             <div className="flex-1 overflow-y-auto border-t border-emerald-900/60 pt-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold uppercase text-emerald-400">Candidatos ({reassignCandidates.length})</span>
               </div>
-
               {reassignCandidates.length === 0 ? (
                 <div className="text-center py-8">
                   <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-2" />
@@ -3536,11 +3007,7 @@ export default function App() {
                     const borderColor = best ? 'border-emerald-600/60' : ok ? 'border-amber-600/60' : 'border-red-600/60';
                     const bgColor = best ? 'bg-emerald-950/60' : ok ? 'bg-amber-950/40' : 'bg-red-950/40';
                     return (
-                      <button
-                        key={c.id}
-                        onClick={() => handleReassign(c.id)}
-                        className={`w-full text-left p-3 rounded-xl border ${borderColor} ${bgColor}`}
-                      >
+                      <button key={c.id} onClick={() => handleReassign(c.id)} className={`w-full text-left p-3 rounded-xl border ${borderColor} ${bgColor}`}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -3566,7 +3033,6 @@ export default function App() {
                 </div>
               )}
             </div>
-
             <div className="mt-3 pt-3 border-t border-emerald-900/60 flex justify-end">
               <button onClick={() => setReassignModal(null)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold text-xs hover:bg-emerald-900 transition">Cerrar</button>
             </div>
@@ -3724,19 +3190,13 @@ export default function App() {
         <div className="fixed inset-0 bg-black z-[200] flex flex-col">
           <div className="p-3 bg-[#003818] border-b border-emerald-700 flex justify-between items-center shrink-0">
             <div className="min-w-0">
-              <h3 className="text-white font-bold text-sm truncate">
-                {exportPreview.isPdf ? 'Guardar PDF' : 'Guardar imagen'}
-              </h3>
+              <h3 className="text-white font-bold text-sm truncate">{exportPreview.isPdf ? 'Guardar PDF' : 'Guardar imagen'}</h3>
               <p className="text-[10px] text-emerald-300 truncate">{exportPreview.filename}</p>
             </div>
-            <button
-              onClick={() => setExportPreview(null)}
-              className="p-1.5 text-emerald-400 hover:text-white shrink-0"
-            >
+            <button onClick={() => setExportPreview(null)} className="p-1.5 text-emerald-400 hover:text-white shrink-0">
               <X className="w-5 h-5" />
             </button>
           </div>
-
           <div className="flex-1 overflow-auto flex items-center justify-center p-3 bg-[#021f12]">
             {exportPreview.isPdf ? (
               <div className="text-center px-4">
@@ -3750,14 +3210,9 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              <img
-                src={exportPreview.dataUrl}
-                alt="Preview"
-                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-              />
+              <img src={exportPreview.dataUrl} alt="Preview" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
             )}
           </div>
-
           <div className="p-3 bg-[#003818] border-t border-emerald-700 space-y-2 shrink-0">
             {!exportPreview.isPdf && (
               <div className="bg-emerald-950/60 border border-emerald-700/60 rounded-lg px-3 py-2 text-center">
@@ -3766,43 +3221,29 @@ export default function App() {
                 </p>
               </div>
             )}
-
             <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={async () => {
-                  if (navigator.share && navigator.canShare) {
-                    try {
-                      const file = new File([exportPreview.blob], exportPreview.filename, { type: exportPreview.mimeType });
-                      if (navigator.canShare({ files: [file] })) {
-                        await navigator.share({ files: [file], title: exportPreview.filename });
-                        setExportPreview(null);
-                        pushToast('success', 'Compartido');
-                      } else {
-                        pushToast('warning', 'Tu navegador no permite compartir este archivo');
-                      }
-                    } catch (err) {
-                      if (err.name !== 'AbortError') {
-                        pushToast('error', 'No se pudo compartir');
-                      }
-                    }
-                  } else {
-                    pushToast('warning', 'Compartir no está disponible en este navegador');
+              <button onClick={async () => {
+                if (navigator.share && navigator.canShare) {
+                  try {
+                    const file = new File([exportPreview.blob], exportPreview.filename, { type: exportPreview.mimeType });
+                    if (navigator.canShare({ files: [file] })) {
+                      await navigator.share({ files: [file], title: exportPreview.filename });
+                      setExportPreview(null);
+                      pushToast('success', 'Compartido');
+                    } else pushToast('warning', 'Tu navegador no permite compartir este archivo');
+                  } catch (err) {
+                    if (err.name !== 'AbortError') pushToast('error', 'No se pudo compartir');
                   }
-                }}
-                className="py-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
-              >
+                } else pushToast('warning', 'Compartir no está disponible en este navegador');
+              }} className="py-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition">
                 <Share2 className="w-4 h-4" />
                 Compartir
               </button>
-
-              <button
-                onClick={() => {
-                  forceDownload(exportPreview.blob, exportPreview.filename);
-                  pushToast('info', 'Si no se descarga, mantén presionada la imagen');
-                  setExportPreview(null);
-                }}
-                className="py-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
-              >
+              <button onClick={() => {
+                forceDownload(exportPreview.blob, exportPreview.filename);
+                pushToast('info', 'Si no se descarga, mantén presionada la imagen');
+                setExportPreview(null);
+              }} className="py-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition">
                 <Download className="w-4 h-4" />
                 Descargar
               </button>

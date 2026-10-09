@@ -71,6 +71,11 @@ const WAREHOUSE_ZONES = [
   'Almacén de PT'
 ];
 
+const ASSIGNMENTS = [
+  'Línea 10', 'Línea 20', 'Línea 30', 'Línea 40', 'Línea 50', 'Línea 60',
+  'Embarque y Recepción'
+];
+
 const FORKLIFT_TYPES = [
   'Sencillo',
   'Doble'
@@ -407,6 +412,7 @@ export default function App() {
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState([]);
   const [overtimeRequests, setOvertimeRequests] = useState([]);
+  const [assignments, setAssignments] = useState({});
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadSeconds, setLoadSeconds] = useState(0);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
@@ -600,13 +606,15 @@ export default function App() {
     setIsLoaded(false);
     setLoadError('');
     try {
-      const [savedOps, savedSchedule, savedVac, savedOt] = await withTimeout(Promise.all([
+      const [savedOps, savedSchedule, savedVac, savedOt, savedAssign] = await withTimeout(Promise.all([
         redis.get('sf_operators'),
         redis.get('sf_scheduleData'),
         redis.get('sf_vacations'),
         redis.get('sf_overtime'),
+        redis.get('sf_assignments'),
       ]), LOAD_TIMEOUT_MS);
       setPollFailed(false);
+      setAssignments(savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign) ? savedAssign : {});
       setOvertimeRequests(Array.isArray(savedOt) ? savedOt : []);
       setOperators(Array.isArray(savedOps) ? savedOps : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
@@ -654,14 +662,16 @@ export default function App() {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       isPollingRef.current = true;
       try {
-        const [savedOps, savedSchedule, savedVac, savedOt] = await withTimeout(Promise.all([
+        const [savedOps, savedSchedule, savedVac, savedOt, savedAssign] = await withTimeout(Promise.all([
           redis.get('sf_operators'),
           redis.get('sf_scheduleData'),
           redis.get('sf_vacations'),
           redis.get('sf_overtime'),
+          redis.get('sf_assignments'),
         ]), POLL_TIMEOUT_MS);
         setPollFailed(false);
         if (!isUpdatingRef.current) {
+          if (savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign)) setAssignments(savedAssign);
           if (Array.isArray(savedOt)) setOvertimeRequests(savedOt);
           if (Array.isArray(savedOps)) setOperators(savedOps);
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
@@ -688,6 +698,13 @@ export default function App() {
   const [isOvertimeOpen, setIsOvertimeOpen] = useState(false);
   const [otError, setOtError] = useState('');
   const [selectedCell, setSelectedCell] = useState(null);
+  const [cellAssignment, setCellAssignment] = useState('');
+  useEffect(() => {
+    if (selectedCell) {
+      setCellAssignment(assignments[`${selectedCell.operatorId}_${selectedCell.dateStr}`] || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCell]);
 
   const [newOp, setNewOp] = useState({
     name: '', socioNumber: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
@@ -1017,7 +1034,7 @@ export default function App() {
     pushToast('info', 'Filtros limpiados');
   };
 
-  const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false) => {
+  const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false, assignment = '') => {
     if (!canEditShifts) return;
     if (isHistoricalWeek) return;
     const clickedKey = `${operatorId}_${dateStr}`;
@@ -1030,10 +1047,12 @@ export default function App() {
     }
 
     const previousSchedule = { ...scheduleData };
+    const previousAssignments = { ...assignments };
     const previousValue = scheduleData[clickedKey];
     const newValue = shiftCode;
+    const newAssignment = ['M', 'T', 'N'].includes(shiftCode) ? assignment : '';
 
-    if (previousValue === newValue && !isFullWeek) {
+    if (previousValue === newValue && !isFullWeek && (assignments[clickedKey] || '') === newAssignment) {
       setSelectedCell(null);
       setApplyToFullWeek(false);
       return;
@@ -1058,20 +1077,35 @@ export default function App() {
       affectedKeys.push(clickedKey);
     }
 
+    const updatedAssignments = { ...assignments };
+    affectedKeys.forEach(key => {
+      if (newAssignment) updatedAssignments[key] = newAssignment;
+      else delete updatedAssignments[key];
+    });
+
     setScheduleData(updatedSchedule);
+    setAssignments(updatedAssignments);
     setSelectedCell(null);
     setApplyToFullWeek(false);
     triggerFlash(affectedKeys);
 
     try {
-      await withTimeout(redis.set('sf_scheduleData', updatedSchedule), LOAD_TIMEOUT_MS);
+      await withTimeout(Promise.all([
+        redis.set('sf_scheduleData', updatedSchedule),
+        redis.set('sf_assignments', updatedAssignments)
+      ]), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
       const op = operators.find(o => o.id === operatorId);
       const dayLabel = isFullWeek ? 'toda la semana' : dateStr;
-      pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label} (${dayLabel})`, {
+      const assignLabel = newAssignment ? ` · ${newAssignment}` : '';
+      pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label}${assignLabel} (${dayLabel})`, {
         undoAction: () => {
           setScheduleData(previousSchedule);
-          redis.set('sf_scheduleData', previousSchedule).then(() => {
+          setAssignments(previousAssignments);
+          Promise.all([
+            redis.set('sf_scheduleData', previousSchedule),
+            redis.set('sf_assignments', previousAssignments)
+          ]).then(() => {
             pushToast('info', 'Cambio deshecho');
           }).catch(() => {
             pushToast('error', 'No se pudo deshacer');
@@ -1081,6 +1115,7 @@ export default function App() {
     } catch (error) {
       console.error('Error al guardar turno:', error);
       setScheduleData(previousSchedule);
+      setAssignments(previousAssignments);
       reportSyncResult(false);
       pushToast('error', 'Error al guardar. Cambio revertido.');
     } finally {
@@ -2049,7 +2084,10 @@ export default function App() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-[13px] break-words leading-tight">{op.name}</div>
-                        <div className="text-[10px] opacity-80 break-words leading-tight">{op.id} · {op.zone}</div>
+                        <div className="text-[10px] opacity-80 break-words leading-tight">{op.socioNumber || op.id} · {op.zone}</div>
+                        {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
+                          <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/30 border border-white/20">{assignments[cellKey]}</span>
+                        )}
                       </div>
                       <div className="shrink-0 flex items-center gap-1">
                         {overtimeByCell[cellKey] && (
@@ -2117,7 +2155,7 @@ export default function App() {
                         <tr key={op.id} className="hover:bg-[#003517]/50">
                           <td className="py-3 px-4">
                             <div className="font-bold text-sm text-white">{op.name}</div>
-                            <div className="text-xs text-emerald-400/80">{op.id} • {op.zone}</div>
+                            <div className="text-xs text-emerald-400/80">{op.socioNumber || op.id} • {op.zone}</div>
                           </td>
                           {weekDays.map(day => {
                             const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
@@ -2158,6 +2196,9 @@ export default function App() {
                                 >
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
+                                  {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
+                                    <span className="mt-0.5 text-[9px] leading-tight font-semibold text-center opacity-90 px-0.5">{assignments[cellKey]}</span>
+                                  )}
                                   {overtimeByCell[cellKey] && (
                                     <span
                                       title={overtimeByCell[cellKey].approved > 0 ? 'Horas extras aprobadas' : 'Horas extras pendientes'}
@@ -2824,11 +2865,24 @@ export default function App() {
               />
             </div>
 
+            <div className="mb-4">
+              <label className="block text-[10px] font-bold uppercase text-emerald-400 mb-1.5">Asignación (turnos M / T / N)</label>
+              <select
+                value={cellAssignment}
+                onChange={(e) => setCellAssignment(e.target.value)}
+                className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">Sin asignación</option>
+                {ASSIGNMENTS.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <p className="text-[10px] text-emerald-500 mt-1">Elige la asignación y luego toca el turno para guardar.</p>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(SHIFT_TYPES).map(([code, config]) => (
                 <button
                   key={code}
-                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek)}
+                  onClick={() => handleSetShift(selectedCell.operatorId, selectedCell.dateStr, code, applyToFullWeek, cellAssignment)}
                   className={`p-3 rounded-xl border text-left text-xs font-bold transition-all ${config.color}`}
                 >
                   {code}: {config.label}
@@ -2904,7 +2958,7 @@ export default function App() {
                               {ok && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-700 text-white">ACEPTABLE</span>}
                               {bad && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-700 text-white">NO REC.</span>}
                             </div>
-                            <div className="text-[10px] text-emerald-300/80 mt-0.5">{c.id} · {c.zone}</div>
+                            <div className="text-[10px] text-emerald-300/80 mt-0.5">{c.socioNumber || c.id} · {c.zone}</div>
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {c.reasons.map((r, i) => (
                                 <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">{r}</span>

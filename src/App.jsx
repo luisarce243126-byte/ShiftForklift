@@ -1144,6 +1144,11 @@ export default function App() {
   const [selectedZone, setSelectedZone] = useState('Todas las áreas');
   const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
   const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
+  // Filtros independientes para la pestaña Personal (no afectan la matriz).
+  const [personnelSearch, setPersonnelSearch] = useState('');
+  const [personnelZoneFilter, setPersonnelZoneFilter] = useState('Todas las áreas');
+  const [personnelEquipmentFilter, setPersonnelEquipmentFilter] = useState('Todos los equipos');
+  const [personnelLicenseFilter, setPersonnelLicenseFilter] = useState('Todas las licencias');
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
@@ -1502,6 +1507,58 @@ export default function App() {
     setSearchQuery(''); setSelectedZone('Todas las áreas');
     setSelectedEquipment('Todos los equipos'); setOnlyExpiringLicenses(false);
     pushToast('info', 'Filtros limpiados');
+  };
+
+  const filteredPersonnel = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const query = personnelSearch.trim().toLocaleLowerCase('es-MX');
+
+    return operators.filter(op => {
+      const matchesSearch = !query || [op.name, op.id, op.socioNumber]
+        .some(value => String(value ?? '').toLocaleLowerCase('es-MX').includes(query));
+
+      const matchesZone = personnelZoneFilter === 'Todas las áreas'
+        || (personnelZoneFilter === 'Sin área'
+          ? !TE_AREAS.includes(op.zone)
+          : op.zone === personnelZoneFilter);
+
+      const matchesEquipment = personnelEquipmentFilter === 'Todos los equipos'
+        || (personnelEquipmentFilter === 'Sin registrar'
+          ? !FORKLIFT_TYPES.includes(op.equipment)
+          : op.equipment === personnelEquipmentFilter);
+
+      let matchesLicense = true;
+      if (personnelLicenseFilter === 'Sin registrar') {
+        matchesLicense = !op.licenseExpiry;
+      } else if (personnelLicenseFilter !== 'Todas las licencias') {
+        if (!op.licenseExpiry) {
+          matchesLicense = false;
+        } else {
+          const expiry = new Date(`${op.licenseExpiry}T00:00:00`);
+          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
+          if (personnelLicenseFilter === 'Vencida') matchesLicense = diffDays < 0;
+          else if (personnelLicenseFilter === 'Por vencer (30 días)') matchesLicense = diffDays >= 0 && diffDays <= 30;
+          else if (personnelLicenseFilter === 'Vigente') matchesLicense = diffDays > 30;
+        }
+      }
+
+      return matchesSearch && matchesZone && matchesEquipment && matchesLicense;
+    });
+  }, [operators, personnelSearch, personnelZoneFilter, personnelEquipmentFilter, personnelLicenseFilter]);
+
+  const personnelFiltersCount = useMemo(() => (
+    (personnelSearch.trim() ? 1 : 0)
+    + (personnelZoneFilter !== 'Todas las áreas' ? 1 : 0)
+    + (personnelEquipmentFilter !== 'Todos los equipos' ? 1 : 0)
+    + (personnelLicenseFilter !== 'Todas las licencias' ? 1 : 0)
+  ), [personnelSearch, personnelZoneFilter, personnelEquipmentFilter, personnelLicenseFilter]);
+
+  const clearPersonnelFilters = () => {
+    setPersonnelSearch('');
+    setPersonnelZoneFilter('Todas las áreas');
+    setPersonnelEquipmentFilter('Todos los equipos');
+    setPersonnelLicenseFilter('Todas las licencias');
   };
 
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false, assignment = '') => {
@@ -2824,15 +2881,96 @@ export default function App() {
                 </button>
               )}
             </div>
+            {operators.length > 0 && (
+              <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-emerald-200">
+                    <Filter className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs sm:text-sm font-bold">Buscar y filtrar personal</span>
+                  </div>
+                  {personnelFiltersCount > 0 && (
+                    <button
+                      onClick={clearPersonnelFilters}
+                      className="shrink-0 px-2.5 py-1.5 bg-red-950/70 hover:bg-red-900 border border-red-800/80 text-red-200 rounded-lg text-[10px] sm:text-xs font-bold flex items-center gap-1.5 transition"
+                      title="Limpiar filtros de personal"
+                    >
+                      <FilterX className="w-3.5 h-3.5" /> Limpiar ({personnelFiltersCount})
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                  <label className="relative block sm:col-span-2 xl:col-span-1">
+                    <span className="sr-only">Buscar por nombre o número de socio</span>
+                    <Search className="w-4 h-4 text-emerald-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="search"
+                      placeholder="Nombre, ID o # de socio..."
+                      value={personnelSearch}
+                      onChange={e => setPersonnelSearch(e.target.value)}
+                      className="w-full min-w-0 bg-[#02180d] border border-emerald-900 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm text-white placeholder:text-emerald-700 focus:outline-none focus:border-emerald-600"
+                    />
+                  </label>
+                  <label>
+                    <span className="sr-only">Filtrar por área</span>
+                    <select
+                      value={personnelZoneFilter}
+                      onChange={e => setPersonnelZoneFilter(e.target.value)}
+                      className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-200 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="Todas las áreas">Todas las áreas</option>
+                      {TE_AREAS.map(zone => <option key={zone} value={zone}>{shortArea(zone)}</option>)}
+                      <option value="Sin área">Sin área asignada</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span className="sr-only">Filtrar por equipo</span>
+                    <select
+                      value={personnelEquipmentFilter}
+                      onChange={e => setPersonnelEquipmentFilter(e.target.value)}
+                      className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-200 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="Todos los equipos">Todos los equipos</option>
+                      {FORKLIFT_TYPES.map(equipment => <option key={equipment} value={equipment}>{equipment}</option>)}
+                      <option value="Sin registrar">Equipo sin registrar</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span className="sr-only">Filtrar por estado de licencia DC3</span>
+                    <select
+                      value={personnelLicenseFilter}
+                      onChange={e => setPersonnelLicenseFilter(e.target.value)}
+                      className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-200 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="Todas las licencias">Todos los estados de licencia</option>
+                      <option value="Vigente">Licencia vigente</option>
+                      <option value="Por vencer (30 días)">Por vencer (30 días)</option>
+                      <option value="Vencida">Licencia vencida</option>
+                      <option value="Sin registrar">Sin licencia registrada</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-400">
+                  <span>Mostrando <strong className="text-white">{filteredPersonnel.length}</strong> de <strong className="text-white">{operators.length}</strong> personas</span>
+                  {personnelFiltersCount > 0 && <span>Filtros activos: {personnelFiltersCount}</span>}
+                </div>
+              </div>
+            )}
             {operators.length === 0 ? (
               <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
                 <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
                 <h3 className="text-base font-bold text-white mb-1">Sin personal registrado</h3>
                 <p className="text-xs text-emerald-400/80 mb-4">Agrega el primer montacargista para comenzar.</p>
               </div>
+            ) : filteredPersonnel.length === 0 ? (
+              <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-10 text-center">
+                <Search className="w-10 h-10 text-emerald-700 mx-auto mb-3" />
+                <h3 className="text-sm font-bold text-white mb-1">No hay resultados</h3>
+                <p className="text-xs text-emerald-400/80 mb-4">Ningún operador coincide con los criterios de búsqueda seleccionados.</p>
+                <button onClick={clearPersonnelFilters} className="px-3 py-2 bg-emerald-800 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition">Limpiar filtros</button>
+              </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {operators.map(op => (
+                {filteredPersonnel.map(op => (
                   <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
                     <div>
                       <div className="flex justify-between items-start mb-2">

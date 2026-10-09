@@ -243,6 +243,20 @@ const getLicenseStatusStyle = (expiryDateStr) => {
   return 'bg-emerald-950 text-emerald-300 border-emerald-800';
 };
 
+// ✅ H.C. a la fecha de cierre del mes: solo cuenta a quien ya existía antes del fin de ese mes.
+// Los registros sin createdAt (datos previos a esta versión) se asumen existentes desde siempre.
+const getHeadcountForMonth = (operators, staffMembers, ym) => {
+  if (!ym) return (operators?.length || 0) + (staffMembers?.length || 0);
+  const [y, m] = ym.split('-').map(Number);
+  const endOfMonth = new Date(y, m, 0, 23, 59, 59, 999).getTime();
+  const countIn = (list) => (list || []).filter(item => {
+    if (!item.createdAt) return true;
+    const t = new Date(item.createdAt).getTime();
+    return !isNaN(t) && t <= endOfMonth;
+  }).length;
+  return countIn(operators) + countIn(staffMembers);
+};
+
 const INDICATOR_ACCENTS = {
   emerald: { bg: 'bg-emerald-950/70', border: 'border-emerald-700/60', text: 'text-emerald-300', value: 'text-emerald-100' },
   amber:   { bg: 'bg-amber-950/70',   border: 'border-amber-700/60',   text: 'text-amber-300',   value: 'text-amber-100' },
@@ -273,6 +287,20 @@ const fmtFTE = (v) => {
 const fmtNum = (v, decimals = 2) => {
   if (!isFinite(v)) return '0';
   return Number(v).toLocaleString('es-MX', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+};
+
+// ✅ Calcula un paso "bonito" (1, 2, 5 × 10^n) para que el eje Y tenga ~6 marcas legibles.
+const niceStep = (maxVal, targetTicks = 6) => {
+  if (!isFinite(maxVal) || maxVal <= 0) return 1;
+  const raw = maxVal / targetTicks;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  let step;
+  if (norm <= 1) step = 1;
+  else if (norm <= 2) step = 2;
+  else if (norm <= 5) step = 5;
+  else step = 10;
+  return step * mag;
 };
 
 function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle = null }) {
@@ -620,16 +648,16 @@ function HCvsFTEChart({ hc, fte, otWeek, subtitle = null }) {
   );
 }
 
-// ✅ NUEVO: gráfica de productividad (esperada vs real)
+// ✅ Gráfica de productividad (esperada vs real) con eje Y legible
 function ProductivityBarChart({ title, subtitle, bars }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
 
   const maxVal = Math.max(0.0001, ...bars.map(b => b.value));
-  const top = Math.ceil(maxVal * 1.15);
-  const step = top <= 5 ? 1 : top <= 20 ? 2 : top <= 50 ? 5 : top <= 100 ? 10 : top <= 500 ? 50 : top <= 1000 ? 100 : 200;
+  const step = niceStep(maxVal * 1.15, 6);
+  const top = Math.ceil((maxVal * 1.15) / step) * step;
   const ticks = [];
-  for (let i = 0; i * step <= top + 1e-9; i++) ticks.push(i * step);
+  for (let i = 0; i * step <= top + 1e-9; i++) ticks.push(Number((i * step).toFixed(6)));
 
   const PLOT_H = 220;
 
@@ -672,12 +700,12 @@ function ProductivityBarChart({ title, subtitle, bars }) {
             </table>
           </div>
         ) : (
-          <div className="relative pl-14 pt-5">
+          <div className="relative pl-20 pt-5">
             <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: PLOT_H }}>
               {ticks.map(t => (
                 <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
-                  <span className="absolute left-0 w-12 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{fmtNum(t, 0)}</span>
-                  <div className="absolute left-14 right-0 top-0 border-t border-emerald-900/70" />
+                  <span className="absolute left-0 w-16 text-right text-[10px] leading-none text-emerald-400 pr-2" style={{ bottom: 0, transform: 'translateY(50%)' }}>{fmtNum(t, 0)}</span>
+                  <div className="absolute left-20 right-0 top-0 border-t border-emerald-900/70" />
                 </div>
               ))}
             </div>
@@ -1296,27 +1324,27 @@ export default function App() {
     [reportTeMonth, operators, scheduleData, assignments, overtimeRequests]
   );
 
-  // ✅ H.C = montacargistas + staff. F.T.E añade horas extra aprobadas de la semana ÷ 208.
+  // ✅ H.C = personas que ya existían al cierre del mes del reporte (operadores + staff).
   const hcVsFte = useMemo(() => {
     const weekDates = reportWeekDays.map(d => d.dateStr);
-    const hc = operators.length + staffMembers.length;
+    const hc = getHeadcountForMonth(operators, staffMembers, reportTeMonth);
     const otWeek = sumOvertimeTotal(overtimeRequests, weekDates);
     const fte = hc + otWeek / TE_BASE_HOURS;
     return { hc, fte, otWeek };
-  }, [operators, staffMembers, overtimeRequests, reportWeekDays]);
+  }, [operators, staffMembers, overtimeRequests, reportWeekDays, reportTeMonth]);
 
   // Productividad: historial mensual con edición permitida solo para el mes actual y el anterior.
   const currentYm = useMemo(() => formatDateLocal(now).slice(0, 7), [now]);
   const prevYm = useMemo(() => shiftMonth(currentYm, -1), [currentYm]);
   const canEditProductivityMonth = productivityMonth === currentYm || productivityMonth === prevYm;
 
-  // ✅ H.C = montacargistas + staff. F.T.E añade horas extra aprobadas del mes ÷ 208.
+  // ✅ H.C = personas que ya existían al cierre de ese mes. F.T.E añade horas extra aprobadas del mes ÷ 208.
   const productivityStats = useMemo(() => {
     const ym = productivityMonth;
     const monthOt = overtimeRequests
       .filter(r => r.status === 'Aprobado' && typeof r.date === 'string' && r.date.startsWith(ym))
       .reduce((a, r) => a + (Number(r.hours) || 0), 0);
-    const hc = operators.length + staffMembers.length;
+    const hc = getHeadcountForMonth(operators, staffMembers, ym);
     const fte = hc + monthOt / TE_BASE_HOURS;
     const entry = productivityData[ym] || {};
     const expectedHL = Number(entry.expectedHL) || 0;
@@ -1667,7 +1695,8 @@ export default function App() {
         return !isNaN(num) && num > max ? num : max;
       }, 100);
       const newId = `M-${maxIdNum + 1}`;
-      updatedOps = [...operators, { id: newId, ...newOp, socioNumber, status: 'Activo' }];
+      // ✅ createdAt permite calcular H.C. histórico sin contar retroactivamente altas nuevas.
+      updatedOps = [...operators, { id: newId, ...newOp, socioNumber, status: 'Activo', createdAt: new Date().toISOString() }];
     }
     setOperators(updatedOps);
     setIsAddOperatorOpen(false); setEditingOperator(null);
@@ -1727,7 +1756,8 @@ export default function App() {
     const previousStaff = staffMembers;
     const updatedStaff = editingStaff
       ? staffMembers.map(member => member.id === editingStaff.id ? { ...member, name, socioNumber, position } : member)
-      : [...staffMembers, { id: `ST-${generateId()}`, name, socioNumber, position }];
+      // ✅ createdAt para que el H.C. histórico no se modifique al dar de alta staff hoy.
+      : [...staffMembers, { id: `ST-${generateId()}`, name, socioNumber, position, createdAt: new Date().toISOString() }];
 
     isUpdatingRef.current = true;
     setStaffMembers(updatedStaff);
@@ -1953,8 +1983,6 @@ export default function App() {
       // Este exportador construye PDFs directamente; no necesita cargar html2canvas.
       await loadExportLibraries(false);
 
-      // Reportes mensuales: construir el PDF con elementos vectoriales y tablas legibles.
-      // Evita capturar la interfaz como una imagen larga, que cortaba gráficas y encabezados.
       if (reportsView === 'te' || reportsView === 'productivity') {
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -2079,7 +2107,7 @@ export default function App() {
           const productRows = [
             ['Volumen esperado', `${fmtNum(productivityStats.expectedHL)} hL`, 'Captura manual'],
             ['Volumen real', `${fmtNum(productivityStats.realHL)} hL`, 'Captura manual'],
-            ['F.T.E', fmtFTE(productivityStats.fte), `${productivityStats.hc} H.C (op + staff) + ${productivityStats.otMonth.toFixed(1)} h extra ÷ 208`],
+            ['F.T.E', fmtFTE(productivityStats.fte), `H.C al cierre del mes ${productivityStats.hc} + ${productivityStats.otMonth.toFixed(1)} h extra ÷ 208`],
             ['Productividad esperada', fmtNum(productivityStats.expectedProd), 'Volumen esperado ÷ F.T.E'],
             ['Productividad real', fmtNum(productivityStats.realProd), 'Volumen real ÷ F.T.E'],
             ['Diferencia (real − esperada)', `${productivityStats.diff >= 0 ? '+' : ''}${fmtNum(productivityStats.diff)}`, 'Productividad real menos esperada'],
@@ -2117,7 +2145,7 @@ export default function App() {
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(7);
           pdf.setTextColor(90, 112, 98);
-          pdf.text('Nota: F.T.E = plantilla registrada (operadores + staff) + horas extra aprobadas del mes ÷ 208.', margin, Math.min(H - 16, y + 36));
+          pdf.text('Nota: H.C se calcula con las personas (operadores + staff) que ya existían al cierre del mes reportado.', margin, Math.min(H - 16, y + 36));
         } else {
           const totalOperatorsWithOt = Object.values(teStats.perOp).filter(v => v.hours > 0).length;
           const activeLines = TE_AREAS.flatMap(zone => (teStats.lines[zone] || []).filter(line => line.hours > 0)).length;
@@ -2159,7 +2187,6 @@ export default function App() {
           ], operatorRows, y);
         }
 
-        // Pies uniformes con numeración, una vez conocidas todas las páginas.
         const pageCount = pdf.internal.getNumberOfPages();
         for (let page = 1; page <= pageCount; page++) {
           pdf.setPage(page);
@@ -3065,7 +3092,7 @@ export default function App() {
                     </div>
                     <div>
                       <h2 className="text-base sm:text-lg font-bold text-white">Personal de Staff</h2>
-                      <p className="text-xs text-emerald-300">Registros manuales · Cuentan para el H.C de los reportes</p>
+                      <p className="text-xs text-emerald-300">Registros manuales · Cuentan para el H.C de los reportes (desde su fecha de alta)</p>
                     </div>
                   </div>
                   {canManageOperators && (
@@ -3108,6 +3135,12 @@ export default function App() {
                         <div className="mt-3 pt-3 border-t border-emerald-900/80 space-y-2 text-xs">
                           <div className="flex justify-between gap-3"><span className="text-emerald-400"># Socio</span><span className="font-semibold text-white text-right break-all">{member.socioNumber}</span></div>
                           <div className="flex justify-between gap-3"><span className="text-emerald-400">Puesto</span><span className="font-semibold text-white text-right break-words">{member.position}</span></div>
+                          {member.createdAt && (
+                            <div className="flex justify-between gap-3">
+                              <span className="text-emerald-400">Alta</span>
+                              <span className="text-emerald-300 text-right">{new Date(member.createdAt).toLocaleDateString('es-MX')}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -3430,6 +3463,7 @@ export default function App() {
                   const today = new Date(); today.setHours(0, 0, 0, 0);
                   return exp >= today;
                 }).length;
+                const hcMonth = getHeadcountForMonth(operators, staffMembers, reportTeMonth);
                 return (
                   <>
                     <div className="rounded-2xl border border-emerald-700/60 bg-emerald-950/70 p-3 sm:p-4">
@@ -3461,8 +3495,8 @@ export default function App() {
                         <Users2 className="w-3.5 h-3.5 text-purple-300" />
                         <span className="text-[10px] font-bold uppercase text-purple-300">H.C (Headcount)</span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{operators.length + staffMembers.length}</div>
-                      <div className="text-[10px] text-purple-400/70 mt-0.5">{operators.length} operadores + {staffMembers.length} staff</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{hcMonth}</div>
+                      <div className="text-[10px] text-purple-400/70 mt-0.5">al cierre de {formatMonthLabel(reportTeMonth)}</div>
                     </div>
                     <div className="col-span-2 md:col-span-1 rounded-2xl border border-indigo-700/60 bg-indigo-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
@@ -3751,7 +3785,7 @@ export default function App() {
                     <tr>
                       <td className="p-3">
                         <div className="font-bold text-emerald-200">F.T.E</div>
-                        <div className="text-[10px] text-emerald-500">H.C (operadores + staff) + (horas extra aprobadas ÷ 208)</div>
+                        <div className="text-[10px] text-emerald-500">H.C al cierre del mes (operadores + staff) + (horas extra aprobadas ÷ 208)</div>
                       </td>
                       <td className="p-3 text-center font-extrabold text-emerald-100 text-base">
                         {fmtFTE(productivityStats.fte)}
@@ -3815,7 +3849,7 @@ export default function App() {
             />
 
             <p className="text-[11px] text-emerald-400/80">
-              F.T.E = plantilla registrada (operadores + staff) + horas extra aprobadas del mes ÷ 208. Los volúmenes se guardan automáticamente al salir del campo. Los meses anteriores al inmediato anterior quedan en solo lectura.
+              F.T.E = H.C al cierre del mes (operadores + staff que ya existían en ese periodo) + horas extra aprobadas del mes ÷ 208. Los volúmenes se guardan automáticamente al salir del campo. Los meses anteriores al inmediato anterior quedan en solo lectura.
             </p>
           </div>
         )}
@@ -3979,7 +4013,7 @@ export default function App() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-t-2xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
             <h3 className="text-base font-bold text-white mb-1">{editingStaff ? 'Editar personal de Staff' : 'Agregar personal de Staff'}</h3>
-            <p className="text-xs text-emerald-400 mb-4">Todos los datos se capturan manualmente. Este registro no se agrega a la matriz, pero sí suma al H.C de los reportes.</p>
+            <p className="text-xs text-emerald-400 mb-4">Todos los datos se capturan manualmente. Este registro no se agrega a la matriz, pero sí suma al H.C de los reportes a partir del mes en que se dio de alta.</p>
             <form onSubmit={handleSaveStaff} className="space-y-3 text-xs">
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Nombre completo</label>

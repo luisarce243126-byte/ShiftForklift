@@ -891,6 +891,9 @@ export default function App() {
   // ✅ NUEVO: datos de productividad
   const [productivityData, setProductivityData] = useState({});
   const [productivityDraft, setProductivityDraft] = useState({});
+  // Evita que el sondeo de Redis reemplace valores que se están escribiendo o aún no se han guardado.
+  const productivityFocusedFieldRef = useRef(null);
+  const productivityDirtyFieldsRef = useRef(new Set());
   const [productivityMonth, setProductivityMonth] = useState(() => formatDateLocal(new Date()).slice(0, 7));
 
   const [reportsView, setReportsView] = useState('summary');
@@ -955,8 +958,8 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const loadExportLibraries = async () => {
-    if (!window.html2canvas) {
+  const loadExportLibraries = async (needCanvas = true) => {
+    if (needCanvas && !window.html2canvas) {
       await new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
@@ -1111,7 +1114,24 @@ export default function App() {
           if (Array.isArray(savedVac)) setVacationRequests(savedVac);
           if (savedProd && typeof savedProd === 'object' && !Array.isArray(savedProd)) {
             setProductivityData(savedProd);
-            setProductivityDraft(savedProd);
+            // Sincroniza campos limpios, pero conserva cualquier valor que se esté capturando
+            // o cuyo guardado haya fallado para que el sondeo no lo borre.
+            setProductivityDraft(prev => {
+              const merged = { ...prev };
+              Object.keys(savedProd).forEach(ym => {
+                const remoteMonth = savedProd[ym] || {};
+                const localMonth = { ...(prev[ym] || {}) };
+                ['expectedHL', 'realHL'].forEach(field => {
+                  const key = `${ym}:${field}`;
+                  if (productivityFocusedFieldRef.current !== key && !productivityDirtyFieldsRef.current.has(key)) {
+                    if (remoteMonth[field] !== undefined) localMonth[field] = remoteMonth[field];
+                    else delete localMonth[field];
+                  }
+                });
+                merged[ym] = localMonth;
+              });
+              return merged;
+            });
           }
         }
       } catch (err) { console.error('Error en sincronización continua:', err); setPollFailed(true); }
@@ -1296,6 +1316,7 @@ export default function App() {
 
   // ✅ Handlers para inputs de productividad
   const handleProductivityInput = (ym, field, value) => {
+    productivityDirtyFieldsRef.current.add(`${ym}:${field}`);
     setProductivityDraft(prev => ({
       ...prev,
       [ym]: { ...(prev[ym] || {}), [field]: value }
@@ -1303,6 +1324,8 @@ export default function App() {
   };
 
   const handleProductivityBlur = async (ym, field) => {
+    const focusKey = `${ym}:${field}`;
+    if (productivityFocusedFieldRef.current === focusKey) productivityFocusedFieldRef.current = null;
     if (ym !== currentYm && ym !== prevYm) return;
     const raw = productivityDraft[ym]?.[field];
     const num = (raw === '' || raw === undefined || raw === null) ? 0 : Number(raw) || 0;
@@ -1312,18 +1335,23 @@ export default function App() {
     };
     const previous = productivityData;
     setProductivityData(updated);
-    setProductivityDraft(updated);
+    // Actualiza únicamente el campo guardado; no borres otro campo que siga pendiente.
+    setProductivityDraft(prev => ({
+      ...prev,
+      [ym]: { ...(prev[ym] || {}), [field]: num }
+    }));
     isUpdatingRef.current = true;
     setSyncStatus('saving');
     try {
       await withTimeout(redis.set('sf_productivity', updated), LOAD_TIMEOUT_MS);
+      productivityDirtyFieldsRef.current.delete(focusKey);
       reportSyncResult(true);
     } catch (error) {
       console.error('Error al guardar productividad:', error);
       setProductivityData(previous);
-      setProductivityDraft(previous);
+      // Conserva el dato escrito y marcado como pendiente para evitar perderlo en el próximo sondeo.
       reportSyncResult(false);
-      pushToast('error', 'Error al guardar productividad. Cambio revertido.');
+      pushToast('error', 'No se pudo guardar. El valor sigue en el campo; vuelve a salir del campo para reintentar.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 1500);
     }
@@ -1818,66 +1846,233 @@ export default function App() {
   const handleExportExecutivePDF = async () => {
     setIsExporting(true);
     try {
-      await loadExportLibraries();
+      // Este exportador construye PDFs directamente; no necesita cargar html2canvas.
+      await loadExportLibraries(false);
 
-      // Los reportes mensuales se exportan desde el contenido de su propia pestaña.
-      // El resumen semanal conserva su PDF ejecutivo construido con datos estructurados.
+      // Reportes mensuales: construir el PDF con elementos vectoriales y tablas legibles.
+      // Evita capturar la interfaz como una imagen larga, que cortaba gráficas y encabezados.
       if (reportsView === 'te' || reportsView === 'productivity') {
-        const element = reportContentRef.current;
-        if (!element) throw new Error('No se encontró el contenido del reporte activo.');
-
-        const canvas = await window.html2canvas(element, {
-          scale: 2,
-          backgroundColor: '#021f12',
-          useCORS: true,
-          logging: false,
-          windowWidth: Math.max(element.scrollWidth + 40, window.innerWidth),
-          windowHeight: Math.max(element.scrollHeight + 40, window.innerHeight),
-          scrollX: 0,
-          scrollY: 0
-        });
-
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
         const W = pdf.internal.pageSize.getWidth();
         const H = pdf.internal.pageSize.getHeight();
-        const marginX = 10;
-        const contentWidth = W - marginX * 2;
-        const topY = 25;
-        const footerSpace = 14;
-        const contentHeight = H - topY - footerSpace;
-        const imageHeight = (canvas.height * contentWidth) / canvas.width;
-        const pageCount = Math.max(1, Math.ceil(imageHeight / contentHeight));
-        const imageData = canvas.toDataURL('image/png');
-        const reportTitle = reportsView === 'te' ? 'Reporte de Tiempo Extra (T.E)' : 'Reporte de Productividad';
-        const reportMonth = formatMonthLabel(reportsView === 'te' ? teMonth : productivityMonth);
+        const margin = 12;
+        const contentW = W - margin * 2;
+        const isTeReport = reportsView === 'te';
+        const reportTitle = isTeReport ? 'Reporte de Tiempo Extra (T.E.)' : 'Reporte de Productividad';
+        const reportMonth = formatMonthLabel(isTeReport ? teMonth : productivityMonth);
+        const generatedAt = new Date().toLocaleString('es-MX');
 
-        for (let page = 0; page < pageCount; page++) {
-          if (page > 0) pdf.addPage('a4', 'landscape');
-          pdf.setFillColor(2, 31, 18);
+        const drawPageHeader = (continuation = false) => {
+          pdf.setFillColor(248, 251, 249);
           pdf.rect(0, 0, W, H, 'F');
-          // La imagen completa se desplaza entre páginas para conservar todo el contenido.
-          pdf.addImage(imageData, 'PNG', marginX, topY - page * contentHeight, contentWidth, imageHeight, undefined, 'FAST');
-          // Encabezado y pie se dibujan encima del contenido en cada página.
           pdf.setFillColor(0, 71, 31);
-          pdf.rect(0, 0, W, 22, 'F');
+          pdf.rect(0, 0, W, 25, 'F');
           pdf.setTextColor(255, 255, 255);
-          pdf.setFontSize(14);
-          pdf.text(`ShiftForklift — ${reportTitle}`, marginX, 9);
-          pdf.setFontSize(8);
-          pdf.setTextColor(167, 243, 208);
-          pdf.text(reportMonth, marginX, 16);
-          pdf.setFillColor(2, 31, 18);
-          pdf.rect(0, H - footerSpace, W, footerSpace, 'F');
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(15);
+          pdf.text(`ShiftForklift | ${reportTitle}${continuation ? ' (continuación)' : ''}`, margin, 10);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          pdf.setTextColor(190, 245, 216);
+          pdf.text(`${reportMonth}  ·  Gestión de Turnos y Personal`, margin, 18);
+        };
+        const addReportPage = () => {
+          pdf.addPage('a4', 'landscape');
+          drawPageHeader(true);
+          return 32;
+        };
+        const drawSectionTitle = (title, y) => {
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          pdf.setTextColor(0, 71, 31);
+          pdf.text(title, margin, y);
+          pdf.setDrawColor(177, 218, 192);
+          pdf.setLineWidth(0.35);
+          pdf.line(margin, y + 2, W - margin, y + 2);
+          return y + 6;
+        };
+        const drawMetricCards = (items, y, cardHeight = 23) => {
+          const gap = 3;
+          const cardW = (contentW - gap * (items.length - 1)) / items.length;
+          items.forEach((item, i) => {
+            const x = margin + i * (cardW + gap);
+            pdf.setFillColor(232, 244, 236);
+            pdf.setDrawColor(180, 218, 192);
+            pdf.roundedRect(x, y, cardW, cardHeight, 2, 2, 'FD');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(7);
+            pdf.setTextColor(0, 92, 48);
+            pdf.text(item.label, x + 3, y + 6, { maxWidth: cardW - 6 });
+            pdf.setFontSize(item.value.length > 13 ? 10 : 12);
+            pdf.setTextColor(18, 48, 31);
+            pdf.text(item.value, x + 3, y + 16, { maxWidth: cardW - 6 });
+          });
+          return y + cardHeight;
+        };
+        const drawTable = (title, columns, rows, startY) => {
+          let y = drawSectionTitle(title, startY);
+          const drawColumnHeader = () => {
+            pdf.setFillColor(0, 71, 31);
+            pdf.rect(margin, y, contentW, 7, 'F');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(255, 255, 255);
+            let x = margin;
+            columns.forEach(col => {
+              const align = col.align || 'left';
+              const tx = align === 'right' ? x + col.width - 2 : align === 'center' ? x + col.width / 2 : x + 2;
+              pdf.text(col.label, tx, y + 4.6, { align });
+              x += col.width;
+            });
+            y += 7;
+          };
+          drawColumnHeader();
+          rows.forEach((row, rowIndex) => {
+            const cellLines = columns.map((col, i) => pdf.splitTextToSize(String(row[i] ?? '—'), Math.max(8, col.width - 4)));
+            const lineCount = Math.max(1, ...cellLines.map(lines => lines.length));
+            const rowH = Math.max(7, lineCount * 3.6 + 2.5);
+            if (y + rowH > H - 14) {
+              y = addReportPage();
+              y = drawSectionTitle(`${title} (continuación)`, y);
+              drawColumnHeader();
+            }
+            if (rowIndex % 2 === 0) {
+              pdf.setFillColor(237, 246, 240);
+              pdf.rect(margin, y, contentW, rowH, 'F');
+            }
+            pdf.setDrawColor(218, 231, 222);
+            pdf.setLineWidth(0.2);
+            pdf.line(margin, y + rowH, W - margin, y + rowH);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(38, 55, 44);
+            let x = margin;
+            columns.forEach((col, i) => {
+              const align = col.align || 'left';
+              const lines = cellLines[i];
+              const tx = align === 'right' ? x + col.width - 2 : align === 'center' ? x + col.width / 2 : x + 2;
+              pdf.text(lines, tx, y + 4.2, { align, lineHeightFactor: 1.05 });
+              x += col.width;
+            });
+            y += rowH;
+          });
+          return y + 5;
+        };
+
+        drawPageHeader(false);
+        let y = 32;
+        if (!isTeReport) {
+          const values = [
+            { label: 'Volumen esperado (hL)', value: fmtNum(productivityStats.expectedHL) },
+            { label: 'Volumen real (hL)', value: fmtNum(productivityStats.realHL) },
+            { label: 'F.T.E', value: fmtFTE(productivityStats.fte) },
+            { label: 'Productividad esperada', value: fmtNum(productivityStats.expectedProd) },
+            { label: 'Productividad real', value: fmtNum(productivityStats.realProd) },
+            { label: 'Cumplimiento', value: `${fmtNum(productivityStats.cumplimiento)}%` }
+          ];
+          y = drawMetricCards(values, y, 22) + 7;
+          const productRows = [
+            ['Volumen esperado', `${fmtNum(productivityStats.expectedHL)} hL`, 'Captura manual'],
+            ['Volumen real', `${fmtNum(productivityStats.realHL)} hL`, 'Captura manual'],
+            ['F.T.E', fmtFTE(productivityStats.fte), `${productivityStats.hc} personas + ${productivityStats.otMonth.toFixed(1)} h extra ÷ 208`],
+            ['Productividad esperada', fmtNum(productivityStats.expectedProd), 'Volumen esperado ÷ F.T.E'],
+            ['Productividad real', fmtNum(productivityStats.realProd), 'Volumen real ÷ F.T.E'],
+            ['Diferencia (real − esperada)', `${productivityStats.diff >= 0 ? '+' : ''}${fmtNum(productivityStats.diff)}`, 'Productividad real menos esperada'],
+            ['Cumplimiento', `${fmtNum(productivityStats.cumplimiento)}%`, 'Productividad real ÷ productividad esperada']
+          ];
+          y = drawTable('Detalle del mes', [
+            { label: 'Indicador', width: 75 },
+            { label: 'Resultado', width: 55, align: 'right' },
+            { label: 'Cálculo / descripción', width: contentW - 130 }
+          ], productRows, y);
+
+          y = drawSectionTitle('Productividad · hL por F.T.E', Math.max(y, 132));
+          const maxProd = Math.max(productivityStats.expectedProd, productivityStats.realProd, 0.01);
+          const bars = [
+            { label: 'Esperada', value: productivityStats.expectedProd, color: [57, 135, 229] },
+            { label: 'Real', value: productivityStats.realProd, color: [217, 89, 38] }
+          ];
+          bars.forEach((bar, i) => {
+            const by = y + i * 15;
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(8);
+            pdf.setTextColor(38, 55, 44);
+            pdf.text(bar.label, margin + 2, by + 5);
+            const barX = margin + 38;
+            const barMaxW = contentW - 78;
+            pdf.setFillColor(227, 235, 229);
+            pdf.roundedRect(barX, by, barMaxW, 8, 1.5, 1.5, 'F');
+            const barW = Math.max(bar.value > 0 ? 1 : 0, (bar.value / maxProd) * barMaxW);
+            pdf.setFillColor(...bar.color);
+            if (barW > 0) pdf.roundedRect(barX, by, barW, 8, 1.5, 1.5, 'F');
+            pdf.setTextColor(18, 48, 31);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(fmtNum(bar.value), W - margin - 2, by + 5.5, { align: 'right' });
+          });
+          pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(7);
-          pdf.setTextColor(148, 163, 184);
-          pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, marginX, H - 6);
-          pdf.text(`Página ${page + 1} de ${pageCount}`, W - marginX, H - 6, { align: 'right' });
+          pdf.setTextColor(90, 112, 98);
+          pdf.text('Nota: F.T.E = plantilla registrada + horas extra aprobadas del mes ÷ 208.', margin, Math.min(H - 16, y + 36));
+        } else {
+          const totalOperatorsWithOt = Object.values(teStats.perOp).filter(v => v.hours > 0).length;
+          const activeLines = TE_AREAS.flatMap(zone => (teStats.lines[zone] || []).filter(line => line.hours > 0)).length;
+          y = drawMetricCards([
+            { label: 'Horas extra aprobadas', value: `${teStats.totalHours.toFixed(1)} h` },
+            { label: 'T.E global del mes', value: fmtFTE(teStats.avg) },
+            { label: 'Operadores con extras', value: String(totalOperatorsWithOt) },
+            { label: 'Líneas con extras', value: String(activeLines) }
+          ], y, 25) + 8;
+          drawTable('Resumen por área', [
+            { label: 'Área', width: 135 },
+            { label: 'Operadores', width: 35, align: 'right' },
+            { label: 'Horas extra', width: 45, align: 'right' },
+            { label: 'T.E (horas ÷ 208)', width: contentW - 215, align: 'right' }
+          ], teStats.areas.map(a => [a.zone, String(a.ops), `${a.hours.toFixed(1)} h`, fmtFTE(a.te)]), y);
+
+          const lineRows = TE_AREAS.flatMap(zone => (teStats.lines[zone] || []).map(line => [
+            shortArea(zone), line.assignment, String(line.ops), `${line.hours.toFixed(1)} h`, fmtFTE(line.te)
+          ]));
+          y = addReportPage();
+          y = drawTable('Detalle por área y línea', [
+            { label: 'Área', width: 70 },
+            { label: 'Asignación / línea', width: 87 },
+            { label: 'Operadores', width: 30, align: 'right' },
+            { label: 'Horas extra', width: 40, align: 'right' },
+            { label: 'T.E', width: contentW - 227, align: 'right' }
+          ], lineRows, y);
+
+          const operatorRows = [...operators]
+            .map(op => ({ op, stat: teStats.perOp[op.id] || { hours: 0, te: 0 } }))
+            .sort((a, b) => b.stat.hours - a.stat.hours)
+            .map(({ op, stat }) => [op.name || 'Sin nombre', areaLabel(op), `${stat.hours.toFixed(1)} h`, fmtFTE(stat.te)]);
+          y = addReportPage();
+          drawTable('Horas extra aprobadas por operador', [
+            { label: 'Operador', width: 105 },
+            { label: 'Área', width: 90 },
+            { label: 'Horas extra', width: 40, align: 'right' },
+            { label: 'T.E (horas ÷ 208)', width: contentW - 235, align: 'right' }
+          ], operatorRows, y);
+        }
+
+        // Pies uniformes con numeración, una vez conocidas todas las páginas.
+        const pageCount = pdf.internal.getNumberOfPages();
+        for (let page = 1; page <= pageCount; page++) {
+          pdf.setPage(page);
+          pdf.setFillColor(248, 251, 249);
+          pdf.rect(0, H - 10, W, 10, 'F');
+          pdf.setDrawColor(205, 223, 211);
+          pdf.line(margin, H - 10, W - margin, H - 10);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7);
+          pdf.setTextColor(100, 116, 106);
+          pdf.text(`Generado ${generatedAt} · ${currentUser?.name || 'Usuario'}`, margin, H - 3.5);
+          pdf.text(`Página ${page} de ${pageCount}`, W - margin, H - 3.5, { align: 'right' });
         }
 
         const pdfBlob = pdf.output('blob');
-        const filePrefix = reportsView === 'te' ? 'Reporte_Tiempo_Extra' : 'Reporte_Productividad';
-        const filename = `${filePrefix}_${reportsView === 'te' ? teMonth : productivityMonth}.pdf`;
+        const filePrefix = isTeReport ? 'Reporte_Tiempo_Extra' : 'Reporte_Productividad';
+        const filename = `${filePrefix}_${isTeReport ? teMonth : productivityMonth}.pdf`;
         if (isMobileDevice()) {
           setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
         } else {
@@ -2008,7 +2203,41 @@ export default function App() {
         return { ...op, totalH: totalH + otH, otH, c };
       }).sort((a, b) => b.totalH - a.totalH);
       sortedByHours.forEach(op => {
-        if (y > H - 25) return;
+        if (y > H - 25) {
+          pdf.addPage('a4', 'portrait');
+          pdf.setFillColor(2, 31, 18);
+          pdf.rect(0, 0, W, H, 'F');
+          pdf.setFillColor(0, 71, 31);
+          pdf.rect(0, 0, W, 25, 'F');
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(14);
+          pdf.text('ShiftForklift — Reporte Ejecutivo', 14, 12);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(8);
+          pdf.setTextColor(167, 243, 208);
+          pdf.text(`Semana del ${reportWeekDays[0].dayNumber} ${reportWeekDays[0].monthName} al ${reportWeekDays[6].dayNumber} ${reportWeekDays[6].monthName} · Continuación`, 14, 19);
+          y = 32;
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          pdf.setTextColor(167, 243, 208);
+          pdf.text(`Horas extra por operador · T.E de ${formatMonthLabel(reportTeMonth)}`, 14, y);
+          y += 6;
+          pdf.setFontSize(8);
+          pdf.setTextColor(148, 163, 184);
+          pdf.text('Operador', 16, y);
+          pdf.text('Área', 80, y);
+          pdf.text('M', 130, y);
+          pdf.text('T', 139, y);
+          pdf.text('N', 148, y);
+          pdf.text('Ext', 156, y);
+          pdf.text('Total', 168, y);
+          pdf.text('T.E', 185, y);
+          y += 4;
+          pdf.setDrawColor(30, 100, 60);
+          pdf.line(14, y, W - 14, y);
+          y += 5;
+        }
         pdf.setTextColor(255, 255, 255);
         pdf.text(op.name.substring(0, 30), 16, y);
         pdf.setTextColor(148, 163, 184);
@@ -2027,9 +2256,17 @@ export default function App() {
         pdf.text(fmtTE(weekTeStats.perOp[op.id]?.te ?? 0), 185, y);
         y += 5.5;
       });
-      pdf.setFontSize(7);
-      pdf.setTextColor(100, 116, 139);
-      pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
+      const summaryPageCount = pdf.internal.getNumberOfPages();
+      for (let page = 1; page <= summaryPageCount; page++) {
+        pdf.setPage(page);
+        pdf.setFillColor(2, 31, 18);
+        pdf.rect(0, H - 13, W, 13, 'F');
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7);
+        pdf.setTextColor(148, 163, 184);
+        pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 5);
+        pdf.text(`Página ${page} de ${summaryPageCount}`, W - 14, H - 5, { align: 'right' });
+      }
       const pdfBlob = pdf.output('blob');
       const filename = `Reporte_Ejecutivo_${reportWeekStart}.pdf`;
       if (isMobileDevice()) setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
@@ -3233,6 +3470,7 @@ export default function App() {
                           type="number" min="0" step="0.01" placeholder="0"
                           value={productivityDraft[productivityMonth]?.expectedHL ?? ''}
                           disabled={!canEditProductivityMonth}
+                          onFocus={() => { productivityFocusedFieldRef.current = `${productivityMonth}:expectedHL`; }}
                           onChange={e => handleProductivityInput(productivityMonth, 'expectedHL', e.target.value)}
                           onBlur={() => handleProductivityBlur(productivityMonth, 'expectedHL')}
                           className={`w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed ${canEditProductivityMonth ? '' : 'cursor-not-allowed'}`}
@@ -3249,6 +3487,7 @@ export default function App() {
                           type="number" min="0" step="0.01" placeholder="0"
                           value={productivityDraft[productivityMonth]?.realHL ?? ''}
                           disabled={!canEditProductivityMonth}
+                          onFocus={() => { productivityFocusedFieldRef.current = `${productivityMonth}:realHL`; }}
                           onChange={e => handleProductivityInput(productivityMonth, 'realHL', e.target.value)}
                           onBlur={() => handleProductivityBlur(productivityMonth, 'realHL')}
                           className={`w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed ${canEditProductivityMonth ? '' : 'cursor-not-allowed'}`}

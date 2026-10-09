@@ -66,19 +66,14 @@ const SHIFT_TYPES = {
 };
 
 const WAREHOUSE_ZONES = [
-  'Todas las zonas',
-  'Recepción / Carga',
-  'Pasillos Alta Montaña (Reach)',
-  'Embarques / Surtido',
-  'Materiales / Entrada a Línea',
-  'Patio de Contenedores'
+  'Todas las áreas',
+  'Almacén de Materiales Directos',
+  'Almacén de PT'
 ];
 
 const FORKLIFT_TYPES = [
-  'Hombre Sentado (Eléctrico)',
-  'Hombre Parado (Reach)',
-  'Trilateral / Pasillo Angosto',
-  'Transpaleta Eléctrica (Rider)'
+  'Sencillo',
+  'Doble'
 ];
 
 const ABSENCE_TYPES = [
@@ -313,7 +308,7 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
       let score = 0;
       const reasons = [];
 
-      if (op.zone === target.zone) { score += 50; reasons.push('Misma zona'); }
+      if (op.zone === target.zone) { score += 50; reasons.push('Misma área'); }
       if (op.equipment === target.equipment) { score += 30; reasons.push('Mismo equipo'); }
 
       let weekHours = 0;
@@ -683,7 +678,7 @@ export default function App() {
   }, [isLoaded, loadError]);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedZone, setSelectedZone] = useState('Todas las zonas');
+  const [selectedZone, setSelectedZone] = useState('Todas las áreas');
   const [selectedEquipment, setSelectedEquipment] = useState('Todos los equipos');
   const [onlyExpiringLicenses, setOnlyExpiringLicenses] = useState(false);
 
@@ -695,8 +690,8 @@ export default function App() {
   const [selectedCell, setSelectedCell] = useState(null);
 
   const [newOp, setNewOp] = useState({
-    name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
-    shiftPattern: 'Mañana', licenseExpiry: '2027-12-31'
+    name: '', socioNumber: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
+    licenseExpiry: '2027-12-31'
   });
 
   const [newVac, setNewVac] = useState({
@@ -910,7 +905,8 @@ export default function App() {
           } else {
             if (op.shiftPattern === 'Mañana') newSchedule[key] = 'M';
             else if (op.shiftPattern === 'Tarde') newSchedule[key] = 'T';
-            else newSchedule[key] = 'N';
+            else if (op.shiftPattern === 'Noche') newSchedule[key] = 'N';
+            else return;
           }
           changed = true;
         }
@@ -987,8 +983,9 @@ export default function App() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return operators.filter(op => {
-      const matchesSearch = op.name.toLowerCase().includes(searchQuery.toLowerCase()) || op.id.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesZone = selectedZone === 'Todas las zonas' || op.zone === selectedZone;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = op.name.toLowerCase().includes(q) || op.id.toLowerCase().includes(q) || String(op.socioNumber || '').toLowerCase().includes(q);
+      const matchesZone = selectedZone === 'Todas las áreas' || op.zone === selectedZone;
       const matchesEquipment = selectedEquipment === 'Todos los equipos' || op.equipment === selectedEquipment;
       let matchesExpiring = true;
       if (onlyExpiringLicenses) {
@@ -1006,7 +1003,7 @@ export default function App() {
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (searchQuery.trim()) count++;
-    if (selectedZone !== 'Todas las zonas') count++;
+    if (selectedZone !== 'Todas las áreas') count++;
     if (selectedEquipment !== 'Todos los equipos') count++;
     if (onlyExpiringLicenses) count++;
     return count;
@@ -1014,7 +1011,7 @@ export default function App() {
 
   const clearAllFilters = () => {
     setSearchQuery('');
-    setSelectedZone('Todas las zonas');
+    setSelectedZone('Todas las áreas');
     setSelectedEquipment('Todos los equipos');
     setOnlyExpiringLicenses(false);
     pushToast('info', 'Filtros limpiados');
@@ -1140,19 +1137,33 @@ export default function App() {
     e.preventDefault();
     if (!newOp.name || !canManageOperators) return;
 
+    const socioNumber = String(newOp.socioNumber || '').trim();
+    if (!socioNumber) {
+      pushToast('warning', 'Escribe el # de socio.');
+      return;
+    }
+    const socioDuplicado = operators.find(op =>
+      String(op.socioNumber || '').trim().toLowerCase() === socioNumber.toLowerCase() &&
+      (!editingOperator || op.id !== editingOperator.id)
+    );
+    if (socioDuplicado) {
+      pushToast('warning', `El # de socio ${socioNumber} ya pertenece a ${socioDuplicado.name}.`, { duration: 5000 });
+      return;
+    }
+
     isUpdatingRef.current = true;
     const previousOps = operators;
     let updatedOps;
 
     if (editingOperator) {
-      updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp } : op);
+      updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp, socioNumber } : op);
     } else {
       const maxIdNum = operators.reduce((max, op) => {
         const num = parseInt(op.id.replace(/\D/g, ''), 10);
         return !isNaN(num) && num > max ? num : max;
       }, 100);
       const newId = `M-${maxIdNum + 1}`;
-      updatedOps = [...operators, { id: newId, ...newOp, status: 'Activo' }];
+      updatedOps = [...operators, { id: newId, ...newOp, socioNumber, status: 'Activo' }];
     }
 
     setOperators(updatedOps);
@@ -1524,7 +1535,7 @@ export default function App() {
       pdf.setFontSize(8);
       pdf.setTextColor(148, 163, 184);
       pdf.text('Operador', 16, y);
-      pdf.text('Zona', 80, y);
+      pdf.text('Área', 80, y);
       pdf.text('M', 138, y);
       pdf.text('T', 148, y);
       pdf.text('N', 158, y);
@@ -1921,7 +1932,7 @@ export default function App() {
                   <Search className="w-3.5 h-3.5 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Buscar operador..."
+                    placeholder="Buscar nombre o # socio..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full bg-[#02180d] border border-emerald-900 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
@@ -2281,7 +2292,7 @@ export default function App() {
               {canManageOperators && (
                 <button onClick={() => {
                   setEditingOperator(null);
-                  setNewOp({ name: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], shiftPattern: 'Mañana', licenseExpiry: formatDateLocal(new Date()) });
+                  setNewOp({ name: '', socioNumber: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], licenseExpiry: formatDateLocal(new Date()) });
                   setIsAddOperatorOpen(true);
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
@@ -2307,15 +2318,15 @@ export default function App() {
                         </div>
                         {canManageOperators && (
                           <div className="flex space-x-1 shrink-0">
-                            <button onClick={() => { setEditingOperator(op); setNewOp(op); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
+                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', zone: WAREHOUSE_ZONES.includes(op.zone) && op.zone !== WAREHOUSE_ZONES[0] ? op.zone : WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : FORKLIFT_TYPES[0] }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
                             <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
                           </div>
                         )}
                       </div>
                       <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
-                        <div className="flex justify-between gap-2"><span>Zona:</span><span className="font-semibold text-white text-right">{op.zone}</span></div>
+                        <div className="flex justify-between gap-2"><span># Socio:</span><span className="font-semibold text-white text-right">{op.socioNumber || 'N/A'}</span></div>
+                        <div className="flex justify-between gap-2"><span>Área:</span><span className="font-semibold text-white text-right">{op.zone}</span></div>
                         <div className="flex justify-between gap-2"><span>Equipo:</span><span className="font-semibold text-white text-right">{op.equipment}</span></div>
-                        <div className="flex justify-between gap-2"><span>Turno Base:</span><span className="font-semibold text-white">{op.shiftPattern}</span></div>
                         <div className="flex justify-between items-center pt-1 gap-2">
                           <span>Licencia DC3:</span>
                           <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
@@ -2739,7 +2750,7 @@ export default function App() {
                   <thead>
                     <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                       <th className="p-2">Operador</th>
-                      <th className="p-2">Zona</th>
+                      <th className="p-2">Área</th>
                       <th className="p-2 text-center">M</th>
                       <th className="p-2 text-center">T</th>
                       <th className="p-2 text-center">N</th>
@@ -2928,23 +2939,19 @@ export default function App() {
                 <input type="text" required placeholder="Ej. Juan Pérez" value={newOp.name} onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
               </div>
               <div>
-                <label className="block text-emerald-300 font-bold mb-1">Zona de Trabajo</label>
+                <label className="block text-emerald-300 font-bold mb-1"># de Socio</label>
+                <input type="text" inputMode="numeric" required placeholder="Ej. 12345" value={newOp.socioNumber || ''} onChange={(e) => setNewOp({ ...newOp, socioNumber: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Área de Trabajo</label>
                 <select value={newOp.zone} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
-                  {WAREHOUSE_ZONES.filter(z => z !== 'Todas las zonas').map(z => <option key={z} value={z}>{z}</option>)}
+                  {WAREHOUSE_ZONES.filter(z => z !== 'Todas las áreas').map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
                 <select value={newOp.equipment} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Turno Base</label>
-                <select value={newOp.shiftPattern} onChange={(e) => setNewOp({ ...newOp, shiftPattern: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
-                  <option value="Mañana">Mañana</option>
-                  <option value="Tarde">Tarde</option>
-                  <option value="Noche">Noche</option>
                 </select>
               </div>
               <div>

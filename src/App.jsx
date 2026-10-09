@@ -891,7 +891,7 @@ export default function App() {
   // ✅ NUEVO: datos de productividad
   const [productivityData, setProductivityData] = useState({});
   const [productivityDraft, setProductivityDraft] = useState({});
-  const [productivityChartMonth, setProductivityChartMonth] = useState('current');
+  const [productivityMonth, setProductivityMonth] = useState(() => formatDateLocal(new Date()).slice(0, 7));
 
   const [reportsView, setReportsView] = useState('summary');
   const [reportWeekStart, setReportWeekStart] = useState(() => getMondayOfCurrentWeek());
@@ -1270,33 +1270,27 @@ export default function App() {
     return { hc, fte, otWeek };
   }, [operators, overtimeRequests, reportWeekDays]);
 
-  // ✅ NUEVO: cálculo de productividad para mes actual y mes anterior
-  const currentYm = useMemo(() => formatDateLocal(new Date()).slice(0, 7), []);
+  // Productividad: historial mensual con edición permitida solo para el mes actual y el anterior.
+  const currentYm = useMemo(() => formatDateLocal(now).slice(0, 7), [now]);
   const prevYm = useMemo(() => shiftMonth(currentYm, -1), [currentYm]);
+  const canEditProductivityMonth = productivityMonth === currentYm || productivityMonth === prevYm;
 
   const productivityStats = useMemo(() => {
-    const computeMonth = (ym) => {
-      const monthOt = overtimeRequests
-        .filter(r => r.status === 'Aprobado' && typeof r.date === 'string' && r.date.startsWith(ym))
-        .reduce((a, r) => a + (Number(r.hours) || 0), 0);
-      const hc = operators.length;
-      const fte = hc + monthOt / TE_BASE_HOURS;
-      const entry = productivityData[ym] || {};
-      const expectedHL = Number(entry.expectedHL) || 0;
-      const realHL = Number(entry.realHL) || 0;
-      const expectedProd = fte > 0 ? expectedHL / fte : 0;
-      const realProd = fte > 0 ? realHL / fte : 0;
-      const diff = realProd - expectedProd;
-      const cumplimiento = expectedProd > 0 ? (realProd / expectedProd) * 100 : 0;
-      return { ym, hc, otMonth: monthOt, fte, expectedHL, realHL, expectedProd, realProd, diff, cumplimiento };
-    };
-    return {
-      current: computeMonth(currentYm),
-      previous: computeMonth(prevYm)
-    };
-  }, [operators, overtimeRequests, productivityData, currentYm, prevYm]);
-
-  const chartProductivity = productivityChartMonth === 'current' ? productivityStats.current : productivityStats.previous;
+    const ym = productivityMonth;
+    const monthOt = overtimeRequests
+      .filter(r => r.status === 'Aprobado' && typeof r.date === 'string' && r.date.startsWith(ym))
+      .reduce((a, r) => a + (Number(r.hours) || 0), 0);
+    const hc = operators.length;
+    const fte = hc + monthOt / TE_BASE_HOURS;
+    const entry = productivityData[ym] || {};
+    const expectedHL = Number(entry.expectedHL) || 0;
+    const realHL = Number(entry.realHL) || 0;
+    const expectedProd = fte > 0 ? expectedHL / fte : 0;
+    const realProd = fte > 0 ? realHL / fte : 0;
+    const diff = realProd - expectedProd;
+    const cumplimiento = expectedProd > 0 ? (realProd / expectedProd) * 100 : 0;
+    return { ym, hc, otMonth: monthOt, fte, expectedHL, realHL, expectedProd, realProd, diff, cumplimiento };
+  }, [operators, overtimeRequests, productivityData, productivityMonth]);
 
   // ✅ Handlers para inputs de productividad
   const handleProductivityInput = (ym, field, value) => {
@@ -1307,6 +1301,7 @@ export default function App() {
   };
 
   const handleProductivityBlur = async (ym, field) => {
+    if (ym !== currentYm && ym !== prevYm) return;
     const raw = productivityDraft[ym]?.[field];
     const num = (raw === '' || raw === undefined || raw === null) ? 0 : Number(raw) || 0;
     const updated = {
@@ -2103,11 +2098,6 @@ export default function App() {
                 <BarChart3 className="w-3 h-3" /> Reportes
               </button>
             )}
-            {canViewReports && (
-              <button onClick={() => setActiveTab('productivity')} className={`px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 ${activeTab === 'productivity' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>
-                <Package className="w-3 h-3" /> Productividad
-              </button>
-            )}
           </nav>
           <div className="flex items-center space-x-2 sm:space-x-3">
             {syncStatus !== 'idle' && (
@@ -2147,11 +2137,6 @@ export default function App() {
           {canViewReports && (
             <button onClick={() => setActiveTab('reports')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap flex items-center gap-1.5 transition ${activeTab === 'reports' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
               <BarChart3 className="w-3 h-3" /> Reportes
-            </button>
-          )}
-          {canViewReports && (
-            <button onClick={() => setActiveTab('productivity')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap flex items-center gap-1.5 transition ${activeTab === 'productivity' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>
-              <Package className="w-3 h-3" /> Productividad
             </button>
           )}
         </div>
@@ -2308,7 +2293,7 @@ export default function App() {
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/50 text-amber-300 border border-amber-500/50">Falta día de descanso</span>
                         )}
                         {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                          <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/30 border border-white/20">{assignments[cellKey]}</span>
+                          <span className="inline-block mt-1 text-[11px] font-bold px-1.5 py-0.5 rounded bg-black/30 border border-white/20">{assignments[cellKey]}</span>
                         )}
                       </div>
                       <div className="shrink-0 flex items-center gap-1">
@@ -2406,7 +2391,7 @@ export default function App() {
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
                                   {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                                    <span className="mt-0.5 text-[9px] leading-tight font-semibold text-center opacity-90 px-0.5">{assignments[cellKey]}</span>
+                                    <span className="mt-0.5 text-[11px] leading-tight font-semibold text-center opacity-90 px-0.5">{assignments[cellKey]}</span>
                                   )}
                                   {overtimeByCell[cellKey] && (
                                     <span title={overtimeByCell[cellKey].approved > 0 ? 'Horas extras aprobadas' : 'Horas extras pendientes'} className={`absolute -top-1 -left-1 text-[9px] leading-none font-extrabold px-1 py-0.5 rounded ${overtimeByCell[cellKey].approved > 0 ? 'bg-amber-500 text-black' : 'bg-[#011a0d] border border-dashed border-amber-400 text-amber-300'}`}>
@@ -2828,7 +2813,7 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="text-base sm:text-lg font-bold text-white">Reportes Ejecutivos</h2>
-                  <p className="text-xs text-emerald-300">KPIs de la semana seleccionada</p>
+                  <p className="text-xs text-emerald-300">{reportsView === 'summary' ? 'KPIs de la semana seleccionada' : reportsView === 'te' ? 'Historial mensual de horas extra' : 'Historial mensual de productividad'}</p>
                 </div>
               </div>
               <button onClick={handleExportExecutivePDF} disabled={isExporting} className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition border border-emerald-500/50">
@@ -2840,6 +2825,7 @@ export default function App() {
             <div className="flex gap-1.5">
               <button onClick={() => setReportsView('summary')} className={`px-3 py-2 text-xs font-bold rounded-lg transition ${reportsView === 'summary' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Resumen semanal</button>
               <button onClick={() => setReportsView('te')} className={`px-3 py-2 text-xs font-bold rounded-lg transition ${reportsView === 'te' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Tiempo extra (T.E)</button>
+              <button onClick={() => setReportsView('productivity')} className={`px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-1.5 transition ${reportsView === 'productivity' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}><Package className="w-3 h-3" /> Productividad</button>
             </div>
 
             {reportsView === 'summary' && (
@@ -3108,33 +3094,65 @@ export default function App() {
           </div>
         )}
 
-        {/* ✅ NUEVA PESTAÑA: PRODUCTIVIDAD */}
-        {activeTab === 'productivity' && canViewReports && (
-          <div className="space-y-5">
-            {/* Header */}
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center shrink-0">
-                <Package className="w-5 h-5 text-emerald-300" />
+        {/* Historial mensual de Productividad dentro de Reportes */}
+        {activeTab === 'reports' && reportsView === 'productivity' && canViewReports && (
+          <div className="mt-5 space-y-5">
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center shrink-0">
+                  <Package className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white">Historial de productividad</h3>
+                  <p className="text-[11px] text-emerald-300">Consulta los meses anteriores; solo se editan el mes actual y el inmediato anterior.</p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-white">Productividad</h2>
-                <p className="text-xs text-emerald-300">Volumen (hL) ÷ F.T.E — Comparativa mes actual vs mes anterior</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setProductivityMonth(month => shiftMonth(month, -1))}
+                  className="p-2 bg-[#02180d] hover:bg-emerald-950 rounded-lg text-emerald-200 border border-emerald-800/60 transition"
+                  title="Mes anterior"
+                  aria-label="Mes anterior"
+                ><ChevronLeft className="w-4 h-4" /></button>
+                <div className="min-w-[150px] text-center text-xs font-bold text-white bg-[#02180d] px-3 py-2 rounded-lg border border-emerald-900">
+                  {formatMonthLabel(productivityMonth)}
+                </div>
+                <button
+                  onClick={() => setProductivityMonth(month => month < currentYm ? shiftMonth(month, 1) : month)}
+                  disabled={productivityMonth >= currentYm}
+                  className="p-2 bg-[#02180d] hover:bg-emerald-950 rounded-lg text-emerald-200 border border-emerald-800/60 transition disabled:opacity-35 disabled:cursor-not-allowed"
+                  title="Mes siguiente"
+                  aria-label="Mes siguiente"
+                ><ChevronRight className="w-4 h-4" /></button>
+                <label className="flex items-center gap-2 text-[11px] text-emerald-300 font-bold">
+                  Ir a un mes
+                  <input
+                    type="month"
+                    max={currentYm}
+                    value={productivityMonth}
+                    onChange={e => { if (e.target.value && e.target.value <= currentYm) setProductivityMonth(e.target.value); }}
+                    className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-2 text-xs text-white focus:outline-none focus:border-emerald-700"
+                  />
+                </label>
               </div>
             </div>
 
-            {/* Tabla editable */}
             <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl overflow-hidden shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 border-b border-emerald-900/70 bg-[#001f0d]">
+                <div className="font-bold text-emerald-200">Datos de {formatMonthLabel(productivityMonth)}</div>
+                <span className={`text-[10px] font-bold rounded-lg border px-2.5 py-1 w-fit ${canEditProductivityMonth ? 'text-emerald-300 bg-emerald-950 border-emerald-800' : 'text-amber-300 bg-amber-950/60 border-amber-800/70'}`}>
+                  {canEditProductivityMonth ? 'Editable' : 'Histórico · solo lectura'}
+                </span>
+              </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs min-w-[640px]">
+                <table className="w-full text-left border-collapse text-xs min-w-[480px]">
                   <thead>
                     <tr className="bg-[#001f0d] text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
-                      <th className="p-3 w-1/3">Concepto</th>
-                      <th className="p-3 text-center">{formatMonthLabel(currentYm)}</th>
-                      <th className="p-3 text-center">{formatMonthLabel(prevYm)}</th>
+                      <th className="p-3 w-1/2">Concepto</th>
+                      <th className="p-3 text-center">{formatMonthLabel(productivityMonth)}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-900/50">
-                    {/* Volumen esperado (input) */}
                     <tr>
                       <td className="p-3">
                         <div className="font-bold text-white">Volumen esperado</div>
@@ -3142,31 +3160,15 @@ export default function App() {
                       </td>
                       <td className="p-3">
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0"
-                          value={productivityDraft[currentYm]?.expectedHL ?? ''}
-                          onChange={(e) => handleProductivityInput(currentYm, 'expectedHL', e.target.value)}
-                          onBlur={() => handleProductivityBlur(currentYm, 'expectedHL')}
-                          className="w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0"
-                          value={productivityDraft[prevYm]?.expectedHL ?? ''}
-                          onChange={(e) => handleProductivityInput(prevYm, 'expectedHL', e.target.value)}
-                          onBlur={() => handleProductivityBlur(prevYm, 'expectedHL')}
-                          className="w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500"
+                          type="number" min="0" step="0.01" placeholder="0"
+                          value={productivityDraft[productivityMonth]?.expectedHL ?? ''}
+                          disabled={!canEditProductivityMonth}
+                          onChange={e => handleProductivityInput(productivityMonth, 'expectedHL', e.target.value)}
+                          onBlur={() => handleProductivityBlur(productivityMonth, 'expectedHL')}
+                          className={`w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed ${canEditProductivityMonth ? '' : 'cursor-not-allowed'}`}
                         />
                       </td>
                     </tr>
-
-                    {/* Volumen real (input) */}
                     <tr>
                       <td className="p-3">
                         <div className="font-bold text-white">Volumen real</div>
@@ -3174,95 +3176,55 @@ export default function App() {
                       </td>
                       <td className="p-3">
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0"
-                          value={productivityDraft[currentYm]?.realHL ?? ''}
-                          onChange={(e) => handleProductivityInput(currentYm, 'realHL', e.target.value)}
-                          onBlur={() => handleProductivityBlur(currentYm, 'realHL')}
-                          className="w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="0"
-                          value={productivityDraft[prevYm]?.realHL ?? ''}
-                          onChange={(e) => handleProductivityInput(prevYm, 'realHL', e.target.value)}
-                          onBlur={() => handleProductivityBlur(prevYm, 'realHL')}
-                          className="w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500"
+                          type="number" min="0" step="0.01" placeholder="0"
+                          value={productivityDraft[productivityMonth]?.realHL ?? ''}
+                          disabled={!canEditProductivityMonth}
+                          onChange={e => handleProductivityInput(productivityMonth, 'realHL', e.target.value)}
+                          onBlur={() => handleProductivityBlur(productivityMonth, 'realHL')}
+                          className={`w-full bg-[#011a0d] border border-emerald-800 rounded-lg px-3 py-2 text-sm text-white text-center font-bold focus:outline-none focus:border-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed ${canEditProductivityMonth ? '' : 'cursor-not-allowed'}`}
                         />
                       </td>
                     </tr>
-
-                    {/* F.T.E */}
                     <tr>
                       <td className="p-3">
                         <div className="font-bold text-emerald-200">F.T.E</div>
-                        <div className="text-[10px] text-emerald-500">H.C + (OT del mes ÷ 208)</div>
+                        <div className="text-[10px] text-emerald-500">H.C + (horas extra aprobadas ÷ 208)</div>
                       </td>
                       <td className="p-3 text-center font-extrabold text-emerald-100 text-base">
-                        {fmtFTE(productivityStats.current.fte)}
-                        <div className="text-[10px] text-emerald-500 font-normal">{productivityStats.current.hc} HC · {productivityStats.current.otMonth.toFixed(1)}h OT</div>
-                      </td>
-                      <td className="p-3 text-center font-extrabold text-emerald-100 text-base">
-                        {fmtFTE(productivityStats.previous.fte)}
-                        <div className="text-[10px] text-emerald-500 font-normal">{productivityStats.previous.hc} HC · {productivityStats.previous.otMonth.toFixed(1)}h OT</div>
+                        {fmtFTE(productivityStats.fte)}
+                        <div className="text-[10px] text-emerald-500 font-normal">{productivityStats.hc} HC · {productivityStats.otMonth.toFixed(1)} h extra</div>
                       </td>
                     </tr>
-
-                    {/* Productividad esperada */}
                     <tr className="bg-[#011a0d]">
                       <td className="p-3">
                         <div className="font-bold text-emerald-300">Productividad esperada</div>
                         <div className="text-[10px] text-emerald-500">volumen esperado ÷ F.T.E</div>
                       </td>
                       <td className="p-3 text-center font-extrabold text-emerald-200 text-lg">
-                        {fmtNum(productivityStats.current.expectedProd)}
-                        <div className="text-[10px] text-emerald-500 font-normal">{fmtNum(productivityStats.current.expectedHL)} hL ÷ {fmtFTE(productivityStats.current.fte)}</div>
-                      </td>
-                      <td className="p-3 text-center font-extrabold text-emerald-200 text-lg">
-                        {fmtNum(productivityStats.previous.expectedProd)}
-                        <div className="text-[10px] text-emerald-500 font-normal">{fmtNum(productivityStats.previous.expectedHL)} hL ÷ {fmtFTE(productivityStats.previous.fte)}</div>
+                        {fmtNum(productivityStats.expectedProd)}
+                        <div className="text-[10px] text-emerald-500 font-normal">{fmtNum(productivityStats.expectedHL)} hL ÷ {fmtFTE(productivityStats.fte)}</div>
                       </td>
                     </tr>
-
-                    {/* Productividad real */}
                     <tr className="bg-[#011a0d]">
                       <td className="p-3">
                         <div className="font-bold text-orange-300">Productividad real</div>
                         <div className="text-[10px] text-emerald-500">volumen real ÷ F.T.E</div>
                       </td>
                       <td className="p-3 text-center font-extrabold text-orange-200 text-lg">
-                        {fmtNum(productivityStats.current.realProd)}
-                        <div className="text-[10px] text-emerald-500 font-normal">{fmtNum(productivityStats.current.realHL)} hL ÷ {fmtFTE(productivityStats.current.fte)}</div>
-                      </td>
-                      <td className="p-3 text-center font-extrabold text-orange-200 text-lg">
-                        {fmtNum(productivityStats.previous.realProd)}
-                        <div className="text-[10px] text-emerald-500 font-normal">{fmtNum(productivityStats.previous.realHL)} hL ÷ {fmtFTE(productivityStats.previous.fte)}</div>
+                        {fmtNum(productivityStats.realProd)}
+                        <div className="text-[10px] text-emerald-500 font-normal">{fmtNum(productivityStats.realHL)} hL ÷ {fmtFTE(productivityStats.fte)}</div>
                       </td>
                     </tr>
-
-                    {/* Δ y cumplimiento */}
                     <tr>
                       <td className="p-3 font-bold text-amber-300">Δ (Real − Esperado)</td>
-                      <td className={`p-3 text-center font-extrabold text-base ${productivityStats.current.diff >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                        {productivityStats.current.diff >= 0 ? '+' : ''}{fmtNum(productivityStats.current.diff)}
-                      </td>
-                      <td className={`p-3 text-center font-extrabold text-base ${productivityStats.previous.diff >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                        {productivityStats.previous.diff >= 0 ? '+' : ''}{fmtNum(productivityStats.previous.diff)}
+                      <td className={`p-3 text-center font-extrabold text-base ${productivityStats.diff >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                        {productivityStats.diff >= 0 ? '+' : ''}{fmtNum(productivityStats.diff)}
                       </td>
                     </tr>
                     <tr>
                       <td className="p-3 font-bold text-emerald-200">Cumplimiento</td>
-                      <td className={`p-3 text-center font-extrabold text-base ${productivityStats.current.cumplimiento >= 100 ? 'text-emerald-300' : productivityStats.current.cumplimiento >= 90 ? 'text-amber-300' : 'text-red-300'}`}>
-                        {fmtNum(productivityStats.current.cumplimiento)}%
-                      </td>
-                      <td className={`p-3 text-center font-extrabold text-base ${productivityStats.previous.cumplimiento >= 100 ? 'text-emerald-300' : productivityStats.previous.cumplimiento >= 90 ? 'text-amber-300' : 'text-red-300'}`}>
-                        {fmtNum(productivityStats.previous.cumplimiento)}%
+                      <td className={`p-3 text-center font-extrabold text-base ${productivityStats.cumplimiento >= 100 ? 'text-emerald-300' : productivityStats.cumplimiento >= 90 ? 'text-amber-300' : 'text-red-300'}`}>
+                        {fmtNum(productivityStats.cumplimiento)}%
                       </td>
                     </tr>
                   </tbody>
@@ -3270,45 +3232,27 @@ export default function App() {
               </div>
             </div>
 
-            {/* Selector de mes para la gráfica */}
-            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">Ver gráfica de:</span>
-              <button
-                onClick={() => setProductivityChartMonth('current')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${productivityChartMonth === 'current' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}
-              >
-                {formatMonthLabel(currentYm)}
-              </button>
-              <button
-                onClick={() => setProductivityChartMonth('previous')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${productivityChartMonth === 'previous' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}
-              >
-                {formatMonthLabel(prevYm)}
-              </button>
-            </div>
-
-            {/* Gráfica de productividad: esperada vs real */}
             <ProductivityBarChart
-              title={`Productividad · ${formatMonthLabel(chartProductivity.ym)}`}
+              title={`Productividad · ${formatMonthLabel(productivityMonth)}`}
               subtitle="Volumen ÷ F.T.E (hL / F.T.E)"
               bars={[
                 {
                   label: 'Esperada',
-                  value: chartProductivity.expectedProd,
+                  value: productivityStats.expectedProd,
                   color: '#3987e5',
-                  detail: `${fmtNum(chartProductivity.expectedHL)} hL ÷ ${fmtFTE(chartProductivity.fte)}`
+                  detail: `${fmtNum(productivityStats.expectedHL)} hL ÷ ${fmtFTE(productivityStats.fte)}`
                 },
                 {
                   label: 'Real',
-                  value: chartProductivity.realProd,
+                  value: productivityStats.realProd,
                   color: '#d95926',
-                  detail: `${fmtNum(chartProductivity.realHL)} hL ÷ ${fmtFTE(chartProductivity.fte)}`
+                  detail: `${fmtNum(productivityStats.realHL)} hL ÷ ${fmtFTE(productivityStats.fte)}`
                 }
               ]}
             />
 
             <p className="text-[11px] text-emerald-400/80">
-              F.T.E = personas registradas (H.C) + (horas extra aprobadas del mes ÷ 208). Los volúmenes se capturan manualmente y se guardan automáticamente al salir del campo.
+              F.T.E = plantilla registrada + horas extra aprobadas del mes ÷ 208. Los volúmenes se guardan automáticamente al salir del campo. Los meses anteriores al inmediato anterior quedan en solo lectura.
             </p>
           </div>
         )}

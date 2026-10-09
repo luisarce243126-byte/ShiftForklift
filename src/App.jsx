@@ -1151,6 +1151,8 @@ export default function App() {
   // Filtros independientes para la pestaña Personal (no afectan la matriz).
   const [personnelSearch, setPersonnelSearch] = useState('');
   const [personnelZoneFilter, setPersonnelZoneFilter] = useState('Todas las áreas');
+  // Sub-pestañas de Personal: montacargistas vs staff
+  const [personnelView, setPersonnelView] = useState('operators');
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
@@ -1294,25 +1296,27 @@ export default function App() {
     [reportTeMonth, operators, scheduleData, assignments, overtimeRequests]
   );
 
+  // ✅ H.C = montacargistas + staff. F.T.E añade horas extra aprobadas de la semana ÷ 208.
   const hcVsFte = useMemo(() => {
     const weekDates = reportWeekDays.map(d => d.dateStr);
-    const hc = operators.length;
+    const hc = operators.length + staffMembers.length;
     const otWeek = sumOvertimeTotal(overtimeRequests, weekDates);
     const fte = hc + otWeek / TE_BASE_HOURS;
     return { hc, fte, otWeek };
-  }, [operators, overtimeRequests, reportWeekDays]);
+  }, [operators, staffMembers, overtimeRequests, reportWeekDays]);
 
   // Productividad: historial mensual con edición permitida solo para el mes actual y el anterior.
   const currentYm = useMemo(() => formatDateLocal(now).slice(0, 7), [now]);
   const prevYm = useMemo(() => shiftMonth(currentYm, -1), [currentYm]);
   const canEditProductivityMonth = productivityMonth === currentYm || productivityMonth === prevYm;
 
+  // ✅ H.C = montacargistas + staff. F.T.E añade horas extra aprobadas del mes ÷ 208.
   const productivityStats = useMemo(() => {
     const ym = productivityMonth;
     const monthOt = overtimeRequests
       .filter(r => r.status === 'Aprobado' && typeof r.date === 'string' && r.date.startsWith(ym))
       .reduce((a, r) => a + (Number(r.hours) || 0), 0);
-    const hc = operators.length;
+    const hc = operators.length + staffMembers.length;
     const fte = hc + monthOt / TE_BASE_HOURS;
     const entry = productivityData[ym] || {};
     const expectedHL = Number(entry.expectedHL) || 0;
@@ -1322,7 +1326,7 @@ export default function App() {
     const diff = realProd - expectedProd;
     const cumplimiento = expectedProd > 0 ? (realProd / expectedProd) * 100 : 0;
     return { ym, hc, otMonth: monthOt, fte, expectedHL, realHL, expectedProd, realProd, diff, cumplimiento };
-  }, [operators, overtimeRequests, productivityData, productivityMonth]);
+  }, [operators, staffMembers, overtimeRequests, productivityData, productivityMonth]);
 
   // ✅ Handlers para inputs de productividad
   const handleProductivityInput = (ym, field, value) => {
@@ -2075,7 +2079,7 @@ export default function App() {
           const productRows = [
             ['Volumen esperado', `${fmtNum(productivityStats.expectedHL)} hL`, 'Captura manual'],
             ['Volumen real', `${fmtNum(productivityStats.realHL)} hL`, 'Captura manual'],
-            ['F.T.E', fmtFTE(productivityStats.fte), `${productivityStats.hc} personas + ${productivityStats.otMonth.toFixed(1)} h extra ÷ 208`],
+            ['F.T.E', fmtFTE(productivityStats.fte), `${productivityStats.hc} H.C (op + staff) + ${productivityStats.otMonth.toFixed(1)} h extra ÷ 208`],
             ['Productividad esperada', fmtNum(productivityStats.expectedProd), 'Volumen esperado ÷ F.T.E'],
             ['Productividad real', fmtNum(productivityStats.realProd), 'Volumen real ÷ F.T.E'],
             ['Diferencia (real − esperada)', `${productivityStats.diff >= 0 ? '+' : ''}${fmtNum(productivityStats.diff)}`, 'Productividad real menos esperada'],
@@ -2113,7 +2117,7 @@ export default function App() {
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(7);
           pdf.setTextColor(90, 112, 98);
-          pdf.text('Nota: F.T.E = plantilla registrada + horas extra aprobadas del mes ÷ 208.', margin, Math.min(H - 16, y + 36));
+          pdf.text('Nota: F.T.E = plantilla registrada (operadores + staff) + horas extra aprobadas del mes ÷ 208.', margin, Math.min(H - 16, y + 36));
         } else {
           const totalOperatorsWithOt = Object.values(teStats.perOp).filter(v => v.hours > 0).length;
           const activeLines = TE_AREAS.flatMap(zone => (teStats.lines[zone] || []).filter(line => line.hours > 0)).length;
@@ -2889,191 +2893,228 @@ export default function App() {
 
         {activeTab === 'operators' && (
           <div className="space-y-5">
-            {licenseAlerts.length > 0 && showLicenseAlerts && (
-              <div className="bg-amber-950/60 border border-amber-700/60 rounded-2xl p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start space-x-3">
-                    <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                    <div>
-                      <h3 className="text-sm font-bold text-amber-200">
-                        {licenseAlerts.length} licencia(s) DC3 {licenseAlerts.some(a => a.expired) ? 'vencida(s) o ' : ''}por vencer
-                      </h3>
-                      <ul className="mt-2 space-y-1 text-xs text-amber-100/90">
-                        {licenseAlerts.map(a => (
-                          <li key={a.id}><span className="font-bold">{a.name}</span> ({a.id}) — {a.expired ? `vencida hace ${Math.abs(a.diffDays)} día(s)` : `vence en ${a.diffDays} día(s)`} ({a.licenseExpiry})</li>
-                        ))}
-                      </ul>
+
+            {/* Sub-pestañas: Montacargistas / Staff */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setPersonnelView('operators')}
+                className={`px-3 py-2 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+                  personnelView === 'operators'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-[#02180d] text-emerald-300 border border-emerald-900'
+                }`}
+              >
+                <Users className="w-3 h-3" />
+                Montacargistas ({operators.length})
+              </button>
+              <button
+                onClick={() => setPersonnelView('staff')}
+                className={`px-3 py-2 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+                  personnelView === 'staff'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-[#02180d] text-emerald-300 border border-emerald-900'
+                }`}
+              >
+                <Users2 className="w-3 h-3" />
+                Staff ({staffMembers.length})
+              </button>
+            </div>
+
+            {/* ─── Vista: Montacargistas ─── */}
+            {personnelView === 'operators' && (
+              <>
+                {licenseAlerts.length > 0 && showLicenseAlerts && (
+                  <div className="bg-amber-950/60 border border-amber-700/60 rounded-2xl p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start space-x-3">
+                        <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <h3 className="text-sm font-bold text-amber-200">
+                            {licenseAlerts.length} licencia(s) DC3 {licenseAlerts.some(a => a.expired) ? 'vencida(s) o ' : ''}por vencer
+                          </h3>
+                          <ul className="mt-2 space-y-1 text-xs text-amber-100/90">
+                            {licenseAlerts.map(a => (
+                              <li key={a.id}><span className="font-bold">{a.name}</span> ({a.id}) — {a.expired ? `vencida hace ${Math.abs(a.diffDays)} día(s)` : `vence en ${a.diffDays} día(s)`} ({a.licenseExpiry})</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                      <button onClick={() => setShowLicenseAlerts(false)} className="text-amber-400 hover:text-amber-200 shrink-0"><X className="w-4 h-4" /></button>
                     </div>
                   </div>
-                  <button onClick={() => setShowLicenseAlerts(false)} className="text-amber-400 hover:text-amber-200 shrink-0"><X className="w-4 h-4" /></button>
-                </div>
-              </div>
-            )}
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 gap-3">
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-white">Plantilla de Montacargistas</h2>
-                <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
-              </div>
-              {canManageOperators && (
-                <button onClick={() => {
-                  setEditingOperator(null);
-                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: formatDateLocal(new Date()) });
-                  setIsAddOperatorOpen(true);
-                }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
-                  <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
-                </button>
-              )}
-            </div>
-            {operators.length > 0 && (
-              <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-emerald-200">
-                    <Filter className="w-4 h-4 text-emerald-400" />
-                    <span className="text-xs sm:text-sm font-bold">Buscar y filtrar personal</span>
+                )}
+
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-[#003818] border border-emerald-800/70 rounded-2xl p-4 gap-3">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white">Plantilla de Montacargistas</h2>
+                    <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
                   </div>
-                  {personnelFiltersCount > 0 && (
-                    <button
-                      onClick={clearPersonnelFilters}
-                      className="shrink-0 px-2.5 py-1.5 bg-red-950/70 hover:bg-red-900 border border-red-800/80 text-red-200 rounded-lg text-[10px] sm:text-xs font-bold flex items-center gap-1.5 transition"
-                      title="Limpiar filtros de personal"
-                    >
-                      <FilterX className="w-3.5 h-3.5" /> Limpiar ({personnelFiltersCount})
+                  {canManageOperators && (
+                    <button onClick={() => {
+                      setEditingOperator(null);
+                      setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: formatDateLocal(new Date()) });
+                      setIsAddOperatorOpen(true);
+                    }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
+                      <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <label className="relative block">
-                    <span className="sr-only">Buscar por nombre o número de socio</span>
-                    <Search className="w-4 h-4 text-emerald-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="search"
-                      placeholder="Nombre, ID o # de socio..."
-                      value={personnelSearch}
-                      onChange={e => setPersonnelSearch(e.target.value)}
-                      className="w-full min-w-0 bg-[#02180d] border border-emerald-900 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm text-white placeholder:text-emerald-700 focus:outline-none focus:border-emerald-600"
-                    />
-                  </label>
-                  <label>
-                    <span className="sr-only">Filtrar por área</span>
-                    <select
-                      value={personnelZoneFilter}
-                      onChange={e => setPersonnelZoneFilter(e.target.value)}
-                      className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-200 focus:outline-none focus:border-emerald-600"
-                    >
-                      <option value="Todas las áreas">Todas las áreas</option>
-                      {TE_AREAS.map(zone => <option key={zone} value={zone}>{shortArea(zone)}</option>)}
-                      <option value="Sin área">Sin área asignada</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-400">
-                  <span>Mostrando <strong className="text-white">{filteredPersonnel.length}</strong> de <strong className="text-white">{operators.length}</strong> personas</span>
-                  {personnelFiltersCount > 0 && <span>Filtros activos: {personnelFiltersCount}</span>}
-                </div>
-              </div>
-            )}
-            {operators.length === 0 ? (
-              <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
-                <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
-                <h3 className="text-base font-bold text-white mb-1">Sin personal registrado</h3>
-                <p className="text-xs text-emerald-400/80 mb-4">Agrega el primer montacargista para comenzar.</p>
-              </div>
-            ) : filteredPersonnel.length === 0 ? (
-              <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-10 text-center">
-                <Search className="w-10 h-10 text-emerald-700 mx-auto mb-3" />
-                <h3 className="text-sm font-bold text-white mb-1">No hay resultados</h3>
-                <p className="text-xs text-emerald-400/80 mb-4">Ningún operador coincide con los criterios de búsqueda seleccionados.</p>
-                <button onClick={clearPersonnelFilters} className="px-3 py-2 bg-emerald-800 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition">Limpiar filtros</button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredPersonnel.map(op => (
-                  <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="min-w-0">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
-                          <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
-                        </div>
-                        {canManageOperators && (
-                          <div className="flex space-x-1 shrink-0">
-                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', zone: TE_AREAS.includes(op.zone) ? op.zone : '', equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : '' }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
-                            <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
-                          </div>
-                        )}
+
+                {operators.length > 0 && (
+                  <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-emerald-200">
+                        <Filter className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs sm:text-sm font-bold">Buscar y filtrar personal</span>
                       </div>
-                      <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
-                        <div className="flex justify-between gap-2"><span># Socio:</span><span className="font-semibold text-white text-right">{op.socioNumber || 'N/A'}</span></div>
-                        <div className="flex justify-between gap-2"><span>Área:</span><span className={`font-semibold text-right ${TE_AREAS.includes(op.zone) ? 'text-white' : 'text-amber-300'}`}>{areaLabel(op)}</span></div>
-                        <div className="flex justify-between gap-2"><span>Equipo:</span><span className={`font-semibold text-right ${FORKLIFT_TYPES.includes(op.equipment) ? 'text-white' : 'text-amber-300'}`}>{FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : 'Sin registrar'}</span></div>
-                        <div className="flex justify-between items-center pt-1 gap-2">
-                          <span>Licencia DC3:</span>
-                          <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
-                        </div>
-                      </div>
+                      {personnelFiltersCount > 0 && (
+                        <button
+                          onClick={clearPersonnelFilters}
+                          className="shrink-0 px-2.5 py-1.5 bg-red-950/70 hover:bg-red-900 border border-red-800/80 text-red-200 rounded-lg text-[10px] sm:text-xs font-bold flex items-center gap-1.5 transition"
+                          title="Limpiar filtros de personal"
+                        >
+                          <FilterX className="w-3.5 h-3.5" /> Limpiar ({personnelFiltersCount})
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="relative block">
+                        <span className="sr-only">Buscar por nombre o número de socio</span>
+                        <Search className="w-4 h-4 text-emerald-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="search"
+                          placeholder="Nombre, ID o # de socio..."
+                          value={personnelSearch}
+                          onChange={e => setPersonnelSearch(e.target.value)}
+                          className="w-full min-w-0 bg-[#02180d] border border-emerald-900 rounded-lg pl-9 pr-3 py-2 text-xs sm:text-sm text-white placeholder:text-emerald-700 focus:outline-none focus:border-emerald-600"
+                        />
+                      </label>
+                      <label>
+                        <span className="sr-only">Filtrar por área</span>
+                        <select
+                          value={personnelZoneFilter}
+                          onChange={e => setPersonnelZoneFilter(e.target.value)}
+                          className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-200 focus:outline-none focus:border-emerald-600"
+                        >
+                          <option value="Todas las áreas">Todas las áreas</option>
+                          {TE_AREAS.map(zone => <option key={zone} value={zone}>{shortArea(zone)}</option>)}
+                          <option value="Sin área">Sin área asignada</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-400">
+                      <span>Mostrando <strong className="text-white">{filteredPersonnel.length}</strong> de <strong className="text-white">{operators.length}</strong> personas</span>
+                      {personnelFiltersCount > 0 && <span>Filtros activos: {personnelFiltersCount}</span>}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-
-            <section className="space-y-3 pt-2">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center shrink-0">
-                    <Users2 className="w-5 h-5 text-emerald-300" />
-                  </div>
-                  <div>
-                    <h2 className="text-base sm:text-lg font-bold text-white">Personal de Staff</h2>
-                    <p className="text-xs text-emerald-300">Registros manuales · No aparecen en la matriz de turnos</p>
-                  </div>
-                </div>
-                {canManageOperators && (
-                  <button onClick={() => {
-                    setEditingStaff(null);
-                    setStaffForm({ name: '', socioNumber: '', position: '' });
-                    setIsStaffModalOpen(true);
-                  }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition">
-                    <Plus className="w-4 h-4" /><span>Agregar Staff</span>
-                  </button>
                 )}
-              </div>
-
-              {staffMembers.length === 0 ? (
-                <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
-                  <Users2 className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
-                  <p className="text-emerald-300 font-bold text-sm">No hay personal de Staff registrado</p>
-                  <p className="text-xs text-emerald-500 mt-1">Agrega manualmente el nombre, número de socio y puesto.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {staffMembers.map(member => (
-                    <div key={member.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-4 shadow-lg">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-bold text-white break-words">{member.name}</h3>
-                          <p className="text-xs text-emerald-400 mt-1">Staff</p>
-                        </div>
-                        {canManageOperators && (
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button title="Editar Staff" onClick={() => {
-                              setEditingStaff(member);
-                              setStaffForm({ name: member.name || '', socioNumber: member.socioNumber || '', position: member.position || '' });
-                              setIsStaffModalOpen(true);
-                            }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5" /></button>
-                            <button title="Eliminar Staff" onClick={() => handleDeleteStaff(member.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5" /></button>
+                {operators.length === 0 ? (
+                  <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
+                    <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
+                    <h3 className="text-base font-bold text-white mb-1">Sin personal registrado</h3>
+                    <p className="text-xs text-emerald-400/80 mb-4">Agrega el primer montacargista para comenzar.</p>
+                  </div>
+                ) : filteredPersonnel.length === 0 ? (
+                  <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-10 text-center">
+                    <Search className="w-10 h-10 text-emerald-700 mx-auto mb-3" />
+                    <h3 className="text-sm font-bold text-white mb-1">No hay resultados</h3>
+                    <p className="text-xs text-emerald-400/80 mb-4">Ningún operador coincide con los criterios de búsqueda seleccionados.</p>
+                    <button onClick={clearPersonnelFilters} className="px-3 py-2 bg-emerald-800 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition">Limpiar filtros</button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredPersonnel.map(op => (
+                      <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
+                              <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
+                            </div>
+                            {canManageOperators && (
+                              <div className="flex space-x-1 shrink-0">
+                                <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', zone: TE_AREAS.includes(op.zone) ? op.zone : '', equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : '' }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
+                                <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
+                              </div>
+                            )}
                           </div>
-                        )}
+                          <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
+                            <div className="flex justify-between gap-2"><span># Socio:</span><span className="font-semibold text-white text-right">{op.socioNumber || 'N/A'}</span></div>
+                            <div className="flex justify-between gap-2"><span>Área:</span><span className={`font-semibold text-right ${TE_AREAS.includes(op.zone) ? 'text-white' : 'text-amber-300'}`}>{areaLabel(op)}</span></div>
+                            <div className="flex justify-between gap-2"><span>Equipo:</span><span className={`font-semibold text-right ${FORKLIFT_TYPES.includes(op.equipment) ? 'text-white' : 'text-amber-300'}`}>{FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : 'Sin registrar'}</span></div>
+                            <div className="flex justify-between items-center pt-1 gap-2">
+                              <span>Licencia DC3:</span>
+                              <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-3 pt-3 border-t border-emerald-900/80 space-y-2 text-xs">
-                        <div className="flex justify-between gap-3"><span className="text-emerald-400"># Socio</span><span className="font-semibold text-white text-right break-all">{member.socioNumber}</span></div>
-                        <div className="flex justify-between gap-3"><span className="text-emerald-400">Puesto</span><span className="font-semibold text-white text-right break-words">{member.position}</span></div>
-                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ─── Vista: Staff ─── */}
+            {personnelView === 'staff' && (
+              <section className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center shrink-0">
+                      <Users2 className="w-5 h-5 text-emerald-300" />
                     </div>
-                  ))}
+                    <div>
+                      <h2 className="text-base sm:text-lg font-bold text-white">Personal de Staff</h2>
+                      <p className="text-xs text-emerald-300">Registros manuales · Cuentan para el H.C de los reportes</p>
+                    </div>
+                  </div>
+                  {canManageOperators && (
+                    <button onClick={() => {
+                      setEditingStaff(null);
+                      setStaffForm({ name: '', socioNumber: '', position: '' });
+                      setIsStaffModalOpen(true);
+                    }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition">
+                      <Plus className="w-4 h-4" /><span>Agregar Staff</span>
+                    </button>
+                  )}
                 </div>
-              )}
-            </section>
+
+                {staffMembers.length === 0 ? (
+                  <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
+                    <Users2 className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                    <p className="text-emerald-300 font-bold text-sm">No hay personal de Staff registrado</p>
+                    <p className="text-xs text-emerald-500 mt-1">Agrega manualmente el nombre, número de socio y puesto.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {staffMembers.map(member => (
+                      <div key={member.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-4 shadow-lg">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-bold text-white break-words">{member.name}</h3>
+                            <p className="text-xs text-emerald-400 mt-1">Staff</p>
+                          </div>
+                          {canManageOperators && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button title="Editar Staff" onClick={() => {
+                                setEditingStaff(member);
+                                setStaffForm({ name: member.name || '', socioNumber: member.socioNumber || '', position: member.position || '' });
+                                setIsStaffModalOpen(true);
+                              }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5" /></button>
+                              <button title="Eliminar Staff" onClick={() => handleDeleteStaff(member.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-emerald-900/80 space-y-2 text-xs">
+                          <div className="flex justify-between gap-3"><span className="text-emerald-400"># Socio</span><span className="font-semibold text-white text-right break-all">{member.socioNumber}</span></div>
+                          <div className="flex justify-between gap-3"><span className="text-emerald-400">Puesto</span><span className="font-semibold text-white text-right break-words">{member.position}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         )}
 
@@ -3418,10 +3459,10 @@ export default function App() {
                     <div className="rounded-2xl border border-purple-700/60 bg-purple-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
                         <Users2 className="w-3.5 h-3.5 text-purple-300" />
-                        <span className="text-[10px] font-bold uppercase text-purple-300">Plantilla</span>
+                        <span className="text-[10px] font-bold uppercase text-purple-300">H.C (Headcount)</span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{operators.length}</div>
-                      <div className="text-[10px] text-purple-400/70 mt-0.5">operadores</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-purple-100">{operators.length + staffMembers.length}</div>
+                      <div className="text-[10px] text-purple-400/70 mt-0.5">{operators.length} operadores + {staffMembers.length} staff</div>
                     </div>
                     <div className="col-span-2 md:col-span-1 rounded-2xl border border-indigo-700/60 bg-indigo-950/70 p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-1">
@@ -3710,11 +3751,11 @@ export default function App() {
                     <tr>
                       <td className="p-3">
                         <div className="font-bold text-emerald-200">F.T.E</div>
-                        <div className="text-[10px] text-emerald-500">H.C + (horas extra aprobadas ÷ 208)</div>
+                        <div className="text-[10px] text-emerald-500">H.C (operadores + staff) + (horas extra aprobadas ÷ 208)</div>
                       </td>
                       <td className="p-3 text-center font-extrabold text-emerald-100 text-base">
                         {fmtFTE(productivityStats.fte)}
-                        <div className="text-[10px] text-emerald-500 font-normal">{productivityStats.hc} HC · {productivityStats.otMonth.toFixed(1)} h extra</div>
+                        <div className="text-[10px] text-emerald-500 font-normal">{productivityStats.hc} H.C · {productivityStats.otMonth.toFixed(1)} h extra</div>
                       </td>
                     </tr>
                     <tr className="bg-[#011a0d]">
@@ -3774,7 +3815,7 @@ export default function App() {
             />
 
             <p className="text-[11px] text-emerald-400/80">
-              F.T.E = plantilla registrada + horas extra aprobadas del mes ÷ 208. Los volúmenes se guardan automáticamente al salir del campo. Los meses anteriores al inmediato anterior quedan en solo lectura.
+              F.T.E = plantilla registrada (operadores + staff) + horas extra aprobadas del mes ÷ 208. Los volúmenes se guardan automáticamente al salir del campo. Los meses anteriores al inmediato anterior quedan en solo lectura.
             </p>
           </div>
         )}
@@ -3938,7 +3979,7 @@ export default function App() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-[#002e14] border border-emerald-700 rounded-t-2xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
             <h3 className="text-base font-bold text-white mb-1">{editingStaff ? 'Editar personal de Staff' : 'Agregar personal de Staff'}</h3>
-            <p className="text-xs text-emerald-400 mb-4">Todos los datos se capturan manualmente. Este registro no se agrega a la matriz.</p>
+            <p className="text-xs text-emerald-400 mb-4">Todos los datos se capturan manualmente. Este registro no se agrega a la matriz, pero sí suma al H.C de los reportes.</p>
             <form onSubmit={handleSaveStaff} className="space-y-3 text-xs">
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Nombre completo</label>

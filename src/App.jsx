@@ -884,6 +884,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('scheduler');
 
   const [operators, setOperators] = useState([]);
+  // El personal de Staff se almacena por separado y no participa en la matriz de turnos.
+  const [staffMembers, setStaffMembers] = useState([]);
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState([]);
   const [overtimeRequests, setOvertimeRequests] = useState([]);
@@ -1057,14 +1059,15 @@ export default function App() {
     setIsLoaded(false);
     setLoadError('');
     try {
-      const [savedOps, savedSchedule, savedVac, savedOt, savedAssign, savedProd] = await withTimeout(Promise.all([
+      const [savedOps, savedSchedule, savedVac, savedOt, savedAssign, savedProd, savedStaff] = await withTimeout(Promise.all([
         redis.get('sf_operators'), redis.get('sf_scheduleData'), redis.get('sf_vacations'),
-        redis.get('sf_overtime'), redis.get('sf_assignments'), redis.get('sf_productivity'),
+        redis.get('sf_overtime'), redis.get('sf_assignments'), redis.get('sf_productivity'), redis.get('sf_staff'),
       ]), LOAD_TIMEOUT_MS);
       setPollFailed(false);
       setAssignments(savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign) ? savedAssign : {});
       setOvertimeRequests(Array.isArray(savedOt) ? savedOt : []);
       setOperators(Array.isArray(savedOps) ? savedOps : []);
+      setStaffMembers(Array.isArray(savedStaff) ? savedStaff : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
       setVacationRequests(Array.isArray(savedVac) ? savedVac : []);
       const prod = savedProd && typeof savedProd === 'object' && !Array.isArray(savedProd) ? savedProd : {};
@@ -1101,15 +1104,16 @@ export default function App() {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       isPollingRef.current = true;
       try {
-        const [savedOps, savedSchedule, savedVac, savedOt, savedAssign, savedProd] = await withTimeout(Promise.all([
+        const [savedOps, savedSchedule, savedVac, savedOt, savedAssign, savedProd, savedStaff] = await withTimeout(Promise.all([
           redis.get('sf_operators'), redis.get('sf_scheduleData'), redis.get('sf_vacations'),
-          redis.get('sf_overtime'), redis.get('sf_assignments'), redis.get('sf_productivity'),
+          redis.get('sf_overtime'), redis.get('sf_assignments'), redis.get('sf_productivity'), redis.get('sf_staff'),
         ]), POLL_TIMEOUT_MS);
         setPollFailed(false);
         if (!isUpdatingRef.current) {
           if (savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign)) setAssignments(savedAssign);
           if (Array.isArray(savedOt)) setOvertimeRequests(savedOt);
           if (Array.isArray(savedOps)) setOperators(savedOps);
+          if (Array.isArray(savedStaff)) setStaffMembers(savedStaff);
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
           if (Array.isArray(savedVac)) setVacationRequests(savedVac);
           if (savedProd && typeof savedProd === 'object' && !Array.isArray(savedProd)) {
@@ -1147,10 +1151,11 @@ export default function App() {
   // Filtros independientes para la pestaña Personal (no afectan la matriz).
   const [personnelSearch, setPersonnelSearch] = useState('');
   const [personnelZoneFilter, setPersonnelZoneFilter] = useState('Todas las áreas');
-  const [personnelEquipmentFilter, setPersonnelEquipmentFilter] = useState('Todos los equipos');
-  const [personnelLicenseFilter, setPersonnelLicenseFilter] = useState('Todas las licencias');
   const [isAddOperatorOpen, setIsAddOperatorOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState(null);
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [editingStaff, setEditingStaff] = useState(null);
+  const [staffForm, setStaffForm] = useState({ name: '', socioNumber: '', position: '' });
   const [isRequestVacationOpen, setIsRequestVacationOpen] = useState(false);
   const [isOvertimeOpen, setIsOvertimeOpen] = useState(false);
   const [otError, setOtError] = useState('');
@@ -1510,55 +1515,26 @@ export default function App() {
   };
 
   const filteredPersonnel = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const query = personnelSearch.trim().toLocaleLowerCase('es-MX');
-
     return operators.filter(op => {
       const matchesSearch = !query || [op.name, op.id, op.socioNumber]
         .some(value => String(value ?? '').toLocaleLowerCase('es-MX').includes(query));
-
       const matchesZone = personnelZoneFilter === 'Todas las áreas'
         || (personnelZoneFilter === 'Sin área'
           ? !TE_AREAS.includes(op.zone)
           : op.zone === personnelZoneFilter);
-
-      const matchesEquipment = personnelEquipmentFilter === 'Todos los equipos'
-        || (personnelEquipmentFilter === 'Sin registrar'
-          ? !FORKLIFT_TYPES.includes(op.equipment)
-          : op.equipment === personnelEquipmentFilter);
-
-      let matchesLicense = true;
-      if (personnelLicenseFilter === 'Sin registrar') {
-        matchesLicense = !op.licenseExpiry;
-      } else if (personnelLicenseFilter !== 'Todas las licencias') {
-        if (!op.licenseExpiry) {
-          matchesLicense = false;
-        } else {
-          const expiry = new Date(`${op.licenseExpiry}T00:00:00`);
-          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
-          if (personnelLicenseFilter === 'Vencida') matchesLicense = diffDays < 0;
-          else if (personnelLicenseFilter === 'Por vencer (30 días)') matchesLicense = diffDays >= 0 && diffDays <= 30;
-          else if (personnelLicenseFilter === 'Vigente') matchesLicense = diffDays > 30;
-        }
-      }
-
-      return matchesSearch && matchesZone && matchesEquipment && matchesLicense;
+      return matchesSearch && matchesZone;
     });
-  }, [operators, personnelSearch, personnelZoneFilter, personnelEquipmentFilter, personnelLicenseFilter]);
+  }, [operators, personnelSearch, personnelZoneFilter]);
 
   const personnelFiltersCount = useMemo(() => (
     (personnelSearch.trim() ? 1 : 0)
     + (personnelZoneFilter !== 'Todas las áreas' ? 1 : 0)
-    + (personnelEquipmentFilter !== 'Todos los equipos' ? 1 : 0)
-    + (personnelLicenseFilter !== 'Todas las licencias' ? 1 : 0)
-  ), [personnelSearch, personnelZoneFilter, personnelEquipmentFilter, personnelLicenseFilter]);
+  ), [personnelSearch, personnelZoneFilter]);
 
   const clearPersonnelFilters = () => {
     setPersonnelSearch('');
     setPersonnelZoneFilter('Todas las áreas');
-    setPersonnelEquipmentFilter('Todos los equipos');
-    setPersonnelLicenseFilter('Todas las licencias');
   };
 
   const handleSetShift = async (operatorId, dateStr, shiftCode, isFullWeek = false, assignment = '') => {
@@ -1722,6 +1698,73 @@ export default function App() {
         reportSyncResult(false);
         pushToast('error', 'Error al eliminar. Cambio revertido.');
       } finally { setTimeout(() => { isUpdatingRef.current = false; }, 2500); }
+    }
+  };
+
+  const handleSaveStaff = async (e) => {
+    e.preventDefault();
+    if (!canManageOperators) return;
+    const name = String(staffForm.name || '').trim();
+    const socioNumber = String(staffForm.socioNumber || '').trim();
+    const position = String(staffForm.position || '').trim();
+    if (!name || !socioNumber || !position) {
+      pushToast('warning', 'Completa nombre, número de socio y puesto.');
+      return;
+    }
+    const duplicateSocio = staffMembers.find(member =>
+      String(member.socioNumber || '').trim().toLocaleLowerCase('es-MX') === socioNumber.toLocaleLowerCase('es-MX')
+      && (!editingStaff || member.id !== editingStaff.id)
+    );
+    if (duplicateSocio) {
+      pushToast('warning', `El número de socio ${socioNumber} ya está registrado en Staff.`, { duration: 5000 });
+      return;
+    }
+
+    const previousStaff = staffMembers;
+    const updatedStaff = editingStaff
+      ? staffMembers.map(member => member.id === editingStaff.id ? { ...member, name, socioNumber, position } : member)
+      : [...staffMembers, { id: `ST-${generateId()}`, name, socioNumber, position }];
+
+    isUpdatingRef.current = true;
+    setStaffMembers(updatedStaff);
+    setIsStaffModalOpen(false);
+    setEditingStaff(null);
+    setStaffForm({ name: '', socioNumber: '', position: '' });
+    setSyncStatus('saving');
+    try {
+      await withTimeout(redis.set('sf_staff', updatedStaff), LOAD_TIMEOUT_MS);
+      reportSyncResult(true);
+      pushToast('success', editingStaff ? 'Personal de Staff actualizado' : 'Personal de Staff registrado');
+    } catch (error) {
+      console.error('Error al guardar personal de Staff:', error);
+      setStaffMembers(previousStaff);
+      reportSyncResult(false);
+      pushToast('error', 'No se pudo guardar el personal de Staff. Se revirtió el cambio.');
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 1800);
+    }
+  };
+
+  const handleDeleteStaff = async (staffId) => {
+    if (!canManageOperators) return;
+    const member = staffMembers.find(item => item.id === staffId);
+    if (!member || !window.confirm(`¿Eliminar a ${member.name} del personal de Staff?`)) return;
+    const previousStaff = staffMembers;
+    const updatedStaff = staffMembers.filter(item => item.id !== staffId);
+    isUpdatingRef.current = true;
+    setStaffMembers(updatedStaff);
+    setSyncStatus('saving');
+    try {
+      await withTimeout(redis.set('sf_staff', updatedStaff), LOAD_TIMEOUT_MS);
+      reportSyncResult(true);
+      pushToast('success', 'Personal de Staff eliminado');
+    } catch (error) {
+      console.error('Error al eliminar personal de Staff:', error);
+      setStaffMembers(previousStaff);
+      reportSyncResult(false);
+      pushToast('error', 'No se pudo eliminar el registro. Se revirtió el cambio.');
+    } finally {
+      setTimeout(() => { isUpdatingRef.current = false; }, 1800);
     }
   };
 
@@ -2454,7 +2497,7 @@ export default function App() {
           </div>
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
-            <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
+            <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length + staffMembers.length})</button>
             <button onClick={() => setActiveTab('vacations')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
             <button onClick={() => setActiveTab('overtime')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Horas extras</button>
             {canViewReports && (
@@ -2495,7 +2538,7 @@ export default function App() {
       <nav className="md:hidden sticky top-14 z-20 bg-[#021f12] border-b border-emerald-900/60">
         <div className="flex gap-1.5 overflow-x-auto px-2.5 py-2">
           <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
-          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
+          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length + staffMembers.length})</button>
           <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
           <button onClick={() => setActiveTab('overtime')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Horas extras</button>
           {canViewReports && (
@@ -2898,8 +2941,8 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
-                  <label className="relative block sm:col-span-2 xl:col-span-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="relative block">
                     <span className="sr-only">Buscar por nombre o número de socio</span>
                     <Search className="w-4 h-4 text-emerald-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
@@ -2920,32 +2963,6 @@ export default function App() {
                       <option value="Todas las áreas">Todas las áreas</option>
                       {TE_AREAS.map(zone => <option key={zone} value={zone}>{shortArea(zone)}</option>)}
                       <option value="Sin área">Sin área asignada</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span className="sr-only">Filtrar por equipo</span>
-                    <select
-                      value={personnelEquipmentFilter}
-                      onChange={e => setPersonnelEquipmentFilter(e.target.value)}
-                      className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-200 focus:outline-none focus:border-emerald-600"
-                    >
-                      <option value="Todos los equipos">Todos los equipos</option>
-                      {FORKLIFT_TYPES.map(equipment => <option key={equipment} value={equipment}>{equipment}</option>)}
-                      <option value="Sin registrar">Equipo sin registrar</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span className="sr-only">Filtrar por estado de licencia DC3</span>
-                    <select
-                      value={personnelLicenseFilter}
-                      onChange={e => setPersonnelLicenseFilter(e.target.value)}
-                      className="w-full bg-[#02180d] border border-emerald-900 rounded-lg px-3 py-2 text-xs sm:text-sm text-emerald-200 focus:outline-none focus:border-emerald-600"
-                    >
-                      <option value="Todas las licencias">Todos los estados de licencia</option>
-                      <option value="Vigente">Licencia vigente</option>
-                      <option value="Por vencer (30 días)">Por vencer (30 días)</option>
-                      <option value="Vencida">Licencia vencida</option>
-                      <option value="Sin registrar">Sin licencia registrada</option>
                     </select>
                   </label>
                 </div>
@@ -2999,6 +3016,64 @@ export default function App() {
                 ))}
               </div>
             )}
+
+            <section className="space-y-3 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#003818] border border-emerald-800/70 rounded-2xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center shrink-0">
+                    <Users2 className="w-5 h-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-bold text-white">Personal de Staff</h2>
+                    <p className="text-xs text-emerald-300">Registros manuales · No aparecen en la matriz de turnos</p>
+                  </div>
+                </div>
+                {canManageOperators && (
+                  <button onClick={() => {
+                    setEditingStaff(null);
+                    setStaffForm({ name: '', socioNumber: '', position: '' });
+                    setIsStaffModalOpen(true);
+                  }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition">
+                    <Plus className="w-4 h-4" /><span>Agregar Staff</span>
+                  </button>
+                )}
+              </div>
+
+              {staffMembers.length === 0 ? (
+                <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-8 text-center">
+                  <Users2 className="w-10 h-10 text-emerald-700 mx-auto mb-2" />
+                  <p className="text-emerald-300 font-bold text-sm">No hay personal de Staff registrado</p>
+                  <p className="text-xs text-emerald-500 mt-1">Agrega manualmente el nombre, número de socio y puesto.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {staffMembers.map(member => (
+                    <div key={member.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-4 shadow-lg">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-white break-words">{member.name}</h3>
+                          <p className="text-xs text-emerald-400 mt-1">Staff</p>
+                        </div>
+                        {canManageOperators && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button title="Editar Staff" onClick={() => {
+                              setEditingStaff(member);
+                              setStaffForm({ name: member.name || '', socioNumber: member.socioNumber || '', position: member.position || '' });
+                              setIsStaffModalOpen(true);
+                            }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button title="Eliminar Staff" onClick={() => handleDeleteStaff(member.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-emerald-900/80 space-y-2 text-xs">
+                        <div className="flex justify-between gap-3"><span className="text-emerald-400"># Socio</span><span className="font-semibold text-white text-right break-all">{member.socioNumber}</span></div>
+                        <div className="flex justify-between gap-3"><span className="text-emerald-400">Puesto</span><span className="font-semibold text-white text-right break-words">{member.position}</span></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         )}
 
@@ -3853,6 +3928,33 @@ export default function App() {
               <div className="flex justify-end space-x-2 pt-3">
                 <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isStaffModalOpen && canManageOperators && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-[#002e14] border border-emerald-700 rounded-t-2xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
+            <h3 className="text-base font-bold text-white mb-1">{editingStaff ? 'Editar personal de Staff' : 'Agregar personal de Staff'}</h3>
+            <p className="text-xs text-emerald-400 mb-4">Todos los datos se capturan manualmente. Este registro no se agrega a la matriz.</p>
+            <form onSubmit={handleSaveStaff} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Nombre completo</label>
+                <input type="text" required maxLength={120} placeholder="Escribe el nombre" value={staffForm.name} onChange={e => setStaffForm(prev => ({ ...prev, name: e.target.value }))} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1"># de socio</label>
+                <input type="text" required maxLength={40} placeholder="Escribe el número de socio" value={staffForm.socioNumber} onChange={e => setStaffForm(prev => ({ ...prev, socioNumber: e.target.value }))} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-emerald-300 font-bold mb-1">Puesto</label>
+                <input type="text" required maxLength={120} placeholder="Escribe el puesto" value={staffForm.position} onChange={e => setStaffForm(prev => ({ ...prev, position: e.target.value }))} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div className="flex justify-end gap-2 pt-3">
+                <button type="button" onClick={() => { setIsStaffModalOpen(false); setEditingStaff(null); setStaffForm({ name: '', socioNumber: '', position: '' }); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-500 transition">Guardar Staff</button>
               </div>
             </form>
           </div>

@@ -904,6 +904,8 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const isUpdatingRef = useRef(false);
   const scheduleRef = useRef(null);
+  // Contenido específico del reporte activo (T.E o Productividad) para exportar el PDF correcto.
+  const reportContentRef = useRef(null);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getMondayOfCurrentWeek());
   const [applyToFullWeek, setApplyToFullWeek] = useState(false);
@@ -1817,6 +1819,74 @@ export default function App() {
     setIsExporting(true);
     try {
       await loadExportLibraries();
+
+      // Los reportes mensuales se exportan desde el contenido de su propia pestaña.
+      // El resumen semanal conserva su PDF ejecutivo construido con datos estructurados.
+      if (reportsView === 'te' || reportsView === 'productivity') {
+        const element = reportContentRef.current;
+        if (!element) throw new Error('No se encontró el contenido del reporte activo.');
+
+        const canvas = await window.html2canvas(element, {
+          scale: 2,
+          backgroundColor: '#021f12',
+          useCORS: true,
+          logging: false,
+          windowWidth: Math.max(element.scrollWidth + 40, window.innerWidth),
+          windowHeight: Math.max(element.scrollHeight + 40, window.innerHeight),
+          scrollX: 0,
+          scrollY: 0
+        });
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        const W = pdf.internal.pageSize.getWidth();
+        const H = pdf.internal.pageSize.getHeight();
+        const marginX = 10;
+        const contentWidth = W - marginX * 2;
+        const topY = 25;
+        const footerSpace = 14;
+        const contentHeight = H - topY - footerSpace;
+        const imageHeight = (canvas.height * contentWidth) / canvas.width;
+        const pageCount = Math.max(1, Math.ceil(imageHeight / contentHeight));
+        const imageData = canvas.toDataURL('image/png');
+        const reportTitle = reportsView === 'te' ? 'Reporte de Tiempo Extra (T.E)' : 'Reporte de Productividad';
+        const reportMonth = formatMonthLabel(reportsView === 'te' ? teMonth : productivityMonth);
+
+        for (let page = 0; page < pageCount; page++) {
+          if (page > 0) pdf.addPage('a4', 'landscape');
+          pdf.setFillColor(2, 31, 18);
+          pdf.rect(0, 0, W, H, 'F');
+          // La imagen completa se desplaza entre páginas para conservar todo el contenido.
+          pdf.addImage(imageData, 'PNG', marginX, topY - page * contentHeight, contentWidth, imageHeight, undefined, 'FAST');
+          // Encabezado y pie se dibujan encima del contenido en cada página.
+          pdf.setFillColor(0, 71, 31);
+          pdf.rect(0, 0, W, 22, 'F');
+          pdf.setTextColor(255, 255, 255);
+          pdf.setFontSize(14);
+          pdf.text(`ShiftForklift — ${reportTitle}`, marginX, 9);
+          pdf.setFontSize(8);
+          pdf.setTextColor(167, 243, 208);
+          pdf.text(reportMonth, marginX, 16);
+          pdf.setFillColor(2, 31, 18);
+          pdf.rect(0, H - footerSpace, W, footerSpace, 'F');
+          pdf.setFontSize(7);
+          pdf.setTextColor(148, 163, 184);
+          pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, marginX, H - 6);
+          pdf.text(`Página ${page + 1} de ${pageCount}`, W - marginX, H - 6, { align: 'right' });
+        }
+
+        const pdfBlob = pdf.output('blob');
+        const filePrefix = reportsView === 'te' ? 'Reporte_Tiempo_Extra' : 'Reporte_Productividad';
+        const filename = `${filePrefix}_${reportsView === 'te' ? teMonth : productivityMonth}.pdf`;
+        if (isMobileDevice()) {
+          setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
+        } else {
+          forceDownload(pdfBlob, filename);
+          pushToast('success', `${reportTitle} descargado`);
+        }
+        return;
+      }
+
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const W = pdf.internal.pageSize.getWidth();
@@ -3035,7 +3105,7 @@ export default function App() {
             )}
 
             {reportsView === 'te' && (
-              <div className="space-y-5">
+              <div ref={reportContentRef} className="space-y-5">
                 <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => setTeMonth(m => shiftMonth(m, -1))} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
@@ -3096,7 +3166,7 @@ export default function App() {
 
         {/* Historial mensual de Productividad dentro de Reportes */}
         {activeTab === 'reports' && reportsView === 'productivity' && canViewReports && (
-          <div className="mt-5 space-y-5">
+          <div ref={reportContentRef} className="mt-5 space-y-5">
             <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-700/60 flex items-center justify-center shrink-0">

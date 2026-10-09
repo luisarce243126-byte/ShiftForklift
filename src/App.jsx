@@ -125,10 +125,7 @@ const buildWeekDays = (startStr) => {
   });
 };
 
-const FORKLIFT_TYPES = [
-  'Sencillo',
-  'Doble'
-];
+const FORKLIFT_TYPES = ['Sencillo', 'Doble'];
 
 const ABSENCE_TYPES = [
   'Vacaciones',
@@ -219,6 +216,11 @@ const sumOvertime = (requests, operatorId, dates, statuses = ['Aprobado']) =>
     .filter(r => r.operatorId === operatorId && dates.includes(r.date) && statuses.includes(r.status))
     .reduce((acc, r) => acc + (Number(r.hours) || 0), 0);
 
+const sumOvertimeTotal = (requests, dates, statuses = ['Aprobado']) =>
+  (requests || [])
+    .filter(r => dates.includes(r.date) && statuses.includes(r.status))
+    .reduce((acc, r) => acc + (Number(r.hours) || 0), 0);
+
 const getOvertimeLevel = (hours) => {
   if (hours >= OT_ALERT_HOURS) return 'danger';
   if (hours >= OT_WARN_HOURS) return 'warning';
@@ -249,6 +251,34 @@ const INDICATOR_ACCENTS = {
   cyan:    { bg: 'bg-cyan-950/70',    border: 'border-cyan-700/60',    text: 'text-cyan-300',    value: 'text-cyan-100' }
 };
 
+/**
+ * ✅ Formateador dinámico: para números tipo 5.009615 muestra "5.0096",
+ * para 0.0096 muestra "0.0096", para 208 muestra "208.00".
+ */
+const fmtTE = (v, maxDecimals = 4) => {
+  if (!isFinite(v)) return '0';
+  if (v === 0) return '0.0000';
+  const fixed = Number(v).toFixed(maxDecimals);
+  // Recorta ceros sobrantes solo si sobran, manteniendo al menos 2 decimales
+  const trimmed = fixed.replace(/(\.\d{2}\d*?)0+$/, '$1').replace(/\.$/, '.00');
+  const [intPart, decPart = ''] = trimmed.split('.');
+  return `${intPart}.${decPart.padEnd(2, '0')}`;
+};
+
+/**
+ * ✅ Formateador con mínimo de decimales para valores que pueden tener
+ * 4 cifras significativas después del punto (ej. 5.0096).
+ */
+const fmtFTE = (v) => {
+  if (!isFinite(v)) return '0.00';
+  const s = Number(v).toFixed(4);
+  // Si los últimos 2 dígitos son 0, mostramos solo 2 decimales
+  if (s.endsWith('00')) return Number(v).toFixed(2);
+  // Si solo el último es 0, mostramos 3
+  if (s.endsWith('0')) return Number(v).toFixed(3);
+  return s;
+};
+
 function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle = null }) {
   const c = INDICATOR_ACCENTS[accent] || INDICATOR_ACCENTS.emerald;
   return (
@@ -265,6 +295,9 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
   );
 }
 
+/**
+ * ✅ T.E = SOLO horas extras aprobadas ÷ 208 (sin importar el nivel: operador, área, línea, global)
+ */
 const computeTeStats = (ym, operators, scheduleData, assignments, overtimeRequests) => {
   const dates = getMonthDates(ym);
   const otMap = {};
@@ -293,7 +326,7 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     const zoneOk = areaAgg[op.zone] !== undefined;
     dates.forEach(d => {
       const key = `${op.id}_${d}`;
-      const dayHours = otMap[key] || 0;
+      const dayHours = otMap[key] || 0;   // ✅ SOLO horas extra
       if (!dayHours) return;
       hours += dayHours;
       if (zoneOk) {
@@ -316,26 +349,35 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     }
   });
 
+  // ✅ T.E de área = horas extra del área ÷ 208 (sin dividir entre operadores)
   const areas = TE_AREAS.map(z => ({
     zone: z,
     ops: areaAgg[z].ops,
     hours: areaAgg[z].hours,
-    te: areaAgg[z].ops > 0 ? areaAgg[z].hours / (TE_BASE_HOURS * areaAgg[z].ops) : 0
+    te: areaAgg[z].hours / TE_BASE_HOURS
   }));
+
+  // ✅ T.E de línea = horas extra en la línea ÷ 208
   const lines = {};
   TE_AREAS.forEach(z => {
     lines[z] = ASSIGNMENTS.map(a => {
       const l = lineAgg[z][a];
       const n = l.ops.size;
-      return { assignment: a, hours: l.hours, ops: n, te: n > 0 ? l.hours / (TE_BASE_HOURS * n) : 0 };
+      return { assignment: a, hours: l.hours, ops: n, te: l.hours / TE_BASE_HOURS };
     });
   });
-  const avg = operators.length > 0 ? totalHours / (TE_BASE_HOURS * operators.length) : 0;
-  return { perOp, areas, lines, unassigned, outsideAreas, avg };
+
+  // ✅ T.E promedio global = total horas extra ÷ 208
+  const avg = totalHours / TE_BASE_HOURS;
+
+  return { perOp, areas, lines, unassigned, outsideAreas, avg, totalHours };
 };
 
 const TE_PLOT_H = 180;
 
+/**
+ * Gráfica de barras genérica con eje auto-escalable.
+ */
 function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'Detalle', barWidth = 24 }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
@@ -449,7 +491,7 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
                       <div className={`absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none ${tooltipPos(i)}`}>
                         <div className="font-bold text-white">{b.fullLabel || b.label}</div>
                         <div>T.E <span className="font-extrabold">{fmt(b.value)}</span></div>
-                        <div className="text-emerald-300">{b.hours.toFixed(1)} h extra ÷ (208 × {b.ops} op.)</div>
+                        <div className="text-emerald-300">{b.hours.toFixed(1)} h extra ÷ 208</div>
                       </div>
                     )}
                     <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">{fmt(b.value)}</span>
@@ -470,47 +512,39 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
   );
 }
 
-function HcFteBarChart({ title, subtitle, headcount, otHours }) {
+/**
+ * ✅ NUEVA: Gráfica H.C vs F.T.E
+ *   H.C  = personas registradas (headcount)
+ *   F.T.E = H.C + (horas extra aprobadas de la semana ÷ 208)
+ *   Ejemplo: 5 + (2/208) = 5.0096
+ */
+function HCvsFTEChart({ hc, fte, otWeek, subtitle = null }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
 
-  const otFte = otHours / TE_BASE_HOURS;
-  const totalFte = headcount + otFte;
-
   const bars = [
-    {
-      label: 'H.C',
-      fullLabel: 'H.C (Headcount)',
-      value: headcount,
-      sub: `${headcount} personas dadas de alta`,
-      color: '#3987e5'
-    },
-    {
-      label: 'F.T.E',
-      fullLabel: 'F.T.E (Headcount + T.E)',
-      value: totalFte,
-      sub: `H.C (${headcount}) + T.E (+${otFte.toFixed(3)})`,
-      color: '#10b981'
-    }
+    { key: 'hc',  label: 'H.C',  fullLabel: 'Headcount (personas registradas)', value: hc,  color: '#3987e5' },
+    { key: 'fte', label: 'F.T.E', fullLabel: 'Full Time Equivalent',             value: fte, color: '#d95926' }
   ];
 
-  const maxVal = Math.max(1, headcount, totalFte);
-  let step = maxVal <= 5 ? 1 : maxVal <= 20 ? 2 : maxVal <= 50 ? 5 : 10;
-  const top = Math.ceil((maxVal * 1.15) / step) * step;
+  // Escala: usamos 0..max*1.15 para que se vean las diferencias
+  const maxVal = Math.max(0.0001, ...bars.map(b => b.value));
+  const top = Math.ceil(maxVal * 1.15);
+  const step = top <= 5 ? 1 : top <= 20 ? 2 : top <= 50 ? 5 : 10;
   const ticks = [];
-  for (let i = 0; i * step <= top + 1e-9; i++) {
-    ticks.push(Number((i * step).toFixed(2)));
-  }
+  for (let i = 0; i * step <= top + 1e-9; i++) ticks.push(i * step);
 
   return (
     <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Users className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="min-w-0">{title}</span>
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <span className="min-w-0">H.C y F.T.E · Reporte semanal</span>
           </h3>
-          {subtitle && <p className="text-[11px] text-emerald-300 mt-0.5">{subtitle}</p>}
+          <p className="text-[11px] text-emerald-300 mt-0.5">
+            {subtitle || `F.T.E = personas registradas + horas extra aprobadas de la semana ÷ 208`}
+          </p>
         </div>
         <button
           onClick={() => setShowTable(v => !v)}
@@ -522,7 +556,7 @@ function HcFteBarChart({ title, subtitle, headcount, otHours }) {
 
       {showTable ? (
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs min-w-[340px]">
+          <table className="w-full text-left border-collapse text-xs min-w-[300px]">
             <thead>
               <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                 <th className="p-2">Métrica</th>
@@ -532,19 +566,19 @@ function HcFteBarChart({ title, subtitle, headcount, otHours }) {
             </thead>
             <tbody className="divide-y divide-emerald-900/50">
               <tr>
-                <td className="p-2 font-bold text-white">H.C (Headcount)</td>
-                <td className="p-2 text-right font-extrabold text-blue-300">{headcount}</td>
-                <td className="p-2 text-right text-emerald-200">Personas dadas de alta</td>
+                <td className="p-2 font-bold text-white">H.C</td>
+                <td className="p-2 text-right font-extrabold text-blue-300">{fmtFTE(hc)}</td>
+                <td className="p-2 text-right text-emerald-300">{hc} persona{hc === 1 ? '' : 's'}</td>
               </tr>
               <tr>
-                <td className="p-2 font-bold text-white">T.E (Horas extra en FTE)</td>
-                <td className="p-2 text-right font-extrabold text-amber-300">+{otFte.toFixed(3)}</td>
-                <td className="p-2 text-right text-emerald-200">{otHours.toFixed(1)} hrs ÷ 208</td>
+                <td className="p-2 font-bold text-white">F.T.E</td>
+                <td className="p-2 text-right font-extrabold text-orange-300">{fmtFTE(fte)}</td>
+                <td className="p-2 text-right text-emerald-300">{otWeek.toFixed(1)} h OT ÷ 208</td>
               </tr>
-              <tr className="bg-emerald-950/40">
-                <td className="p-2 font-bold text-emerald-100">F.T.E (Total)</td>
-                <td className="p-2 text-right font-extrabold text-emerald-300">{totalFte.toFixed(3)}</td>
-                <td className="p-2 text-right text-emerald-100">Headcount + T.E</td>
+              <tr>
+                <td className="p-2 font-bold text-emerald-200">Δ (F.T.E − H.C)</td>
+                <td className="p-2 text-right font-extrabold text-amber-300">{fmtFTE(fte - hc)}</td>
+                <td className="p-2 text-right text-emerald-400">T.E de la semana</td>
               </tr>
             </tbody>
           </table>
@@ -560,13 +594,13 @@ function HcFteBarChart({ title, subtitle, headcount, otHours }) {
             ))}
           </div>
 
-          <div className="relative flex justify-around items-end gap-4 px-6" style={{ height: TE_PLOT_H }}>
+          <div className="relative flex gap-3">
             {bars.map((b, i) => {
               const h = (b.value / top) * 100;
               return (
                 <div
-                  key={b.label}
-                  className="flex-1 max-w-[120px] flex flex-col items-center cursor-default"
+                  key={b.key}
+                  className="flex-1 min-w-0 flex flex-col items-center cursor-default"
                   onMouseEnter={() => setHover(i)}
                   onMouseLeave={() => setHover(null)}
                   onClick={() => setHover(hover === i ? null : i)}
@@ -575,20 +609,23 @@ function HcFteBarChart({ title, subtitle, headcount, otHours }) {
                     {hover === i && (
                       <div className="absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none left-1/2 -translate-x-1/2">
                         <div className="font-bold text-white">{b.fullLabel}</div>
-                        <div>Valor: <span className="font-extrabold">{b.value.toFixed(3)}</span></div>
-                        <div className="text-emerald-300">{b.sub}</div>
+                        <div>Valor <span className="font-extrabold">{fmtFTE(b.value)}</span></div>
+                        {b.key === 'fte' && <div className="text-emerald-300">{otWeek.toFixed(1)} h OT ÷ 208 = {fmtFTE(fte - hc)}</div>}
                       </div>
                     )}
-                    <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">
-                      {b.value % 1 === 0 ? b.value : b.value.toFixed(2)}
-                    </span>
+                    <span className="text-[12px] font-extrabold text-white mb-0.5 leading-none">{fmtFTE(b.value)}</span>
                     <div
-                      className="w-14 rounded-t-[4px] transition-all duration-300"
-                      style={{ height: `${h}%`, minHeight: 4, background: b.color }}
+                      className="rounded-t-[4px]"
+                      style={{ width: 88, height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color }}
                     />
                   </div>
-                  <div className="mt-1.5 text-[11px] font-bold text-emerald-100 text-center leading-tight">{b.label}</div>
-                  <div className="text-[9px] text-emerald-400 text-center leading-tight">{b.sub}</div>
+                  <div className="mt-1.5 text-[11px] font-semibold text-emerald-100 text-center leading-tight">{b.label}</div>
+                  {b.key === 'fte' && (
+                    <div className="text-[9px] text-emerald-500 text-center leading-tight">{otWeek.toFixed(1)} h OT · Δ {fmtFTE(fte - hc)}</div>
+                  )}
+                  {b.key === 'hc' && (
+                    <div className="text-[9px] text-emerald-500 text-center leading-tight">{hc} personas</div>
+                  )}
                 </div>
               );
             })}
@@ -1024,7 +1061,7 @@ export default function App() {
       } else {
         setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
       }
-    } fontally {
+    } finally {
       setIsLoaded(true);
     }
   };
@@ -1271,6 +1308,15 @@ export default function App() {
     () => computeTeStats(reportTeMonth, operators, scheduleData, assignments, overtimeRequests),
     [reportTeMonth, operators, scheduleData, assignments, overtimeRequests]
   );
+
+  // ✅ H.C y F.T.E de la semana seleccionada en Reportes
+  const hcVsFte = useMemo(() => {
+    const weekDates = reportWeekDays.map(d => d.dateStr);
+    const hc = operators.length;
+    const otWeek = sumOvertimeTotal(overtimeRequests, weekDates);
+    const fte = hc + otWeek / TE_BASE_HOURS;
+    return { hc, fte, otWeek };
+  }, [operators, overtimeRequests, reportWeekDays]);
 
   const canEditCell = (operatorId, dateStr) => {
     if (!canEditShifts) return false;
@@ -2034,8 +2080,7 @@ export default function App() {
         pdf.text(`${op.totalH.toFixed(1)}h`, 168, y);
         pdf.setTextColor(255, 255, 255);
         const teVal = weekTeStats.perOp[op.id]?.te ?? 0;
-        const teStr = teVal < 0.01 ? teVal.toFixed(4) : teVal.toFixed(3);
-        pdf.text(teStr, 185, y);
+        pdf.text(fmtTE(teVal), 185, y);
         y += 5.5;
       });
 
@@ -2515,7 +2560,7 @@ export default function App() {
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/50 text-amber-300 border border-amber-500/50">Falta día de descanso</span>
                         )}
                         {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                          <span className="inline-block mt-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-black/40 text-white border border-white/20 shadow-sm">{assignments[cellKey]}</span>
+                          <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/30 border border-white/20">{assignments[cellKey]}</span>
                         )}
                       </div>
                       <div className="shrink-0 flex items-center gap-1">
@@ -2631,9 +2676,7 @@ export default function App() {
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
                                   {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                                    <span className="mt-0.5 text-[10px] leading-tight font-extrabold text-center opacity-100 bg-black/40 px-1.5 py-0.5 rounded border border-white/20 text-white shadow-sm truncate max-w-full">
-                                      {assignments[cellKey]}
-                                    </span>
+                                    <span className="mt-0.5 text-[9px] leading-tight font-semibold text-center opacity-90 px-0.5">{assignments[cellKey]}</span>
                                   )}
                                   {overtimeByCell[cellKey] && (
                                     <span
@@ -3190,7 +3233,7 @@ export default function App() {
                         <Clock className="w-3.5 h-3.5 text-indigo-300" />
                         <span className="text-[10px] font-bold uppercase text-indigo-300">T.E promedio</span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-extrabold text-indigo-100">{weekTeStats.avg.toFixed(4)}</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-indigo-100">{fmtTE(weekTeStats.avg)}</div>
                       <div className="text-[10px] text-indigo-400/70 mt-0.5">horas extra ÷ 208 · {formatMonthLabel(reportTeMonth)}</div>
                     </div>
                   </>
@@ -3291,8 +3334,6 @@ export default function App() {
                       const otH = sumOvertime(overtimeRequests, op.id, weekDates);
                       const grandH = totalH + otH;
                       const otLevel = getOvertimeLevel(otH);
-                      const teVal = weekTeStats.perOp[op.id]?.te ?? 0;
-                      const teStr = teVal < 0.01 ? teVal.toFixed(4) : teVal.toFixed(3);
                       return (
                         <tr key={op.id} className="hover:bg-[#003517]/50">
                           <td className="p-2 font-bold text-white whitespace-nowrap">{op.name}</td>
@@ -3302,7 +3343,7 @@ export default function App() {
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
                           <td className={`p-2 text-right font-bold ${otLevel === 'danger' ? 'text-red-400' : otLevel === 'warning' ? 'text-amber-300' : otH > 0 ? 'text-emerald-300' : 'text-emerald-700'}`}>{otLevel && <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />}{otH > 0 ? `+${otH.toFixed(1)}h` : '-'}</td>
                           <td className="p-2 text-right font-extrabold text-emerald-300">{grandH.toFixed(1)}h</td>
-                          <td className="p-2 text-right font-extrabold text-indigo-300">{teStr}</td>
+                          <td className="p-2 text-right font-extrabold text-indigo-300">{fmtTE(weekTeStats.perOp[op.id]?.te ?? 0)}</td>
                         </tr>
                       );
                     })}
@@ -3334,10 +3375,19 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {/* ✅ H.C vs F.T.E — ahora solo en T.E */}
+                <div className="max-w-xl">
+                  <HCvsFTEChart
+                    hc={hcVsFte.hc}
+                    fte={hcVsFte.fte}
+                    otWeek={hcVsFte.otWeek}
+                  />
+                </div>
+
+                <div className="max-w-xl">
                   <TEBarChart
                     title="T.E por área"
-                    subtitle="Horas extra promedio por operador de cada almacén"
+                    subtitle="Horas extra del almacén ÷ 208"
                     firstColumnLabel="Área"
                     barWidth={88}
                     bars={teStats.areas.map(a => ({
@@ -3349,13 +3399,6 @@ export default function App() {
                       color: AREA_COLORS[a.zone]
                     }))}
                   />
-
-                  <HcFteBarChart
-                    title="Comparativa H.C vs F.T.E"
-                    subtitle="Capacidad de personal activo y equivalente con horas extra"
-                    headcount={operators.length}
-                    otHours={teStats.areas.reduce((acc, a) => acc + a.hours, 0)}
-                  />
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
@@ -3363,7 +3406,7 @@ export default function App() {
                     <TEBarChart
                       key={zone}
                       title={`${zone} · T.E por línea`}
-                      subtitle="Horas extra en cada asignación ÷ (208 × operadores con OT en esa línea)"
+                      subtitle="Horas extra en cada asignación ÷ 208"
                       color={AREA_COLORS[zone]}
                       firstColumnLabel="Asignación"
                       bars={teStats.lines[zone].map(l => ({

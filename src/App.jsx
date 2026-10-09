@@ -102,6 +102,29 @@ const formatMonthLabel = (ym) => {
   return label.charAt(0).toUpperCase() + label.slice(1);
 };
 
+const areaLabel = (op) => (TE_AREAS.includes(op.zone) ? op.zone : 'Sin área');
+
+const shiftWeekStr = (startStr, days) => {
+  const [y, m, d] = startStr.split('-').map(Number);
+  return formatDateLocal(new Date(y, m - 1, d + days));
+};
+
+const buildWeekDays = (startStr) => {
+  const [y, m, d] = startStr.split('-').map(Number);
+  const start = new Date(y, m - 1, d);
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  return Array.from({ length: 7 }, (_, i) => {
+    const dt = new Date(start);
+    dt.setDate(start.getDate() + i);
+    return {
+      dateStr: formatDateLocal(dt),
+      dayName: dayNames[dt.getDay()],
+      dayNumber: dt.getDate(),
+      monthName: dt.toLocaleDateString('es-ES', { month: 'short' })
+    };
+  });
+};
+
 const FORKLIFT_TYPES = [
   'Sencillo',
   'Doble'
@@ -242,9 +265,78 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
   );
 }
 
+const computeTeStats = (ym, operators, scheduleData, assignments, overtimeRequests) => {
+  const dates = getMonthDates(ym);
+  const otMap = {};
+  overtimeRequests.forEach(r => {
+    if (r.status !== 'Aprobado' || typeof r.date !== 'string' || !r.date.startsWith(ym)) return;
+    const key = `${r.operatorId}_${r.date}`;
+    otMap[key] = (otMap[key] || 0) + (Number(r.hours) || 0);
+  });
+
+  const areaAgg = {};
+  const lineAgg = {};
+  const unassigned = {};
+  TE_AREAS.forEach(z => {
+    areaAgg[z] = { ops: 0, hours: 0 };
+    unassigned[z] = 0;
+    lineAgg[z] = {};
+    ASSIGNMENTS.forEach(a => { lineAgg[z][a] = { hours: 0, ops: new Set() }; });
+  });
+
+  const perOp = {};
+  let totalHours = 0;
+  let outsideAreas = 0;
+
+  operators.forEach(op => {
+    let hours = 0;
+    const zoneOk = areaAgg[op.zone] !== undefined;
+    dates.forEach(d => {
+      const key = `${op.id}_${d}`;
+      const dayHours = (SHIFT_HOURS[scheduleData[key]] || 0) + (otMap[key] || 0);
+      if (!dayHours) return;
+      hours += dayHours;
+      if (zoneOk) {
+        const a = assignments[key];
+        if (a && lineAgg[op.zone][a]) {
+          lineAgg[op.zone][a].hours += dayHours;
+          lineAgg[op.zone][a].ops.add(op.id);
+        } else {
+          unassigned[op.zone] += dayHours;
+        }
+      }
+    });
+    perOp[op.id] = { hours, te: hours / TE_BASE_HOURS };
+    totalHours += hours;
+    if (zoneOk) {
+      areaAgg[op.zone].ops += 1;
+      areaAgg[op.zone].hours += hours;
+    } else {
+      outsideAreas += 1;
+    }
+  });
+
+  const areas = TE_AREAS.map(z => ({
+    zone: z,
+    ops: areaAgg[z].ops,
+    hours: areaAgg[z].hours,
+    te: areaAgg[z].ops > 0 ? areaAgg[z].hours / (TE_BASE_HOURS * areaAgg[z].ops) : 0
+  }));
+  const lines = {};
+  TE_AREAS.forEach(z => {
+    lines[z] = ASSIGNMENTS.map(a => {
+      const l = lineAgg[z][a];
+      const n = l.ops.size;
+      return { assignment: a, hours: l.hours, ops: n, te: n > 0 ? l.hours / (TE_BASE_HOURS * n) : 0 };
+    });
+  });
+  const avg = operators.length > 0 ? totalHours / (TE_BASE_HOURS * operators.length) : 0;
+  return { perOp, areas, lines, unassigned, outsideAreas, avg };
+};
+
 const TE_PLOT_H = 180;
 
-function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'Detalle' }) {
+function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'Detalle', barWidth = 24 }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
 
@@ -343,8 +435,8 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
                     )}
                     <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">{b.value.toFixed(2)}</span>
                     <div
-                      className="w-6 rounded-t-[4px]"
-                      style={{ height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color || color || '#3987e5' }}
+                      className="rounded-t-[4px]"
+                      style={{ width: barWidth, height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color || color || '#3987e5' }}
                     />
                   </div>
                   <div className="mt-1.5 text-[10px] font-semibold text-emerald-100 text-center leading-tight break-words w-full">{b.label}</div>
@@ -467,8 +559,8 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
       let score = 0;
       const reasons = [];
 
-      if (op.zone === target.zone) { score += 50; reasons.push('Misma área'); }
-      if (op.equipment === target.equipment) { score += 30; reasons.push('Mismo equipo'); }
+      if (op.zone && op.zone === target.zone) { score += 50; reasons.push('Misma área'); }
+      if (op.equipment && op.equipment === target.equipment) { score += 30; reasons.push('Mismo equipo'); }
 
       let weekHours = 0;
       weekDates.forEach(date => {
@@ -566,6 +658,7 @@ export default function App() {
   const [overtimeRequests, setOvertimeRequests] = useState([]);
   const [assignments, setAssignments] = useState({});
   const [reportsView, setReportsView] = useState('summary');
+  const [reportWeekStart, setReportWeekStart] = useState(() => getMondayOfCurrentWeek());
   const [teMonth, setTeMonth] = useState(() => formatDateLocal(new Date()).slice(0, 7));
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadSeconds, setLoadSeconds] = useState(0);
@@ -741,12 +834,15 @@ export default function App() {
     }
   };
 
+  const lastActualMondayRef = useRef(getMondayOfCurrentWeek());
   useEffect(() => {
     const checkWeekChange = () => {
       const actualMonday = getMondayOfCurrentWeek();
-      if (actualMonday !== currentWeekStart) {
-        setCurrentWeekStart(actualMonday);
-      }
+      const previousMonday = lastActualMondayRef.current;
+      if (actualMonday === previousMonday) return;
+      lastActualMondayRef.current = actualMonday;
+      setCurrentWeekStart(prev => (prev === previousMonday ? actualMonday : prev));
+      setReportWeekStart(prev => (prev === previousMonday ? actualMonday : prev));
     };
     const interval = setInterval(checkWeekChange, 60000);
     window.addEventListener('focus', checkWeekChange);
@@ -754,7 +850,7 @@ export default function App() {
       clearInterval(interval);
       window.removeEventListener('focus', checkWeekChange);
     };
-  }, [currentWeekStart]);
+  }, []);
 
   const loadCloudData = async () => {
     setIsLoaded(false);
@@ -861,7 +957,7 @@ export default function App() {
   }, [selectedCell]);
 
   const [newOp, setNewOp] = useState({
-    name: '', socioNumber: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0],
+    name: '', socioNumber: '', zone: '', equipment: '',
     licenseExpiry: '2027-12-31'
   });
 
@@ -1019,74 +1115,16 @@ export default function App() {
     return set;
   }, [operators, scheduleData, weekDays, isHistoricalWeek]);
 
-  const teStats = useMemo(() => {
-    const dates = getMonthDates(teMonth);
-    const otMap = {};
-    overtimeRequests.forEach(r => {
-      if (r.status !== 'Aprobado' || typeof r.date !== 'string' || !r.date.startsWith(teMonth)) return;
-      const key = `${r.operatorId}_${r.date}`;
-      otMap[key] = (otMap[key] || 0) + (Number(r.hours) || 0);
-    });
-
-    const areaAgg = {};
-    const lineAgg = {};
-    const unassigned = {};
-    TE_AREAS.forEach(z => {
-      areaAgg[z] = { ops: 0, hours: 0 };
-      unassigned[z] = 0;
-      lineAgg[z] = {};
-      ASSIGNMENTS.forEach(a => { lineAgg[z][a] = { hours: 0, ops: new Set() }; });
-    });
-
-    const perOp = {};
-    let totalHours = 0;
-    let outsideAreas = 0;
-
-    operators.forEach(op => {
-      let hours = 0;
-      const zoneOk = areaAgg[op.zone] !== undefined;
-      dates.forEach(d => {
-        const key = `${op.id}_${d}`;
-        const dayHours = (SHIFT_HOURS[scheduleData[key]] || 0) + (otMap[key] || 0);
-        if (!dayHours) return;
-        hours += dayHours;
-        if (zoneOk) {
-          const a = assignments[key];
-          if (a && lineAgg[op.zone][a]) {
-            lineAgg[op.zone][a].hours += dayHours;
-            lineAgg[op.zone][a].ops.add(op.id);
-          } else {
-            unassigned[op.zone] += dayHours;
-          }
-        }
-      });
-      perOp[op.id] = { hours, te: hours / TE_BASE_HOURS };
-      totalHours += hours;
-      if (zoneOk) {
-        areaAgg[op.zone].ops += 1;
-        areaAgg[op.zone].hours += hours;
-      } else {
-        outsideAreas += 1;
-      }
-    });
-
-    const areas = TE_AREAS.map(z => ({
-      zone: z,
-      ops: areaAgg[z].ops,
-      hours: areaAgg[z].hours,
-      te: areaAgg[z].ops > 0 ? areaAgg[z].hours / (TE_BASE_HOURS * areaAgg[z].ops) : 0
-    }));
-    const lines = {};
-    TE_AREAS.forEach(z => {
-      lines[z] = ASSIGNMENTS.map(a => {
-        const l = lineAgg[z][a];
-        const n = l.ops.size;
-        return { assignment: a, hours: l.hours, ops: n, te: n > 0 ? l.hours / (TE_BASE_HOURS * n) : 0 };
-      });
-    });
-    const avg = operators.length > 0 ? totalHours / (TE_BASE_HOURS * operators.length) : 0;
-    return { perOp, areas, lines, unassigned, outsideAreas, avg };
-  }, [teMonth, operators, scheduleData, assignments, overtimeRequests]);
+  const teStats = useMemo(
+    () => computeTeStats(teMonth, operators, scheduleData, assignments, overtimeRequests),
+    [teMonth, operators, scheduleData, assignments, overtimeRequests]
+  );
+  const reportWeekDays = useMemo(() => buildWeekDays(reportWeekStart), [reportWeekStart]);
+  const reportTeMonth = reportWeekDays[3].dateStr.slice(0, 7);
+  const weekTeStats = useMemo(
+    () => computeTeStats(reportTeMonth, operators, scheduleData, assignments, overtimeRequests),
+    [reportTeMonth, operators, scheduleData, assignments, overtimeRequests]
+  );
 
   const canEditCell = (operatorId, dateStr) => {
     if (!canEditShifts) return false;
@@ -1397,6 +1435,14 @@ export default function App() {
   const handleSaveOperator = async (e) => {
     e.preventDefault();
     if (!newOp.name || !canManageOperators) return;
+    if (!TE_AREAS.includes(newOp.zone)) {
+      pushToast('warning', 'Selecciona el área de trabajo.');
+      return;
+    }
+    if (!FORKLIFT_TYPES.includes(newOp.equipment)) {
+      pushToast('warning', 'Selecciona el tipo de equipo.');
+      return;
+    }
 
     const socioNumber = String(newOp.socioNumber || '').trim();
     if (!socioNumber) {
@@ -1705,7 +1751,7 @@ export default function App() {
       pdf.text('ShiftForklift — Reporte Ejecutivo', 14, 12);
       pdf.setFontSize(9);
       pdf.setTextColor(167, 243, 208);
-      pdf.text(`Semana del ${weekDays[0].dayNumber} ${weekDays[0].monthName} al ${weekDays[6].dayNumber} ${weekDays[6].monthName}`, 14, 19);
+      pdf.text(`Semana del ${reportWeekDays[0].dayNumber} ${reportWeekDays[0].monthName} al ${reportWeekDays[6].dayNumber} ${reportWeekDays[6].monthName}`, 14, 19);
 
       const totalOps = operators.length;
       const licenseOk = operators.filter(op => {
@@ -1717,7 +1763,7 @@ export default function App() {
       }).length;
 
       let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
-      weekDays.forEach(day => {
+      reportWeekDays.forEach(day => {
         operators.forEach(op => {
           const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
           totalSlots++;
@@ -1772,7 +1818,7 @@ export default function App() {
       pdf.line(14, y, W - 14, y);
       y += 5;
 
-      weekDays.forEach(day => {
+      reportWeekDays.forEach(day => {
         const counts = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
         operators.forEach(op => {
           const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
@@ -1792,7 +1838,7 @@ export default function App() {
       y += 6;
       pdf.setTextColor(167, 243, 208);
       pdf.setFontSize(11);
-      pdf.text(`Horas por operador (semana actual) · T.E de ${formatMonthLabel(teMonth)}`, 14, y);
+      pdf.text(`Horas por operador (semana actual) · T.E de ${formatMonthLabel(reportTeMonth)}`, 14, y);
       y += 6;
 
       pdf.setFontSize(8);
@@ -1810,7 +1856,7 @@ export default function App() {
       y += 5;
 
       const sortedByHours = [...operators].map(op => {
-        const weekDates = weekDays.map(d => d.dateStr);
+        const weekDates = reportWeekDays.map(d => d.dateStr);
         let totalH = 0;
         const c = { M: 0, T: 0, N: 0 };
         weekDates.forEach(date => {
@@ -1829,7 +1875,7 @@ export default function App() {
         pdf.setTextColor(255, 255, 255);
         pdf.text(op.name.substring(0, 30), 16, y);
         pdf.setTextColor(148, 163, 184);
-        pdf.text(op.zone.substring(0, 25), 80, y);
+        pdf.text(areaLabel(op).substring(0, 25), 80, y);
         pdf.setTextColor(255, 255, 255);
         pdf.text(String(op.c.M), 130, y);
         pdf.text(String(op.c.T), 139, y);
@@ -1841,7 +1887,7 @@ export default function App() {
         pdf.setTextColor(16, 185, 129);
         pdf.text(`${op.totalH.toFixed(1)}h`, 168, y);
         pdf.setTextColor(255, 255, 255);
-        pdf.text((teStats.perOp[op.id]?.te ?? 0).toFixed(2), 185, y);
+        pdf.text((weekTeStats.perOp[op.id]?.te ?? 0).toFixed(2), 185, y);
         y += 5.5;
       });
 
@@ -1850,7 +1896,7 @@ export default function App() {
       pdf.text(`Generado el ${new Date().toLocaleString('es-MX')} por ${currentUser?.name || 'Usuario'}`, 14, H - 8);
 
       const pdfBlob = pdf.output('blob');
-      const filename = `Reporte_Ejecutivo_${currentWeekStart}.pdf`;
+      const filename = `Reporte_Ejecutivo_${reportWeekStart}.pdf`;
 
       if (isMobileDevice()) {
         setExportPreview({ format: 'pdf', blob: pdfBlob, dataUrl: null, filename, mimeType: 'application/pdf', isPdf: true });
@@ -2316,7 +2362,7 @@ export default function App() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-[13px] break-words leading-tight">{op.name}</div>
-                        <div className="text-[10px] opacity-80 break-words leading-tight">{op.socioNumber || op.id} · {op.zone}</div>
+                        <div className="text-[10px] opacity-80 break-words leading-tight">{op.socioNumber || op.id} · {areaLabel(op)}</div>
                         {operatorsWithoutRest.has(op.id) && (
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/50 text-amber-300 border border-amber-500/50">Falta día de descanso</span>
                         )}
@@ -2390,7 +2436,7 @@ export default function App() {
                         <tr key={op.id} className="hover:bg-[#003517]/50">
                           <td className="py-3 px-4">
                             <div className="font-bold text-sm text-white">{op.name}</div>
-                            <div className="text-xs text-emerald-400/80">{op.socioNumber || op.id} • {op.zone}</div>
+                            <div className="text-xs text-emerald-400/80">{op.socioNumber || op.id} • <span className={TE_AREAS.includes(op.zone) ? '' : 'text-amber-300 font-semibold'}>{areaLabel(op)}</span></div>
                             {operatorsWithoutRest.has(op.id) && (
                               <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-950/70 border border-amber-700/60 rounded px-1.5 py-0.5">
                                 <AlertTriangle className="w-3 h-3" /> Falta día de descanso
@@ -2573,7 +2619,7 @@ export default function App() {
               {canManageOperators && (
                 <button onClick={() => {
                   setEditingOperator(null);
-                  setNewOp({ name: '', socioNumber: '', zone: WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES[0], licenseExpiry: formatDateLocal(new Date()) });
+                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: formatDateLocal(new Date()) });
                   setIsAddOperatorOpen(true);
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
@@ -2599,15 +2645,15 @@ export default function App() {
                         </div>
                         {canManageOperators && (
                           <div className="flex space-x-1 shrink-0">
-                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', zone: WAREHOUSE_ZONES.includes(op.zone) && op.zone !== WAREHOUSE_ZONES[0] ? op.zone : WAREHOUSE_ZONES[1], equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : FORKLIFT_TYPES[0] }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
+                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', zone: TE_AREAS.includes(op.zone) ? op.zone : '', equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : '' }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
                             <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
                           </div>
                         )}
                       </div>
                       <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
                         <div className="flex justify-between gap-2"><span># Socio:</span><span className="font-semibold text-white text-right">{op.socioNumber || 'N/A'}</span></div>
-                        <div className="flex justify-between gap-2"><span>Área:</span><span className="font-semibold text-white text-right">{op.zone}</span></div>
-                        <div className="flex justify-between gap-2"><span>Equipo:</span><span className="font-semibold text-white text-right">{op.equipment}</span></div>
+                        <div className="flex justify-between gap-2"><span>Área:</span><span className={`font-semibold text-right ${TE_AREAS.includes(op.zone) ? 'text-white' : 'text-amber-300'}`}>{areaLabel(op)}</span></div>
+                        <div className="flex justify-between gap-2"><span>Equipo:</span><span className={`font-semibold text-right ${FORKLIFT_TYPES.includes(op.equipment) ? 'text-white' : 'text-amber-300'}`}>{FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : 'Sin registrar'}</span></div>
                         <div className="flex justify-between items-center pt-1 gap-2">
                           <span>Licencia DC3:</span>
                           <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
@@ -2889,7 +2935,7 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="text-base sm:text-lg font-bold text-white">Reportes Ejecutivos</h2>
-                  <p className="text-xs text-emerald-300">KPIs de la semana actual</p>
+                  <p className="text-xs text-emerald-300">KPIs de la semana seleccionada</p>
                 </div>
               </div>
               <button
@@ -2909,10 +2955,36 @@ export default function App() {
 
             {reportsView === 'summary' && (
             <>
+            <div className="bg-[#003818] border border-emerald-800/70 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => setReportWeekStart(w => shiftWeekStr(w, -7))} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronLeft className="w-4 h-4"/></button>
+                <div className="text-xs font-bold text-white bg-[#02180d] px-3 py-1.5 rounded-lg border border-emerald-900 whitespace-nowrap">
+                  {reportWeekDays[0].dayNumber} {reportWeekDays[0].monthName} - {reportWeekDays[6].dayNumber} {reportWeekDays[6].monthName}
+                </div>
+                <button onClick={() => setReportWeekStart(w => shiftWeekStr(w, 7))} className="p-1.5 bg-[#022415] hover:bg-emerald-900 rounded-lg text-emerald-200 border border-emerald-800/60 transition"><ChevronRight className="w-4 h-4"/></button>
+                {reportWeekStart !== getMondayOfCurrentWeek() && (
+                  <button onClick={() => setReportWeekStart(getMondayOfCurrentWeek())} className="px-2 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-bold transition">Semana actual</button>
+                )}
+              </div>
+              <label className="flex items-center gap-2 text-[11px] text-emerald-300 font-bold">
+                Ir a un mes
+                <input
+                  type="month"
+                  max={formatDateLocal(new Date()).slice(0, 7)}
+                  value={reportTeMonth}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [yy, mm] = e.target.value.split('-').map(Number);
+                    setReportWeekStart(getMondayOfCurrentWeek(new Date(yy, mm - 1, 1)));
+                  }}
+                  className="bg-[#02180d] border border-emerald-900 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-700"
+                />
+              </label>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {(() => {
                 let totalWorked = 0, totalAbsent = 0, totalSlots = 0;
-                weekDays.forEach(day => {
+                reportWeekDays.forEach(day => {
                   operators.forEach(op => {
                     const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
                     totalSlots++;
@@ -2969,8 +3041,8 @@ export default function App() {
                         <Clock className="w-3.5 h-3.5 text-indigo-300" />
                         <span className="text-[10px] font-bold uppercase text-indigo-300">T.E promedio</span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-extrabold text-indigo-100">{teStats.avg.toFixed(2)}</div>
-                      <div className="text-[10px] text-indigo-400/70 mt-0.5">horas ÷ 208 · {formatMonthLabel(teMonth)}</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-indigo-100">{weekTeStats.avg.toFixed(2)}</div>
+                      <div className="text-[10px] text-indigo-400/70 mt-0.5">horas ÷ 208 · {formatMonthLabel(reportTeMonth)}</div>
                     </div>
                   </>
                 );
@@ -2997,7 +3069,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-900/50">
-                    {weekDays.map(day => {
+                    {reportWeekDays.map(day => {
                       const counts = { M: 0, T: 0, N: 0, DES: 0, VAC: 0, INC: 0 };
                       operators.forEach(op => {
                         const code = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
@@ -3031,7 +3103,7 @@ export default function App() {
                 Horas por operador
               </h3>
               {(() => {
-                const weekDates = weekDays.map(d => d.dateStr);
+                const weekDates = reportWeekDays.map(d => d.dateStr);
                 const approved = overtimeRequests.filter(r => r.status === 'Aprobado' && weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0);
                 const pending = overtimeRequests.filter(r => r.status === 'Pendiente' && weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0);
                 return (
@@ -3057,7 +3129,7 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y divide-emerald-900/50">
                     {operators.map(op => {
-                      const weekDates = weekDays.map(d => d.dateStr);
+                      const weekDates = reportWeekDays.map(d => d.dateStr);
                       let totalH = 0;
                       const c = { M: 0, T: 0, N: 0 };
                       weekDates.forEach(date => {
@@ -3073,13 +3145,13 @@ export default function App() {
                       return (
                         <tr key={op.id} className="hover:bg-[#003517]/50">
                           <td className="p-2 font-bold text-white whitespace-nowrap">{op.name}</td>
-                          <td className="p-2 text-emerald-200 text-[11px]">{op.zone}</td>
+                          <td className="p-2 text-emerald-200 text-[11px]">{areaLabel(op)}</td>
                           <td className="p-2 text-center text-emerald-300">{c.M}</td>
                           <td className="p-2 text-center text-amber-300">{c.T}</td>
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
                           <td className={`p-2 text-right font-bold ${otLevel === 'danger' ? 'text-red-400' : otLevel === 'warning' ? 'text-amber-300' : otH > 0 ? 'text-emerald-300' : 'text-emerald-700'}`}>{otLevel && <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />}{otH > 0 ? `+${otH.toFixed(1)}h` : '-'}</td>
                           <td className="p-2 text-right font-extrabold text-emerald-300">{grandH.toFixed(1)}h</td>
-                          <td className="p-2 text-right font-extrabold text-indigo-300">{(teStats.perOp[op.id]?.te ?? 0).toFixed(2)}</td>
+                          <td className="p-2 text-right font-extrabold text-indigo-300">{(weekTeStats.perOp[op.id]?.te ?? 0).toFixed(2)}</td>
                         </tr>
                       );
                     })}
@@ -3111,19 +3183,22 @@ export default function App() {
                   </p>
                 </div>
 
-                <TEBarChart
-                  title="T.E por área"
-                  subtitle="Promedio por operador de cada almacén"
-                  firstColumnLabel="Área"
-                  bars={teStats.areas.map(a => ({
-                    label: shortArea(a.zone),
-                    fullLabel: a.zone,
-                    value: a.te,
-                    hours: a.hours,
-                    ops: a.ops,
-                    color: AREA_COLORS[a.zone]
-                  }))}
-                />
+                <div className="max-w-xl">
+                  <TEBarChart
+                    title="T.E por área"
+                    subtitle="Promedio por operador de cada almacén"
+                    firstColumnLabel="Área"
+                    barWidth={88}
+                    bars={teStats.areas.map(a => ({
+                      label: shortArea(a.zone),
+                      fullLabel: a.zone,
+                      value: a.te,
+                      hours: a.hours,
+                      ops: a.ops,
+                      color: AREA_COLORS[a.zone]
+                    }))}
+                  />
+                </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                   {[WAREHOUSE_ZONES[2], WAREHOUSE_ZONES[1]].map(zone => (
@@ -3146,7 +3221,7 @@ export default function App() {
 
                 <p className="text-[11px] text-emerald-400/80">
                   Horas sin línea asignada (no salen en las gráficas por línea): {TE_AREAS.map(z => `${shortArea(z)} ${teStats.unassigned[z].toFixed(0)} h`).join(' · ')}.
-                  {teStats.outsideAreas > 0 && ` ${teStats.outsideAreas} operador(es) con un área anterior no se incluyen en las gráficas; edítalos para asignarles un área.`}
+                  {teStats.outsideAreas > 0 && ` ${teStats.outsideAreas} operador(es) sin área registrada no se incluyen en las gráficas; edítalos en Personal para asignarles su área.`}
                 </p>
               </div>
             )}
@@ -3273,7 +3348,7 @@ export default function App() {
                               {ok && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-700 text-white">ACEPTABLE</span>}
                               {bad && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-700 text-white">NO REC.</span>}
                             </div>
-                            <div className="text-[10px] text-emerald-300/80 mt-0.5">{c.socioNumber || c.id} · {c.zone}</div>
+                            <div className="text-[10px] text-emerald-300/80 mt-0.5">{c.socioNumber || c.id} · {areaLabel(c)}</div>
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {c.reasons.map((r, i) => (
                                 <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">{r}</span>
@@ -3313,13 +3388,15 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Área de Trabajo</label>
-                <select value={newOp.zone} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
-                  {WAREHOUSE_ZONES.filter(z => z !== 'Todas las áreas').map(z => <option key={z} value={z}>{z}</option>)}
+                <select required value={newOp.zone || ''} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                  <option value="" disabled>Selecciona un área</option>
+                  {TE_AREAS.map(z => <option key={z} value={z}>{z}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
-                <select value={newOp.equipment} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                <select required value={newOp.equipment || ''} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                  <option value="" disabled>Selecciona el tipo</option>
                   {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
                 </select>
               </div>

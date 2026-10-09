@@ -265,10 +265,6 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
   );
 }
 
-/**
- * ✅ T.E ahora se calcula SOLO con horas extras aprobadas ÷ 208.
- * Ya no se suman las horas de turno programadas.
- */
 const computeTeStats = (ym, operators, scheduleData, assignments, overtimeRequests) => {
   const dates = getMonthDates(ym);
   const otMap = {};
@@ -297,7 +293,6 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     const zoneOk = areaAgg[op.zone] !== undefined;
     dates.forEach(d => {
       const key = `${op.id}_${d}`;
-      // ✅ SOLO horas extra (no se suman horas de turno)
       const dayHours = otMap[key] || 0;
       if (!dayHours) return;
       hours += dayHours;
@@ -341,17 +336,12 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
 
 const TE_PLOT_H = 180;
 
-/**
- * ✅ Gráfica con eje auto-escalable: detecta el máximo y elige paso + decimales.
- * La línea de referencia "208 h = 1.00" solo aparece si el eje llega a 1.
- */
 function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'Detalle', barWidth = 24 }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
 
   const maxVal = Math.max(0.0001, ...bars.map(b => b.value));
 
-  // ✅ Auto-escala según magnitud del máximo
   let step, decimals;
   if (maxVal <= 0.005)       { step = 0.0005; decimals = 4; }
   else if (maxVal <= 0.01)   { step = 0.001;  decimals = 4; }
@@ -372,7 +362,7 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
   }
   const hasData = bars.some(b => b.hours > 0);
   const fmt = (v) => v.toFixed(decimals);
-  const showRefLine = top >= 1; // La referencia 208h = 1.00 solo si el eje alcanza 1
+  const showRefLine = top >= 1;
 
   const tooltipPos = (i) => {
     if (bars.length < 3) return 'left-1/2 -translate-x-1/2';
@@ -480,30 +470,47 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
   );
 }
 
-
-/**
- * Comparativo de Headcount (H.C) y Full-Time Equivalent (F.T.E).
- * F.T.E = personas registradas + horas extra aprobadas / 208.
- */
-function HeadcountFteChart({ title = 'H.C vs F.T.E', subtitle, headcount, overtimeHours }) {
+function HcFteBarChart({ title, subtitle, headcount, otHours }) {
   const [showTable, setShowTable] = useState(false);
-  const hc = Math.max(0, Number(headcount) || 0);
-  const teEquivalent = Math.max(0, Number(overtimeHours) || 0) / TE_BASE_HOURS;
-  const fte = hc + teEquivalent;
-  const maxValue = Math.max(1, hc, fte);
+  const [hover, setHover] = useState(null);
+
+  const otFte = otHours / TE_BASE_HOURS;
+  const totalFte = headcount + otFte;
+
   const bars = [
-    { label: 'H.C', value: hc, color: '#3987e5', description: 'Personas registradas en la aplicación' },
-    { label: 'F.T.E', value: fte, color: '#d9a441', description: `H.C + ${teEquivalent.toFixed(2)} equivalente(s) de T.E` }
+    {
+      label: 'H.C',
+      fullLabel: 'H.C (Headcount)',
+      value: headcount,
+      sub: `${headcount} personas dadas de alta`,
+      color: '#3987e5'
+    },
+    {
+      label: 'F.T.E',
+      fullLabel: 'F.T.E (Headcount + T.E)',
+      value: totalFte,
+      sub: `H.C (${headcount}) + T.E (+${otFte.toFixed(3)})`,
+      color: '#10b981'
+    }
   ];
 
+  const maxVal = Math.max(1, headcount, totalFte);
+  let step = maxVal <= 5 ? 1 : maxVal <= 20 ? 2 : maxVal <= 50 ? 5 : 10;
+  const top = Math.ceil((maxVal * 1.15) / step) * step;
+  const ticks = [];
+  for (let i = 0; i * step <= top + 1e-9; i++) {
+    ticks.push(Number((i * step).toFixed(2)));
+  }
+
   return (
-    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5 h-full">
+    <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
       <div className="flex items-start justify-between gap-2 mb-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-bold text-white"> {title} </h3>
-          <p className="text-[11px] text-emerald-300 mt-0.5">
-            {subtitle || 'H.C = personas registradas · F.T.E = H.C + (T.E aprobado ÷ 208)'}
-          </p>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Users className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="min-w-0">{title}</span>
+          </h3>
+          {subtitle && <p className="text-[11px] text-emerald-300 mt-0.5">{subtitle}</p>}
         </div>
         <button
           onClick={() => setShowTable(v => !v)}
@@ -515,48 +522,76 @@ function HeadcountFteChart({ title = 'H.C vs F.T.E', subtitle, headcount, overti
 
       {showTable ? (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[340px]">
             <thead>
-              <tr className="text-emerald-300 uppercase border-b border-emerald-800/80">
-                <th className="p-2 text-left">Indicador</th>
+              <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
+                <th className="p-2">Métrica</th>
                 <th className="p-2 text-right">Valor</th>
+                <th className="p-2 text-right">Detalle</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-900/50">
-              {bars.map(bar => (
-                <tr key={bar.label}>
-                  <td className="p-2">
-                    <div className="font-bold text-white">{bar.label}</div>
-                    <div className="text-[10px] text-emerald-400">{bar.description}</div>
-                  </td>
-                  <td className="p-2 text-right font-extrabold text-white">{bar.value.toFixed(2)}</td>
-                </tr>
-              ))}
               <tr>
-                <td className="p-2 text-emerald-300">Horas extra aprobadas</td>
-                <td className="p-2 text-right text-emerald-200">{(Number(overtimeHours) || 0).toFixed(1)} h</td>
+                <td className="p-2 font-bold text-white">H.C (Headcount)</td>
+                <td className="p-2 text-right font-extrabold text-blue-300">{headcount}</td>
+                <td className="p-2 text-right text-emerald-200">Personas dadas de alta</td>
+              </tr>
+              <tr>
+                <td className="p-2 font-bold text-white">T.E (Horas extra en FTE)</td>
+                <td className="p-2 text-right font-extrabold text-amber-300">+{otFte.toFixed(3)}</td>
+                <td className="p-2 text-right text-emerald-200">{otHours.toFixed(1)} hrs ÷ 208</td>
+              </tr>
+              <tr className="bg-emerald-950/40">
+                <td className="p-2 font-bold text-emerald-100">F.T.E (Total)</td>
+                <td className="p-2 text-right font-extrabold text-emerald-300">{totalFte.toFixed(3)}</td>
+                <td className="p-2 text-right text-emerald-100">Headcount + T.E</td>
               </tr>
             </tbody>
           </table>
         </div>
       ) : (
-        <div className="pt-3">
-          <div className="flex items-end justify-around gap-8 h-[180px] border-b border-emerald-800/80 px-4">
-            {bars.map(bar => (
-              <div key={bar.label} className="flex-1 h-full flex flex-col items-center justify-end min-w-0">
-                <span className="text-sm font-extrabold text-white mb-1">{bar.value.toFixed(2)}</span>
-                <div
-                  className="w-16 max-w-full rounded-t-md transition-all"
-                  title={bar.description}
-                  style={{ height: `${Math.max(bar.value > 0 ? 3 : 0, (bar.value / maxValue) * 78)}%`, backgroundColor: bar.color }}
-                />
-                <span className="text-xs font-bold text-emerald-100 mt-2">{bar.label}</span>
+        <div className="relative pl-9 pt-5">
+          <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: TE_PLOT_H }}>
+            {ticks.map(t => (
+              <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
+                <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{t}</span>
+                <div className="absolute left-9 right-0 top-0 border-t border-emerald-900/70" />
               </div>
             ))}
           </div>
-          <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-3 text-[10px] text-emerald-300">
-            <span><span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: '#3987e5' }} />H.C: {hc} personas</span>
-            <span><span className="inline-block w-2 h-2 rounded-sm mr-1" style={{ background: '#d9a441' }} />T.E: {teEquivalent.toFixed(2)} FTE</span>
+
+          <div className="relative flex justify-around items-end gap-4 px-6" style={{ height: TE_PLOT_H }}>
+            {bars.map((b, i) => {
+              const h = (b.value / top) * 100;
+              return (
+                <div
+                  key={b.label}
+                  className="flex-1 max-w-[120px] flex flex-col items-center cursor-default"
+                  onMouseEnter={() => setHover(i)}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => setHover(hover === i ? null : i)}
+                >
+                  <div className="relative w-full flex flex-col items-center justify-end" style={{ height: TE_PLOT_H }}>
+                    {hover === i && (
+                      <div className="absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none left-1/2 -translate-x-1/2">
+                        <div className="font-bold text-white">{b.fullLabel}</div>
+                        <div>Valor: <span className="font-extrabold">{b.value.toFixed(3)}</span></div>
+                        <div className="text-emerald-300">{b.sub}</div>
+                      </div>
+                    )}
+                    <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">
+                      {b.value % 1 === 0 ? b.value : b.value.toFixed(2)}
+                    </span>
+                    <div
+                      className="w-14 rounded-t-[4px] transition-all duration-300"
+                      style={{ height: `${h}%`, minHeight: 4, background: b.color }}
+                    />
+                  </div>
+                  <div className="mt-1.5 text-[11px] font-bold text-emerald-100 text-center leading-tight">{b.label}</div>
+                  <div className="text-[9px] text-emerald-400 text-center leading-tight">{b.sub}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -989,7 +1024,7 @@ export default function App() {
       } else {
         setLoadError('No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.');
       }
-    } finally {
+    } fontally {
       setIsLoaded(true);
     }
   };
@@ -1998,7 +2033,6 @@ export default function App() {
         pdf.setTextColor(16, 185, 129);
         pdf.text(`${op.totalH.toFixed(1)}h`, 168, y);
         pdf.setTextColor(255, 255, 255);
-        // ✅ T.E ahora puede ser mucho menor a 1; usamos 4 decimales si aplica
         const teVal = weekTeStats.perOp[op.id]?.te ?? 0;
         const teStr = teVal < 0.01 ? teVal.toFixed(4) : teVal.toFixed(3);
         pdf.text(teStr, 185, y);
@@ -2481,7 +2515,7 @@ export default function App() {
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/50 text-amber-300 border border-amber-500/50">Falta día de descanso</span>
                         )}
                         {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                          <span className="inline-block mt-1 text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-black/40 border border-white/30">{assignments[cellKey]}</span>
+                          <span className="inline-block mt-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-black/40 text-white border border-white/20 shadow-sm">{assignments[cellKey]}</span>
                         )}
                       </div>
                       <div className="shrink-0 flex items-center gap-1">
@@ -2597,7 +2631,9 @@ export default function App() {
                                   <IconComp className="w-3.5 h-3.5" />
                                   <span>{shift.code}</span>
                                   {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
-                                    <span className="mt-0.5 text-[10px] leading-tight font-bold text-center opacity-100 px-0.5">{assignments[cellKey]}</span>
+                                    <span className="mt-0.5 text-[10px] leading-tight font-extrabold text-center opacity-100 bg-black/40 px-1.5 py-0.5 rounded border border-white/20 text-white shadow-sm truncate max-w-full">
+                                      {assignments[cellKey]}
+                                    </span>
                                   )}
                                   {overtimeByCell[cellKey] && (
                                     <span
@@ -3162,17 +3198,6 @@ export default function App() {
               })()}
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-              <HeadcountFteChart
-                title="H.C y F.T.E · Reporte semanal"
-                subtitle="F.T.E = personas registradas + horas extra aprobadas de la semana ÷ 208"
-                headcount={operators.length}
-                overtimeHours={overtimeRequests
-                  .filter(r => r.status === 'Aprobado' && reportWeekDays.some(day => day.dateStr === r.date))
-                  .reduce((sum, r) => sum + (Number(r.hours) || 0), 0)}
-              />
-            </div>
-
             <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-3 sm:p-5">
               <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-emerald-400" />
@@ -3309,8 +3334,7 @@ export default function App() {
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
-                <div className="min-w-0">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                   <TEBarChart
                     title="T.E por área"
                     subtitle="Horas extra promedio por operador de cada almacén"
@@ -3325,17 +3349,13 @@ export default function App() {
                       color: AREA_COLORS[a.zone]
                     }))}
                   />
-                </div>
-                <div className="min-w-0">
-                  <HeadcountFteChart
-                    title="H.C y F.T.E · Mes"
-                    subtitle="F.T.E = H.C + (horas extra aprobadas ÷ 208)"
+
+                  <HcFteBarChart
+                    title="Comparativa H.C vs F.T.E"
+                    subtitle="Capacidad de personal activo y equivalente con horas extra"
                     headcount={operators.length}
-                    overtimeHours={overtimeRequests
-                      .filter(r => r.status === 'Aprobado' && typeof r.date === 'string' && r.date.startsWith(teMonth))
-                      .reduce((sum, r) => sum + (Number(r.hours) || 0), 0)}
+                    otHours={teStats.areas.reduce((acc, a) => acc + a.hours, 0)}
                   />
-                </div>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">

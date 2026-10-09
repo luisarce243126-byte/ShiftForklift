@@ -146,7 +146,9 @@ const withTimeout = (promise, ms) => {
 const OVERTIME_TYPES = ['Hora extra', 'Descanso trabajado', 'Día festivo'];
 const OT_MAX_HOURS_PER_DAY = 3;
 const OT_MAX_DAYS_PER_WEEK = 3;
-const WEEK_HOURS_LIMIT = 48;
+const OT_WARN_HOURS = 3;
+const OT_ALERT_HOURS = 9;
+const WORK_CODES = ['M', 'T', 'N'];
 
 const getWeekDatesFromDate = (dateStr) => {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -167,6 +169,15 @@ const sumOvertime = (requests, operatorId, dates, statuses = ['Aprobado']) =>
   (requests || [])
     .filter(r => r.operatorId === operatorId && dates.includes(r.date) && statuses.includes(r.status))
     .reduce((acc, r) => acc + (Number(r.hours) || 0), 0);
+
+const getOvertimeLevel = (hours) => {
+  if (hours >= OT_ALERT_HOURS) return 'danger';
+  if (hours >= OT_WARN_HOURS) return 'warning';
+  return null;
+};
+
+const hasRestDay = (schedule, operatorId, dates) =>
+  dates.some(d => !WORK_CODES.includes(schedule[`${operatorId}_${d}`]));
 
 const getLicenseStatusStyle = (expiryDateStr) => {
   if (!expiryDateStr) return 'bg-emerald-950 text-emerald-300 border-emerald-800';
@@ -329,14 +340,12 @@ const getSuitableReplacements = (targetOperatorId, dateStr, shiftCode, operators
 
       weekHours += sumOvertime(overtimeRequests, op.id, weekDates);
 
-      if (weekHours > 48) {
+      reasons.push(`${weekHours.toFixed(1)}h esta semana`);
+
+      const wouldHaveRest = weekDates.some(date => date !== dateStr && !WORK_CODES.includes(scheduleData[`${op.id}_${date}`]));
+      if (!wouldHaveRest) {
         score -= 40;
-        reasons.push(`${weekHours.toFixed(1)}h excede 48h`);
-      } else if (weekHours > 40) {
-        score -= 10;
-        reasons.push(`${weekHours.toFixed(1)}h esta semana`);
-      } else {
-        reasons.push(`${weekHours.toFixed(1)}h esta semana`);
+        reasons.push('Sin día de descanso');
       }
 
       if (op.licenseExpiry) {
@@ -826,22 +835,24 @@ export default function App() {
     if (newOt.type === 'Hora extra') {
       const dayTotal = mine.filter(r => r.date === newOt.date).reduce((a, r) => a + (Number(r.hours) || 0), 0) + hours;
       if (dayTotal > OT_MAX_HOURS_PER_DAY) {
-        warnings.push(`Ese día sumaría ${dayTotal}h extra (máximo legal: ${OT_MAX_HOURS_PER_DAY}h por día).`);
+        warnings.push({ level: 'warning', text: `Ese día sumaría ${dayTotal}h extra (máximo legal: ${OT_MAX_HOURS_PER_DAY}h por día).` });
       }
       const days = new Set(mine.filter(r => r.type === 'Hora extra' && weekDates.includes(r.date)).map(r => r.date));
       days.add(newOt.date);
       if (days.size > OT_MAX_DAYS_PER_WEEK) {
-        warnings.push(`Serían ${days.size} días con horas extra en la semana (máximo legal: ${OT_MAX_DAYS_PER_WEEK}).`);
+        warnings.push({ level: 'warning', text: `Serían ${days.size} días con horas extra en la semana (máximo legal: ${OT_MAX_DAYS_PER_WEEK}).` });
       }
     }
 
-    const baseHours = weekDates.reduce((acc, d) => acc + (SHIFT_HOURS[scheduleData[`${newOt.operatorId}_${d}`]] || 0), 0);
-    const otHours = mine.filter(r => weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0) + hours;
-    if (baseHours + otHours > WEEK_HOURS_LIMIT) {
-      warnings.push(`La semana quedaría en ${(baseHours + otHours).toFixed(1)}h (referencia: ${WEEK_HOURS_LIMIT}h).`);
+    const weekOt = mine.filter(r => weekDates.includes(r.date)).reduce((a, r) => a + (Number(r.hours) || 0), 0) + hours;
+    const level = getOvertimeLevel(weekOt);
+    if (level === 'danger') {
+      warnings.push({ level, text: `ALERTA: la semana quedaría en ${weekOt}h extra (alerta desde ${OT_ALERT_HOURS}h).` });
+    } else if (level === 'warning') {
+      warnings.push({ level, text: `La semana quedaría en ${weekOt}h extra (señal desde ${OT_WARN_HOURS}h).` });
     }
     return warnings;
-  }, [isOvertimeOpen, newOt, overtimeRequests, scheduleData]);
+  }, [isOvertimeOpen, newOt, overtimeRequests]);
 
   const lockedCellsInView = useMemo(() => {
     let count = 0;
@@ -852,6 +863,16 @@ export default function App() {
     });
     return count;
   }, [operators, weekDays, lockedCells]);
+
+  const operatorsWithoutRest = useMemo(() => {
+    const set = new Set();
+    if (isHistoricalWeek) return set;
+    const dates = weekDays.map(d => d.dateStr);
+    operators.forEach(op => {
+      if (!hasRestDay(scheduleData, op.id, dates)) set.add(op.id);
+    });
+    return set;
+  }, [operators, scheduleData, weekDays, isHistoricalWeek]);
 
   const canEditCell = (operatorId, dateStr) => {
     if (!canEditShifts) return false;
@@ -868,21 +889,6 @@ export default function App() {
     if (lockedCells.has(`${operatorId}_${dateStr}`)) {
       conflicts.push(`La celda ya está bloqueada por una ausencia aprobada de ${op?.name || operatorId}.`);
       return conflicts;
-    }
-    if (['M', 'T', 'N'].includes(newShiftCode)) {
-      const weekDates = weekDays.map(d => d.dateStr);
-      let weeklyHours = 0;
-      let newShiftHours = newShiftCode === 'N' ? 8.5 : 8;
-      weekDates.forEach(date => {
-        const key = `${operatorId}_${date}`;
-        const code = date === dateStr ? newShiftCode : scheduleData[key];
-        if (code === 'M' || code === 'T') weeklyHours += 8;
-        else if (code === 'N') weeklyHours += 8.5;
-      });
-      weeklyHours += sumOvertime(overtimeRequests, operatorId, weekDates);
-      if (weeklyHours + newShiftHours > 48) {
-        conflicts.push(`${op?.name || operatorId} tendría ${(weeklyHours + newShiftHours).toFixed(1)}h esta semana (límite 48h).`);
-      }
     }
     if (newShiftCode === 'N' && !isFullWeek) {
       const currentIdx = weekDays.findIndex(d => d.dateStr === dateStr);
@@ -1098,6 +1104,9 @@ export default function App() {
       const op = operators.find(o => o.id === operatorId);
       const dayLabel = isFullWeek ? 'toda la semana' : dateStr;
       const assignLabel = newAssignment ? ` · ${newAssignment}` : '';
+      if (WORK_CODES.includes(shiftCode) && !hasRestDay(updatedSchedule, operatorId, weekDays.map(d => d.dateStr))) {
+        pushToast('warning', `Recuerda asignar un día de descanso a ${op?.name || operatorId} esta semana.`, { duration: 7000 });
+      }
       pushToast('success', `${op?.name || operatorId} → ${SHIFT_TYPES[shiftCode].label}${assignLabel} (${dayLabel})`, {
         undoAction: () => {
           setScheduleData(previousSchedule);
@@ -1158,6 +1167,9 @@ export default function App() {
           });
         }
       });
+      if (WORK_CODES.includes(shiftCode) && !hasRestDay(updatedSchedule, targetOperatorId, weekDays.map(d => d.dateStr))) {
+        pushToast('warning', `Recuerda asignar un día de descanso a ${target?.name || targetOperatorId} esta semana.`, { duration: 7000 });
+      }
     } catch (error) {
       console.error('Error al reasignar:', error);
       setScheduleData(previousSchedule);
@@ -1420,10 +1432,12 @@ export default function App() {
       pushToast('success', `Horas extras marcadas como ${newStatus}`);
       if (newStatus === 'Aprobado') {
         const weekDates = getWeekDatesFromDate(req.date);
-        const base = weekDates.reduce((acc, d) => acc + (SHIFT_HOURS[scheduleData[`${req.operatorId}_${d}`]] || 0), 0);
-        const total = base + sumOvertime(updatedOt, req.operatorId, weekDates);
-        if (total > WEEK_HOURS_LIMIT) {
-          pushToast('warning', `${req.operatorName} llega a ${total.toFixed(1)}h en esa semana (referencia: ${WEEK_HOURS_LIMIT}h).`, { duration: 6000 });
+        const total = sumOvertime(updatedOt, req.operatorId, weekDates);
+        const level = getOvertimeLevel(total);
+        if (level === 'danger') {
+          pushToast('error', `ALERTA: ${req.operatorName} llega a ${total.toFixed(1)}h extra en esa semana (alerta desde ${OT_ALERT_HOURS}h).`, { duration: 8000 });
+        } else if (level === 'warning') {
+          pushToast('warning', `${req.operatorName} llega a ${total.toFixed(1)}h extra en esa semana (señal desde ${OT_WARN_HOURS}h).`, { duration: 7000 });
         }
       }
     } catch (error) {
@@ -1605,8 +1619,9 @@ export default function App() {
         pdf.text(String(op.c.M), 138, y);
         pdf.text(String(op.c.T), 148, y);
         pdf.text(String(op.c.N), 158, y);
-        pdf.setTextColor(16, 185, 129);
-        pdf.setTextColor(251, 191, 36);
+        if (op.otH >= OT_ALERT_HOURS) pdf.setTextColor(239, 68, 68);
+        else if (op.otH >= OT_WARN_HOURS) pdf.setTextColor(251, 191, 36);
+        else pdf.setTextColor(16, 185, 129);
         pdf.text(op.otH > 0 ? `${op.otH.toFixed(1)}h` : '-', 166, y);
         pdf.setTextColor(16, 185, 129);
         pdf.text(`${op.totalH.toFixed(1)}h`, 180, y);
@@ -2085,6 +2100,9 @@ export default function App() {
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-[13px] break-words leading-tight">{op.name}</div>
                         <div className="text-[10px] opacity-80 break-words leading-tight">{op.socioNumber || op.id} · {op.zone}</div>
+                        {operatorsWithoutRest.has(op.id) && (
+                          <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/50 text-amber-300 border border-amber-500/50">Falta día de descanso</span>
+                        )}
                         {assignments[cellKey] && ['M', 'T', 'N'].includes(shiftCode) && (
                           <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/30 border border-white/20">{assignments[cellKey]}</span>
                         )}
@@ -2156,6 +2174,11 @@ export default function App() {
                           <td className="py-3 px-4">
                             <div className="font-bold text-sm text-white">{op.name}</div>
                             <div className="text-xs text-emerald-400/80">{op.socioNumber || op.id} • {op.zone}</div>
+                            {operatorsWithoutRest.has(op.id) && (
+                              <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-950/70 border border-amber-700/60 rounded px-1.5 py-0.5">
+                                <AlertTriangle className="w-3 h-3" /> Falta día de descanso
+                              </div>
+                            )}
                           </td>
                           {weekDays.map(day => {
                             const shiftCode = scheduleData[`${op.id}_${day.dateStr}`] || 'DES';
@@ -2813,7 +2836,7 @@ export default function App() {
                       });
                       const otH = sumOvertime(overtimeRequests, op.id, weekDates);
                       const grandH = totalH + otH;
-                      const isHigh = grandH > 48;
+                      const otLevel = getOvertimeLevel(otH);
                       return (
                         <tr key={op.id} className="hover:bg-[#003517]/50">
                           <td className="p-2 font-bold text-white whitespace-nowrap">{op.name}</td>
@@ -2821,8 +2844,8 @@ export default function App() {
                           <td className="p-2 text-center text-emerald-300">{c.M}</td>
                           <td className="p-2 text-center text-amber-300">{c.T}</td>
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
-                          <td className={`p-2 text-right font-bold ${otH > 0 ? 'text-amber-300' : 'text-emerald-700'}`}>{otH > 0 ? `+${otH.toFixed(1)}h` : '-'}</td>
-                          <td className={`p-2 text-right font-extrabold ${isHigh ? 'text-red-400' : 'text-emerald-300'}`}>{grandH.toFixed(1)}h</td>
+                          <td className={`p-2 text-right font-bold ${otLevel === 'danger' ? 'text-red-400' : otLevel === 'warning' ? 'text-amber-300' : otH > 0 ? 'text-emerald-300' : 'text-emerald-700'}`}>{otLevel && <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />}{otH > 0 ? `+${otH.toFixed(1)}h` : '-'}</td>
+                          <td className="p-2 text-right font-extrabold text-emerald-300">{grandH.toFixed(1)}h</td>
                         </tr>
                       );
                     })}
@@ -3032,17 +3055,20 @@ export default function App() {
                   <span>{otError}</span>
                 </div>
               )}
-              {otWarnings.length > 0 && (
-                <div className="p-2.5 bg-amber-950/70 border border-amber-700/70 rounded-xl text-amber-200 space-y-1">
-                  {otWarnings.map((w, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <span>{w}</span>
-                    </div>
-                  ))}
-                  <div className="text-[10px] text-amber-400/80 pl-5">Puedes registrarlo igual; quien apruebe decidirá.</div>
-                </div>
-              )}
+              {otWarnings.length > 0 && (() => {
+                const hasDanger = otWarnings.some(w => w.level === 'danger');
+                return (
+                  <div className={`p-2.5 border rounded-xl space-y-1 ${hasDanger ? 'bg-red-950/80 border-red-700 text-red-200' : 'bg-amber-950/70 border-amber-700/70 text-amber-200'}`}>
+                    {otWarnings.map((w, i) => (
+                      <div key={i} className={`flex items-start gap-2 ${w.level === 'danger' ? 'font-bold text-red-300' : ''}`}>
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <span>{w.text}</span>
+                      </div>
+                    ))}
+                    <div className={`text-[10px] pl-5 ${hasDanger ? 'text-red-400/80' : 'text-amber-400/80'}`}>Puedes registrarlo igual; quien apruebe decidirá.</div>
+                  </div>
+                );
+              })()}
               <div>
                 <label className="block text-emerald-300 font-bold mb-1">Operador</label>
                 <select value={newOt.operatorId} onChange={(e) => setNewOt({ ...newOt, operatorId: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">

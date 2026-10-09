@@ -265,6 +265,10 @@ function MiniIndicator({ icon: Icon, label, value, accent = 'emerald', subtitle 
   );
 }
 
+/**
+ * ✅ T.E ahora se calcula SOLO con horas extras aprobadas ÷ 208.
+ * Ya no se suman las horas de turno programadas.
+ */
 const computeTeStats = (ym, operators, scheduleData, assignments, overtimeRequests) => {
   const dates = getMonthDates(ym);
   const otMap = {};
@@ -293,7 +297,8 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
     const zoneOk = areaAgg[op.zone] !== undefined;
     dates.forEach(d => {
       const key = `${op.id}_${d}`;
-      const dayHours = (SHIFT_HOURS[scheduleData[key]] || 0) + (otMap[key] || 0);
+      // ✅ SOLO horas extra (no se suman horas de turno)
+      const dayHours = otMap[key] || 0;
       if (!dayHours) return;
       hours += dayHours;
       if (zoneOk) {
@@ -336,16 +341,38 @@ const computeTeStats = (ym, operators, scheduleData, assignments, overtimeReques
 
 const TE_PLOT_H = 180;
 
+/**
+ * ✅ Gráfica con eje auto-escalable: detecta el máximo y elige paso + decimales.
+ * La línea de referencia "208 h = 1.00" solo aparece si el eje llega a 1.
+ */
 function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'Detalle', barWidth = 24 }) {
   const [showTable, setShowTable] = useState(false);
   const [hover, setHover] = useState(null);
 
-  const maxVal = Math.max(1, ...bars.map(b => b.value));
-  const step = maxVal <= 2 ? 0.2 : maxVal <= 5 ? 0.5 : 1;
-  const top = Math.ceil((maxVal * 1.05) / step) * step;
+  const maxVal = Math.max(0.0001, ...bars.map(b => b.value));
+
+  // ✅ Auto-escala según magnitud del máximo
+  let step, decimals;
+  if (maxVal <= 0.005)       { step = 0.0005; decimals = 4; }
+  else if (maxVal <= 0.01)   { step = 0.001;  decimals = 4; }
+  else if (maxVal <= 0.025)  { step = 0.0025; decimals = 4; }
+  else if (maxVal <= 0.05)   { step = 0.005;  decimals = 3; }
+  else if (maxVal <= 0.1)    { step = 0.01;   decimals = 3; }
+  else if (maxVal <= 0.25)   { step = 0.025;  decimals = 3; }
+  else if (maxVal <= 0.5)    { step = 0.05;   decimals = 2; }
+  else if (maxVal <= 1)      { step = 0.1;    decimals = 2; }
+  else if (maxVal <= 2)      { step = 0.2;    decimals = 2; }
+  else if (maxVal <= 5)      { step = 0.5;    decimals = 2; }
+  else                       { step = 1;      decimals = 1; }
+
+  const top = Math.ceil((maxVal * 1.15) / step) * step;
   const ticks = [];
-  for (let i = 0; i * step <= top + 1e-9; i++) ticks.push(Number((i * step).toFixed(2)));
+  for (let i = 0; i * step <= top + 1e-9; i++) {
+    ticks.push(Number((i * step).toFixed(6)));
+  }
   const hasData = bars.some(b => b.hours > 0);
+  const fmt = (v) => v.toFixed(decimals);
+  const showRefLine = top >= 1; // La referencia 208h = 1.00 solo si el eje alcanza 1
 
   const tooltipPos = (i) => {
     if (bars.length < 3) return 'left-1/2 -translate-x-1/2';
@@ -378,7 +405,7 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
             <thead>
               <tr className="text-emerald-300 font-bold uppercase border-b border-emerald-800/80">
                 <th className="p-2">{firstColumnLabel}</th>
-                <th className="p-2 text-right">Horas</th>
+                <th className="p-2 text-right">H. extra</th>
                 <th className="p-2 text-right">Operadores</th>
                 <th className="p-2 text-right">T.E</th>
               </tr>
@@ -389,7 +416,7 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
                   <td className="p-2 font-bold text-white">{b.label}</td>
                   <td className="p-2 text-right text-emerald-200">{b.hours.toFixed(1)}</td>
                   <td className="p-2 text-right text-emerald-200">{b.ops}</td>
-                  <td className="p-2 text-right font-extrabold text-emerald-100">{b.value.toFixed(2)}</td>
+                  <td className="p-2 text-right font-extrabold text-emerald-100">{fmt(b.value)}</td>
                 </tr>
               ))}
             </tbody>
@@ -398,20 +425,22 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
       ) : !hasData ? (
         <div className="py-10 text-center">
           <BarChart3 className="w-9 h-9 text-emerald-700 mx-auto mb-2" />
-          <p className="text-emerald-300 font-bold text-sm">Sin horas registradas en este mes</p>
+          <p className="text-emerald-300 font-bold text-sm">Sin horas extra registradas en este mes</p>
         </div>
       ) : (
         <div className="relative pl-9 pt-5">
           <div className="absolute left-0 right-0 pointer-events-none" style={{ top: 20, height: TE_PLOT_H }}>
             {ticks.map(t => (
               <div key={t} className="absolute left-0 right-0 h-0" style={{ bottom: `${(t / top) * 100}%` }}>
-                <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{t.toFixed(1)}</span>
+                <span className="absolute left-0 w-8 text-right text-[9px] leading-none text-emerald-500" style={{ bottom: 0, transform: 'translateY(50%)' }}>{fmt(t)}</span>
                 <div className="absolute left-9 right-0 top-0 border-t border-emerald-900/70" />
               </div>
             ))}
-            <div className="absolute left-9 right-0 h-0 border-t border-dashed border-emerald-200/60" style={{ bottom: `${(1 / top) * 100}%` }}>
-              <span className="absolute right-0 -top-3.5 text-[9px] text-emerald-200">208 h = 1.00</span>
-            </div>
+            {showRefLine && (
+              <div className="absolute left-9 right-0 h-0 border-t border-dashed border-emerald-200/60" style={{ bottom: `${(1 / top) * 100}%` }}>
+                <span className="absolute right-0 -top-3.5 text-[9px] text-emerald-200">208 h = 1.00</span>
+              </div>
+            )}
           </div>
 
           <div className="relative flex gap-1 sm:gap-2">
@@ -429,18 +458,18 @@ function TEBarChart({ title, subtitle, color = null, bars, firstColumnLabel = 'D
                     {hover === i && (
                       <div className={`absolute z-20 -top-1 -translate-y-full whitespace-nowrap rounded-lg border border-emerald-600 bg-[#011a0d] px-2.5 py-1.5 text-[11px] text-emerald-50 shadow-xl pointer-events-none ${tooltipPos(i)}`}>
                         <div className="font-bold text-white">{b.fullLabel || b.label}</div>
-                        <div>T.E <span className="font-extrabold">{b.value.toFixed(2)}</span></div>
-                        <div className="text-emerald-300">{b.hours.toFixed(1)} h ÷ (208 × {b.ops} op.)</div>
+                        <div>T.E <span className="font-extrabold">{fmt(b.value)}</span></div>
+                        <div className="text-emerald-300">{b.hours.toFixed(1)} h extra ÷ (208 × {b.ops} op.)</div>
                       </div>
                     )}
-                    <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">{b.value.toFixed(2)}</span>
+                    <span className="text-[11px] font-extrabold text-white mb-0.5 leading-none">{fmt(b.value)}</span>
                     <div
                       className="rounded-t-[4px]"
                       style={{ width: barWidth, height: `${h}%`, minHeight: b.value > 0 ? 2 : 0, background: b.color || color || '#3987e5' }}
                     />
                   </div>
                   <div className="mt-1.5 text-[10px] font-semibold text-emerald-100 text-center leading-tight break-words w-full">{b.label}</div>
-                  <div className="text-[9px] text-emerald-500 text-center leading-tight">{b.hours.toFixed(0)} h · {b.ops} op.</div>
+                  <div className="text-[9px] text-emerald-500 text-center leading-tight">{b.hours.toFixed(1)} h OT · {b.ops} op.</div>
                 </div>
               );
             })}
@@ -689,7 +718,6 @@ export default function App() {
   const [reassignShift, setReassignShift] = useState('M');
   const [selectedMobileDay, setSelectedMobileDay] = useState(() => formatDateLocal(new Date()));
 
-  // ✅ Indicadores arrancan OCULTOS y se recuerda la preferencia en localStorage
   const [showIndicators, setShowIndicators] = useState(() => {
     try {
       const saved = localStorage.getItem('sf_showIndicators');
@@ -699,7 +727,6 @@ export default function App() {
     }
   });
 
-  // ✅ Persistir preferencia cada vez que cambia
   useEffect(() => {
     try {
       localStorage.setItem('sf_showIndicators', String(showIndicators));
@@ -1838,7 +1865,7 @@ export default function App() {
       y += 6;
       pdf.setTextColor(167, 243, 208);
       pdf.setFontSize(11);
-      pdf.text(`Horas por operador (semana actual) · T.E de ${formatMonthLabel(reportTeMonth)}`, 14, y);
+      pdf.text(`Horas extra por operador (semana actual) · T.E de ${formatMonthLabel(reportTeMonth)}`, 14, y);
       y += 6;
 
       pdf.setFontSize(8);
@@ -1887,7 +1914,10 @@ export default function App() {
         pdf.setTextColor(16, 185, 129);
         pdf.text(`${op.totalH.toFixed(1)}h`, 168, y);
         pdf.setTextColor(255, 255, 255);
-        pdf.text((weekTeStats.perOp[op.id]?.te ?? 0).toFixed(2), 185, y);
+        // ✅ T.E ahora puede ser mucho menor a 1; usamos 4 decimales si aplica
+        const teVal = weekTeStats.perOp[op.id]?.te ?? 0;
+        const teStr = teVal < 0.01 ? teVal.toFixed(4) : teVal.toFixed(3);
+        pdf.text(teStr, 185, y);
         y += 5.5;
       });
 
@@ -2531,7 +2561,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* ✅ Indicadores con botón de mostrar/ocultar */}
             {showIndicators ? (
               <div className="relative flex items-center justify-center gap-1.5 flex-wrap pt-1">
                 <button
@@ -3041,8 +3070,8 @@ export default function App() {
                         <Clock className="w-3.5 h-3.5 text-indigo-300" />
                         <span className="text-[10px] font-bold uppercase text-indigo-300">T.E promedio</span>
                       </div>
-                      <div className="text-xl sm:text-2xl font-extrabold text-indigo-100">{weekTeStats.avg.toFixed(2)}</div>
-                      <div className="text-[10px] text-indigo-400/70 mt-0.5">horas ÷ 208 · {formatMonthLabel(reportTeMonth)}</div>
+                      <div className="text-xl sm:text-2xl font-extrabold text-indigo-100">{weekTeStats.avg.toFixed(4)}</div>
+                      <div className="text-[10px] text-indigo-400/70 mt-0.5">horas extra ÷ 208 · {formatMonthLabel(reportTeMonth)}</div>
                     </div>
                   </>
                 );
@@ -3142,6 +3171,8 @@ export default function App() {
                       const otH = sumOvertime(overtimeRequests, op.id, weekDates);
                       const grandH = totalH + otH;
                       const otLevel = getOvertimeLevel(otH);
+                      const teVal = weekTeStats.perOp[op.id]?.te ?? 0;
+                      const teStr = teVal < 0.01 ? teVal.toFixed(4) : teVal.toFixed(3);
                       return (
                         <tr key={op.id} className="hover:bg-[#003517]/50">
                           <td className="p-2 font-bold text-white whitespace-nowrap">{op.name}</td>
@@ -3151,7 +3182,7 @@ export default function App() {
                           <td className="p-2 text-center text-indigo-300">{c.N}</td>
                           <td className={`p-2 text-right font-bold ${otLevel === 'danger' ? 'text-red-400' : otLevel === 'warning' ? 'text-amber-300' : otH > 0 ? 'text-emerald-300' : 'text-emerald-700'}`}>{otLevel && <AlertTriangle className="w-3 h-3 inline mr-1 -mt-0.5" />}{otH > 0 ? `+${otH.toFixed(1)}h` : '-'}</td>
                           <td className="p-2 text-right font-extrabold text-emerald-300">{grandH.toFixed(1)}h</td>
-                          <td className="p-2 text-right font-extrabold text-indigo-300">{(weekTeStats.perOp[op.id]?.te ?? 0).toFixed(2)}</td>
+                          <td className="p-2 text-right font-extrabold text-indigo-300">{teStr}</td>
                         </tr>
                       );
                     })}
@@ -3179,14 +3210,14 @@ export default function App() {
                     )}
                   </div>
                   <p className="text-[11px] text-emerald-300">
-                    T.E = horas del mes ÷ 208 · incluye turnos programados y horas extra aprobadas
+                    T.E = horas extra aprobadas del mes ÷ 208
                   </p>
                 </div>
 
                 <div className="max-w-xl">
                   <TEBarChart
                     title="T.E por área"
-                    subtitle="Promedio por operador de cada almacén"
+                    subtitle="Horas extra promedio por operador de cada almacén"
                     firstColumnLabel="Área"
                     barWidth={88}
                     bars={teStats.areas.map(a => ({
@@ -3205,7 +3236,7 @@ export default function App() {
                     <TEBarChart
                       key={zone}
                       title={`${zone} · T.E por línea`}
-                      subtitle="Horas trabajadas en cada asignación ÷ (208 × operadores que pasaron por ahí)"
+                      subtitle="Horas extra en cada asignación ÷ (208 × operadores con OT en esa línea)"
                       color={AREA_COLORS[zone]}
                       firstColumnLabel="Asignación"
                       bars={teStats.lines[zone].map(l => ({
@@ -3220,7 +3251,7 @@ export default function App() {
                 </div>
 
                 <p className="text-[11px] text-emerald-400/80">
-                  Horas sin línea asignada (no salen en las gráficas por línea): {TE_AREAS.map(z => `${shortArea(z)} ${teStats.unassigned[z].toFixed(0)} h`).join(' · ')}.
+                  Horas extra sin línea asignada (no salen en las gráficas por línea): {TE_AREAS.map(z => `${shortArea(z)} ${teStats.unassigned[z].toFixed(1)} h`).join(' · ')}.
                   {teStats.outsideAreas > 0 && ` ${teStats.outsideAreas} operador(es) sin área registrada no se incluyen en las gráficas; edítalos en Personal para asignarles su área.`}
                 </p>
               </div>

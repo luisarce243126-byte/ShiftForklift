@@ -72,9 +72,21 @@ const WAREHOUSE_ZONES = [
 ];
 
 const ASSIGNMENTS = [
-  'Línea 10', 'Línea 20', 'Línea 30', 'Línea 40', 'Línea 50', 'Línea 60',
-  'Embarque y Recepción'
+  'Línea 10', 'Línea 20', 'Línea 40', 'Línea 60',
+  'Embarque'
 ];
+
+// Nombres anteriores que se convierten automáticamente al nombre nuevo
+const LEGACY_ASSIGNMENT_MAP = { 'Embarque y Recepción': 'Embarque' };
+const normalizeAssignments = (obj) => {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+  const out = {};
+  Object.keys(obj).forEach(k => {
+    const v = obj[k];
+    out[k] = LEGACY_ASSIGNMENT_MAP[v] || v;
+  });
+  return out;
+};
 
 const TE_BASE_HOURS = 208;
 const TE_AREAS = WAREHOUSE_ZONES.slice(1);
@@ -192,7 +204,7 @@ const withTimeout = (promise, ms) => {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 };
 
-const OVERTIME_TYPES = ['Hora extra', 'Descanso trabajado', 'Día festivo'];
+const OVERTIME_TYPES = ['Hora extra', 'Día festivo'];
 const OT_MAX_HOURS_PER_DAY = 3;
 const OT_MAX_DAYS_PER_WEEK = 3;
 const OT_WARN_HOURS = 3;
@@ -681,7 +693,11 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('scheduler');
 
-  const [operators, setOperators] = useState([]);
+  // personnel = TODO el personal (operadores + staff). Se guarda en Redis (sf_operators).
+  const [personnel, setOperators] = useState([]);
+  // operators = solo montacargistas. El staff NO aparece en matriz, reportes ni T.E.
+  const operators = useMemo(() => personnel.filter(p => p.category !== 'Staff'), [personnel]);
+  const [personnelFilter, setPersonnelFilter] = useState('all');
   const [scheduleData, setScheduleData] = useState({});
   const [vacationRequests, setVacationRequests] = useState([]);
   const [overtimeRequests, setOvertimeRequests] = useState([]);
@@ -891,7 +907,7 @@ export default function App() {
         redis.get('sf_assignments'),
       ]), LOAD_TIMEOUT_MS);
       setPollFailed(false);
-      setAssignments(savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign) ? savedAssign : {});
+      setAssignments(normalizeAssignments(savedAssign));
       setOvertimeRequests(Array.isArray(savedOt) ? savedOt : []);
       setOperators(Array.isArray(savedOps) ? savedOps : []);
       setScheduleData(savedSchedule && typeof savedSchedule === 'object' ? savedSchedule : {});
@@ -948,7 +964,7 @@ export default function App() {
         ]), POLL_TIMEOUT_MS);
         setPollFailed(false);
         if (!isUpdatingRef.current) {
-          if (savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign)) setAssignments(savedAssign);
+          if (savedAssign && typeof savedAssign === 'object' && !Array.isArray(savedAssign)) setAssignments(normalizeAssignments(savedAssign));
           if (Array.isArray(savedOt)) setOvertimeRequests(savedOt);
           if (Array.isArray(savedOps)) setOperators(savedOps);
           if (savedSchedule && typeof savedSchedule === 'object') setScheduleData(savedSchedule);
@@ -978,14 +994,15 @@ export default function App() {
   const [cellAssignment, setCellAssignment] = useState('');
   useEffect(() => {
     if (selectedCell) {
-      setCellAssignment(assignments[`${selectedCell.operatorId}_${selectedCell.dateStr}`] || '');
+      const savedAssign = assignments[`${selectedCell.operatorId}_${selectedCell.dateStr}`] || '';
+      setCellAssignment(ASSIGNMENTS.includes(savedAssign) ? savedAssign : '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCell]);
 
   const [newOp, setNewOp] = useState({
     name: '', socioNumber: '', zone: '', equipment: '',
-    licenseExpiry: '2027-12-31'
+    licenseExpiry: '2027-12-31', category: 'Operador', position: ''
   });
 
   const [newVac, setNewVac] = useState({
@@ -1121,6 +1138,15 @@ export default function App() {
     }
     return warnings;
   }, [isOvertimeOpen, newOt, overtimeRequests]);
+
+  const otRestBlock = useMemo(() => {
+    if (!isOvertimeOpen || !newOt.operatorId || !newOt.date) return '';
+    const op = operators.find(o => o.id === newOt.operatorId);
+    if (!op) return '';
+    const code = scheduleData[`${op.id}_${newOt.date}`] || 'DES';
+    if (WORK_CODES.includes(code)) return '';
+    return `${op.name} tiene ${code === 'DES' ? 'descanso (o no tiene turno asignado)' : SHIFT_TYPES[code]?.label || 'ausencia'} el ${newOt.date}. No se pueden registrar horas extras en días de descanso.`;
+  }, [isOvertimeOpen, newOt.operatorId, newOt.date, operators, scheduleData]);
 
   const lockedCellsInView = useMemo(() => {
     let count = 0;
@@ -1462,13 +1488,17 @@ export default function App() {
   const handleSaveOperator = async (e) => {
     e.preventDefault();
     if (!newOp.name || !canManageOperators) return;
-    if (!TE_AREAS.includes(newOp.zone)) {
-      pushToast('warning', 'Selecciona el área de trabajo.');
-      return;
-    }
-    if (!FORKLIFT_TYPES.includes(newOp.equipment)) {
-      pushToast('warning', 'Selecciona el tipo de equipo.');
-      return;
+    const isStaff = newOp.category === 'Staff';
+
+    if (!isStaff) {
+      if (!TE_AREAS.includes(newOp.zone)) {
+        pushToast('warning', 'Selecciona el área de trabajo.');
+        return;
+      }
+      if (!FORKLIFT_TYPES.includes(newOp.equipment)) {
+        pushToast('warning', 'Selecciona el tipo de equipo.');
+        return;
+      }
     }
 
     const socioNumber = String(newOp.socioNumber || '').trim();
@@ -1476,7 +1506,7 @@ export default function App() {
       pushToast('warning', 'Escribe el # de socio.');
       return;
     }
-    const socioDuplicado = operators.find(op =>
+    const socioDuplicado = personnel.find(op =>
       String(op.socioNumber || '').trim().toLowerCase() === socioNumber.toLowerCase() &&
       (!editingOperator || op.id !== editingOperator.id)
     );
@@ -1486,18 +1516,34 @@ export default function App() {
     }
 
     isUpdatingRef.current = true;
-    const previousOps = operators;
+    const previousOps = personnel;
     let updatedOps;
 
-    if (editingOperator) {
-      updatedOps = operators.map(op => op.id === editingOperator.id ? { ...op, ...newOp, socioNumber } : op);
+    let data;
+    if (isStaff) {
+      data = {
+        name: newOp.name.trim(),
+        socioNumber,
+        category: 'Staff',
+        position: (newOp.position || '').trim(),
+        zone: '',
+        equipment: '',
+        licenseExpiry: ''
+      };
     } else {
-      const maxIdNum = operators.reduce((max, op) => {
-        const num = parseInt(op.id.replace(/\D/g, ''), 10);
+      const { position, ...rest } = newOp;
+      data = { ...rest, socioNumber, category: 'Operador' };
+    }
+
+    if (editingOperator) {
+      updatedOps = personnel.map(op => op.id === editingOperator.id ? { ...op, ...data } : op);
+    } else {
+      const maxIdNum = personnel.reduce((max, op) => {
+        const num = parseInt(String(op.id).replace(/\D/g, ''), 10);
         return !isNaN(num) && num > max ? num : max;
       }, 100);
-      const newId = `M-${maxIdNum + 1}`;
-      updatedOps = [...operators, { id: newId, ...newOp, socioNumber, status: 'Activo' }];
+      const newId = `${isStaff ? 'S' : 'M'}-${maxIdNum + 1}`;
+      updatedOps = [...personnel, { id: newId, ...data, status: 'Activo' }];
     }
 
     setOperators(updatedOps);
@@ -1508,12 +1554,12 @@ export default function App() {
     try {
       await withTimeout(redis.set('sf_operators', updatedOps), LOAD_TIMEOUT_MS);
       reportSyncResult(true);
-      pushToast('success', editingOperator ? 'Operador actualizado' : 'Operador registrado');
+      pushToast('success', editingOperator ? (isStaff ? 'Staff actualizado' : 'Operador actualizado') : (isStaff ? 'Staff registrado' : 'Operador registrado'));
     } catch (error) {
       console.error('Error al guardar operador:', error);
       setOperators(previousOps);
       reportSyncResult(false);
-      pushToast('error', 'Error al guardar operador. Cambio revertido.');
+      pushToast('error', 'Error al guardar. Cambio revertido.');
     } finally {
       setTimeout(() => { isUpdatingRef.current = false; }, 2500);
     }
@@ -1521,11 +1567,11 @@ export default function App() {
 
   const handleDeleteOperator = async (operatorId) => {
     if (!canManageOperators) return;
-    if (window.confirm('¿Estás seguro de que deseas eliminar este montacargista?')) {
+    if (window.confirm('¿Estás seguro de que deseas eliminar a esta persona?')) {
       isUpdatingRef.current = true;
       setSyncStatus('saving');
-      const previousOps = operators;
-      const updatedOps = operators.filter(op => op.id !== operatorId);
+      const previousOps = personnel;
+      const updatedOps = personnel.filter(op => op.id !== operatorId);
       setOperators(updatedOps);
       try {
         await withTimeout(redis.set('sf_operators', updatedOps), LOAD_TIMEOUT_MS);
@@ -1665,6 +1711,11 @@ export default function App() {
       setOtError(`${op.name} tiene una ausencia aprobada ese día.`);
       return;
     }
+    const otDayCode = scheduleData[`${op.id}_${newOt.date}`] || 'DES';
+    if (!WORK_CODES.includes(otDayCode)) {
+      setOtError(`${op.name} tiene descanso (o no tiene turno asignado) el ${newOt.date}. No se pueden registrar horas extras en días de descanso.`);
+      return;
+    }
     setOtError('');
 
     isUpdatingRef.current = true;
@@ -1705,6 +1756,10 @@ export default function App() {
     if (!canApproveVacations) return;
     const req = overtimeRequests.find(r => r.id === id);
     if (!req) return;
+    if (newStatus === 'Aprobado' && !WORK_CODES.includes(scheduleData[`${req.operatorId}_${req.date}`] || 'DES')) {
+      pushToast('warning', `${req.operatorName} tiene descanso el ${req.date}; no se pueden aprobar horas extras en día de descanso.`, { duration: 6000 });
+      return;
+    }
     isUpdatingRef.current = true;
     setSyncStatus('saving');
     const previousOt = overtimeRequests;
@@ -2111,7 +2166,7 @@ export default function App() {
 
           <nav className="hidden md:flex space-x-1 bg-[#02180d] p-1 rounded-xl border border-emerald-900">
             <button onClick={() => setActiveTab('scheduler')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Matriz</button>
-            <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({operators.length})</button>
+            <button onClick={() => setActiveTab('operators')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Personal ({personnel.length})</button>
             <button onClick={() => setActiveTab('vacations')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Permisos</button>
             <button onClick={() => setActiveTab('overtime')} className={`px-3 py-2 text-xs font-bold rounded-lg ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'text-emerald-300'}`}>Horas extras</button>
             {canViewReports && (
@@ -2162,7 +2217,7 @@ export default function App() {
       <nav className="md:hidden sticky top-14 z-20 bg-[#021f12] border-b border-emerald-900/60">
         <div className="flex gap-1.5 overflow-x-auto px-2.5 py-2">
           <button onClick={() => setActiveTab('scheduler')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'scheduler' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Matriz</button>
-          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({operators.length})</button>
+          <button onClick={() => setActiveTab('operators')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'operators' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Personal ({personnel.length})</button>
           <button onClick={() => setActiveTab('vacations')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'vacations' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Permisos</button>
           <button onClick={() => setActiveTab('overtime')} className={`shrink-0 px-3 py-2 text-xs font-bold rounded-lg whitespace-nowrap transition ${activeTab === 'overtime' ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>Horas extras</button>
           {canViewReports && (
@@ -2646,17 +2701,36 @@ export default function App() {
                 <p className="text-xs text-emerald-300">Roles y permisos: {currentUser.role}</p>
               </div>
               {canManageOperators && (
+                <div className="flex gap-2 flex-wrap">
                 <button onClick={() => {
                   setEditingOperator(null);
-                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: formatDateLocal(new Date()) });
+                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: '', category: 'Staff', position: '' });
+                  setIsAddOperatorOpen(true);
+                }} className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-500/50 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
+                  <Plus className="w-4 h-4"/><span>Nuevo Staff</span>
+                </button>
+                <button onClick={() => {
+                  setEditingOperator(null);
+                  setNewOp({ name: '', socioNumber: '', zone: '', equipment: '', licenseExpiry: formatDateLocal(new Date()), category: 'Operador', position: '' });
                   setIsAddOperatorOpen(true);
                 }} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition">
                   <Plus className="w-4 h-4"/><span>Nuevo Operador</span>
                 </button>
+                </div>
               )}
             </div>
 
-            {operators.length === 0 ? (
+            <div className="flex gap-1.5 flex-wrap">
+              {[
+                { id: 'all', label: `Todos (${personnel.length})` },
+                { id: 'ops', label: `Operadores (${operators.length})` },
+                { id: 'staff', label: `Staff (${personnel.length - operators.length})` }
+              ].map(f => (
+                <button key={f.id} onClick={() => setPersonnelFilter(f.id)} className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${personnelFilter === f.id ? 'bg-emerald-600 text-white' : 'bg-[#02180d] text-emerald-300 border border-emerald-900'}`}>{f.label}</button>
+              ))}
+            </div>
+
+            {personnel.length === 0 ? (
               <div className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-12 text-center">
                 <Users className="w-12 h-12 text-emerald-700 mx-auto mb-3" />
                 <h3 className="text-base font-bold text-white mb-1">Sin personal registrado</h3>
@@ -2664,33 +2738,45 @@ export default function App() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {operators.map(op => (
+                {personnel.filter(p => personnelFilter === 'all' || (personnelFilter === 'staff' ? p.category === 'Staff' : p.category !== 'Staff')).map(op => {
+                  const isStaffCard = op.category === 'Staff';
+                  return (
                   <div key={op.id} className="bg-[#002812] border border-emerald-800/80 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
                     <div>
                       <div className="flex justify-between items-start mb-2">
                         <div className="min-w-0">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">{op.id}</span>
+                            {isStaffCard && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/60">STAFF</span>}
+                          </div>
                           <h3 className="text-base font-bold text-white mt-1">{op.name}</h3>
                         </div>
                         {canManageOperators && (
                           <div className="flex space-x-1 shrink-0">
-                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', zone: TE_AREAS.includes(op.zone) ? op.zone : '', equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : '' }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
+                            <button onClick={() => { setEditingOperator(op); setNewOp({ ...op, socioNumber: op.socioNumber || '', category: isStaffCard ? 'Staff' : 'Operador', position: op.position || '', zone: TE_AREAS.includes(op.zone) ? op.zone : '', equipment: FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : '', licenseExpiry: op.licenseExpiry || '' }); setIsAddOperatorOpen(true); }} className="p-1.5 bg-emerald-900 hover:bg-emerald-700 text-emerald-200 rounded-lg transition"><Pencil className="w-3.5 h-3.5"/></button>
                             <button onClick={() => handleDeleteOperator(op.id)} className="p-1.5 bg-red-950 hover:bg-red-800 text-red-300 rounded-lg transition"><Trash2 className="w-3.5 h-3.5"/></button>
                           </div>
                         )}
                       </div>
                       <div className="space-y-1.5 text-xs text-emerald-200 border-t border-emerald-900/80 pt-3">
                         <div className="flex justify-between gap-2"><span># Socio:</span><span className="font-semibold text-white text-right">{op.socioNumber || 'N/A'}</span></div>
-                        <div className="flex justify-between gap-2"><span>Área:</span><span className={`font-semibold text-right ${TE_AREAS.includes(op.zone) ? 'text-white' : 'text-amber-300'}`}>{areaLabel(op)}</span></div>
-                        <div className="flex justify-between gap-2"><span>Equipo:</span><span className={`font-semibold text-right ${FORKLIFT_TYPES.includes(op.equipment) ? 'text-white' : 'text-amber-300'}`}>{FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : 'Sin registrar'}</span></div>
-                        <div className="flex justify-between items-center pt-1 gap-2">
-                          <span>Licencia DC3:</span>
-                          <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
-                        </div>
+                        {isStaffCard ? (
+                          <div className="flex justify-between gap-2"><span>Puesto:</span><span className="font-semibold text-white text-right">{op.position || 'Sin registrar'}</span></div>
+                        ) : (
+                          <>
+                            <div className="flex justify-between gap-2"><span>Área:</span><span className={`font-semibold text-right ${TE_AREAS.includes(op.zone) ? 'text-white' : 'text-amber-300'}`}>{areaLabel(op)}</span></div>
+                            <div className="flex justify-between gap-2"><span>Equipo:</span><span className={`font-semibold text-right ${FORKLIFT_TYPES.includes(op.equipment) ? 'text-white' : 'text-amber-300'}`}>{FORKLIFT_TYPES.includes(op.equipment) ? op.equipment : 'Sin registrar'}</span></div>
+                            <div className="flex justify-between items-center pt-1 gap-2">
+                              <span>Licencia DC3:</span>
+                              <span className={`px-2 py-0.5 rounded border text-[11px] ${getLicenseStatusStyle(op.licenseExpiry)}`}>{op.licenseExpiry || 'N/A'}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -3410,6 +3496,14 @@ export default function App() {
             <h3 className="text-base font-bold text-white mb-4">{editingOperator ? 'Editar Operador' : 'Registrar Operador'}</h3>
             <form onSubmit={handleSaveOperator} className="space-y-3 text-xs">
               <div>
+                <label className="block text-emerald-300 font-bold mb-1">Tipo de personal</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{ v: 'Operador', l: 'Operador (aparece en matriz)' }, { v: 'Staff', l: 'Staff (fuera de la matriz)' }].map(o => (
+                    <button key={o.v} type="button" onClick={() => setNewOp({ ...newOp, category: o.v })} className={`px-3 py-2 rounded-xl border font-bold transition ${newOp.category === o.v ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-[#011a0d] border-emerald-800 text-emerald-300 hover:bg-emerald-950'}`}>{o.l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
                 <label className="block text-emerald-300 font-bold mb-1">Nombre Completo</label>
                 <input type="text" required placeholder="Ej. Juan Pérez" value={newOp.name} onChange={(e) => setNewOp({ ...newOp, name: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
               </div>
@@ -3417,24 +3511,33 @@ export default function App() {
                 <label className="block text-emerald-300 font-bold mb-1"># de Socio</label>
                 <input type="text" inputMode="numeric" required placeholder="Ej. 12345" value={newOp.socioNumber || ''} onChange={(e) => setNewOp({ ...newOp, socioNumber: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
               </div>
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Área de Trabajo</label>
-                <select required value={newOp.zone || ''} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
-                  <option value="" disabled>Selecciona un área</option>
-                  {TE_AREAS.map(z => <option key={z} value={z}>{z}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
-                <select required value={newOp.equipment || ''} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
-                  <option value="" disabled>Selecciona el tipo</option>
-                  {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
-                <input type="date" required value={newOp.licenseExpiry} onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
-              </div>
+              {newOp.category === 'Staff' ? (
+                <div>
+                  <label className="block text-emerald-300 font-bold mb-1">Puesto (opcional)</label>
+                  <input type="text" placeholder="Ej. Supervisor, Coordinador" value={newOp.position || ''} onChange={(e) => setNewOp({ ...newOp, position: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500" />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-emerald-300 font-bold mb-1">Área de Trabajo</label>
+                    <select required value={newOp.zone || ''} onChange={(e) => setNewOp({ ...newOp, zone: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                      <option value="" disabled>Selecciona un área</option>
+                      {TE_AREAS.map(z => <option key={z} value={z}>{z}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-emerald-300 font-bold mb-1">Tipo de Equipo</label>
+                    <select required value={newOp.equipment || ''} onChange={(e) => setNewOp({ ...newOp, equipment: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none">
+                      <option value="" disabled>Selecciona el tipo</option>
+                      {FORKLIFT_TYPES.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-emerald-300 font-bold mb-1">Vencimiento Licencia DC3</label>
+                    <input type="date" required value={newOp.licenseExpiry || ''} onChange={(e) => setNewOp({ ...newOp, licenseExpiry: e.target.value })} className="w-full bg-[#011a0d] border border-emerald-800 rounded-xl px-3 py-2.5 text-white focus:outline-none" />
+                  </div>
+                </>
+              )}
               <div className="flex justify-end space-x-2 pt-3">
                 <button type="button" onClick={() => setIsAddOperatorOpen(false)} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-500 transition">Guardar</button>
@@ -3453,6 +3556,12 @@ export default function App() {
                 <div className="p-2.5 bg-red-950/80 border border-red-800 rounded-xl text-red-200 font-bold flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{otError}</span>
+                </div>
+              )}
+              {otRestBlock && (
+                <div className="p-2.5 bg-red-950/80 border border-red-700 rounded-xl text-red-200 font-bold flex items-start gap-2">
+                  <Lock className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{otRestBlock}</span>
                 </div>
               )}
               {otWarnings.length > 0 && (() => {
@@ -3497,7 +3606,7 @@ export default function App() {
               </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button type="button" onClick={() => { setIsOvertimeOpen(false); setOtError(''); }} className="px-4 py-2 bg-emerald-950 text-emerald-300 rounded-xl font-bold hover:bg-emerald-900 transition">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition">Registrar</button>
+                <button type="submit" disabled={!!otRestBlock} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl font-bold transition">Registrar</button>
               </div>
             </form>
           </div>
